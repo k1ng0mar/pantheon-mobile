@@ -31,17 +31,32 @@ class UsageStats {
       {required this.totals, required this.byModel, required this.byDay});
 
   factory UsageStats.fromJson(Map<String, dynamic> j) {
-    Map<String, UsageTotals> section(String key) {
-      final m = (j[key] as Map?)?.cast<String, dynamic>() ?? {};
-      return m.map((k, v) => MapEntry(
-          k, UsageTotals.fromJson((v as Map).cast<String, dynamic>())));
+    // The dashboard returns these as arrays of {model|day, totals} objects
+    // (sorted, highest cost first) — the same shape the web UI consumes.
+    Map<String, UsageTotals> section(String key, String nameKey) {
+      final out = <String, UsageTotals>{};
+      final list = j[key];
+      if (list is List) {
+        for (final item in list) {
+          if (item is Map) {
+            final m = item.cast<String, dynamic>();
+            final name = m[nameKey] as String?;
+            final totals = m['totals'];
+            if (name != null && totals is Map) {
+              out[name] =
+                  UsageTotals.fromJson(totals.cast<String, dynamic>());
+            }
+          }
+        }
+      }
+      return out;
     }
 
     return UsageStats(
       totals: UsageTotals.fromJson(
           (j['totals'] as Map?)?.cast<String, dynamic>() ?? {}),
-      byModel: section('by_model'),
-      byDay: section('by_day'),
+      byModel: section('by_model', 'model'),
+      byDay: section('by_day', 'day'),
     );
   }
 }

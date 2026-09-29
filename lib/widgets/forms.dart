@@ -1,0 +1,197 @@
+import 'package:flutter/material.dart';
+
+import '../theme.dart';
+import 'buttons.dart';
+import 'states.dart';
+
+/// Shared admin-form helpers: text prompts and confirm sheets in the
+/// Nyx visual language, so every management screen behaves the same.
+
+/// Bottom-sheet text prompt. Returns the entered text, or null on cancel.
+Future<String?> promptText(
+  BuildContext context, {
+  required String title,
+  String? label,
+  String? hint,
+  String? initial,
+  bool obscure = false,
+  int maxLines = 1,
+  TextInputType keyboardType = TextInputType.text,
+  String confirmLabel = 'Save',
+}) async {
+  final ctrl = TextEditingController(text: initial ?? '');
+  try {
+    return await showPSheet<String>(
+      context,
+      SafeArea(
+        child: Padding(
+          padding: EdgeInsets.fromLTRB(
+              20, 8, 20, 24 + MediaQuery.of(context).viewInsets.bottom),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const SheetHandle(),
+              const SizedBox(height: 8),
+              Text(title, style: PT.sectionTitle),
+              const SizedBox(height: 16),
+              TextField(
+                controller: ctrl,
+                autofocus: true,
+                obscureText: obscure,
+                maxLines: maxLines,
+                keyboardType: keyboardType,
+                style: PT.body,
+                decoration: InputDecoration(
+                  labelText: label,
+                  hintText: hint,
+                ),
+              ),
+              const SizedBox(height: 20),
+              Row(
+                children: [
+                  Expanded(
+                    child: TonalButton(
+                        label: 'Cancel',
+                        onTap: () => Navigator.pop(context)),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: GradientButton(
+                      label: confirmLabel,
+                      onTap: () =>
+                          Navigator.pop(context, ctrl.text.trim()),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    ).then((v) => (v == null || v.isEmpty) ? null : v);
+  } finally {
+    ctrl.dispose();
+  }
+}
+
+/// Destructive-action confirm sheet. Returns true when confirmed.
+Future<bool> confirmAction(
+  BuildContext context, {
+  required String title,
+  required String body,
+  String confirmLabel = 'Confirm',
+  bool destructive = false,
+}) async {
+  final ok = await showPSheet<bool>(
+    context,
+    SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const SheetHandle(),
+            const SizedBox(height: 8),
+            Text(title, style: PT.sectionTitle),
+            const SizedBox(height: 8),
+            Text(body, style: PT.small),
+            const SizedBox(height: 20),
+            Row(
+              children: [
+                Expanded(
+                  child: TonalButton(
+                      label: 'Cancel',
+                      onTap: () => Navigator.pop(context, false)),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _DangerButton(
+                    label: confirmLabel,
+                    destructive: destructive,
+                    onTap: () => Navigator.pop(context, true),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+  return ok == true;
+}
+
+class _DangerButton extends StatelessWidget {
+  final String label;
+  final bool destructive;
+  final VoidCallback onTap;
+
+  const _DangerButton(
+      {required this.label, required this.destructive, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final color = destructive ? P.err : P.accent;
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        height: 52,
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.14),
+          borderRadius: BorderRadius.circular(P.r20),
+          border: Border.all(color: color.withValues(alpha: 0.5)),
+        ),
+        alignment: Alignment.center,
+        child: Text(label,
+            style: PT.label.copyWith(color: color, fontSize: 15)),
+      ),
+    );
+  }
+}
+
+/// One-line result toast.
+void toast(BuildContext context, String message) {
+  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+}
+
+/// Error toast.
+void toastError(BuildContext context, Object e) {
+  ScaffoldMessenger.of(context).showSnackBar(
+    SnackBar(content: Text('Failed: $e')),
+  );
+}
+
+/// Label/value row for detail sheets.
+class KvRow extends StatelessWidget {
+  final String label;
+  final String value;
+  final bool mono;
+
+  const KvRow(this.label, this.value, {super.key, this.mono = false});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 110,
+            child: Text(label, style: PT.meta),
+          ),
+          Expanded(
+            child: SelectableText(
+              value,
+              style: mono
+                  ? PT.mono.copyWith(fontSize: 12, color: P.ink)
+                  : PT.small.copyWith(color: P.ink),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}

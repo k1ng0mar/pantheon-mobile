@@ -1,8 +1,16 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pantheon_mobile/models/approval.dart';
+import 'package:pantheon_mobile/models/config_doc.dart';
+import 'package:pantheon_mobile/models/env_key.dart';
+import 'package:pantheon_mobile/models/log_tail.dart';
+import 'package:pantheon_mobile/models/mcp_server.dart';
+import 'package:pantheon_mobile/models/memory_entry.dart';
 import 'package:pantheon_mobile/models/overview.dart';
 import 'package:pantheon_mobile/models/pantheon_run.dart';
+import 'package:pantheon_mobile/models/plugin.dart';
 import 'package:pantheon_mobile/models/scheduled_job.dart';
+import 'package:pantheon_mobile/models/schedule_template.dart';
+import 'package:pantheon_mobile/models/skill.dart';
 import 'package:pantheon_mobile/models/usage_stats.dart';
 
 void main() {
@@ -144,5 +152,117 @@ void scheduledJobTests() {
       'paused': false,
     });
     expect(j.kind.type, 'cron');
+  });
+
+  test('MemoryEntry parses browse shape', () {
+    final e = MemoryEntry.fromJson({
+      'key': 'user.pref',
+      'value': 'concise replies',
+      'layer': 'agent',
+      'namespace': 'agent:default',
+      'provenance': {
+        'source': 'chat',
+        'origin': 'user',
+        'trust': 'high'
+      },
+      'recorded_at_ms': 1759090000000,
+      'score': null,
+    });
+    expect(e.key, 'user.pref');
+    expect(e.provenanceSource, 'chat');
+    expect(e.recordedAtMs, 1759090000000);
+  });
+
+  test('ConfigDoc exposes agents table', () {
+    final d = ConfigDoc.fromJson({
+      'path': '/data/config.toml',
+      'values': {
+        'model': {'provider': 'anthropic', 'model': 'opus'},
+        'agents': {
+          'atlas': {'display_name': 'Atlas', 'policy': 'coder'}
+        },
+      },
+      'raw': '…',
+    });
+    expect(d.agents['atlas']!['policy'], 'coder');
+  });
+
+  test('EnvKey parses redacted shape', () {
+    final k = EnvKey.fromJson({
+      'key': 'OPENAI_API_KEY',
+      'redacted': 'sk••••1234',
+      'used_by': ['model.api_key_env'],
+      'shadowed_by_process_env': false,
+    });
+    expect(k.redacted, 'sk••••1234');
+    expect(k.usedBy, ['model.api_key_env']);
+  });
+
+  test('Skill parses list shape', () {
+    final s = Skill.fromJson({
+      'name': 'pdf',
+      'description': 'read pdfs',
+      'origin': 'bundled',
+      'path': '/x',
+      'enabled': false,
+      'scope': 'pantheon',
+    });
+    expect(s.enabled, isFalse);
+    expect(s.scope, 'pantheon');
+  });
+
+  test('McpServerGroup parses list shape', () {
+    final g = McpServerGroup.fromJson({
+      'source': 'pantheon',
+      'origin': 'declaration',
+      'servers': [
+        {
+          'name': 'fs',
+          'transport': 'stdio',
+          'command': 'npx',
+          'args': ['-y', 'x'],
+          'enabled': true,
+          'readiness': 'ready',
+          'approved': true,
+        }
+      ],
+    });
+    expect(g.servers.single.describe, 'npx -y x');
+    expect(g.servers.single.readiness, 'ready');
+  });
+
+  test('Plugin parses list shape', () {
+    final p = Plugin.fromJson({
+      'kind': 'tool',
+      'name': 'browser',
+      'version': '0.2.0',
+      'enabled': true,
+      'bundled': false,
+      'approved': false,
+    });
+    expect(p.kind, 'tool');
+    expect(p.approved, isFalse);
+  });
+
+  test('ScheduleTemplate parses list shape', () {
+    final t = ScheduleTemplate.fromJson({
+      'name': 'brief',
+      'description': 'daily brief',
+      'schedule': {'type': 'cron', 'expr': '0 9 * * *'},
+      'vars': [
+        {'name': 'topic', 'default': 'news', 'reserved': false}
+      ],
+    });
+    expect(t.scheduleDetail, '0 9 * * *');
+    expect(t.vars.single.defaultValue, 'news');
+  });
+
+  test('LogTail parses tail shape', () {
+    final l = LogTail.fromJson({
+      'source': 'agent',
+      'lines': ['a', 'b'],
+    });
+    expect(l.lines.length, 2);
+    expect(l.note, isNull);
   });
 }
