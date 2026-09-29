@@ -11,7 +11,9 @@ import '../widgets/states.dart';
 
 /// A session as a real chat: transcript bubbles, live polling while the
 /// run is active, and a composer that sends into the run via
-/// `POST /api/runs/:id/message`. Finished runs get a disabled composer.
+/// `POST /api/runs/:id/message`. Settled sessions keep their composer:
+/// completed/failed/canceled only end the latest turn — the runtime
+/// reopens the run when a new message arrives.
 class SessionDetailScreen extends StatefulWidget {
   final PantheonApi api;
   final String runId;
@@ -35,8 +37,17 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
   bool _sending = false;
   bool _atBottom = true;
 
-  static bool _isActive(String status) =>
+  static bool _isLive(String status) =>
       status == 'running' || status == 'awaiting_approval';
+
+  /// The composer stays enabled for settled sessions: completed/failed/
+  /// canceled mark the end of a turn, not the death of the session — the
+  /// runtime reopens the run when a new message arrives.
+  static bool _canChat(String status) =>
+      _isLive(status) ||
+      status == 'completed' ||
+      status == 'failed' ||
+      status == 'canceled';
 
   @override
   void initState() {
@@ -84,8 +95,8 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
   }
 
   void _syncPolling(String status) {
-    final active = _isActive(status);
-    if (active && _poll == null) {
+    final live = _isLive(status);
+    if (live && _poll == null) {
       _poll = Timer.periodic(const Duration(seconds: 3), (_) => _pollOnce());
     } else if (!active) {
       _poll?.cancel();
@@ -123,7 +134,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
     final text = _composer.text.trim();
     if (text.isEmpty || _sending) return;
     final run = _run;
-    if (run == null || !_isActive(run.status)) return;
+    if (run == null || !_canChat(run.status)) return;
     setState(() => _sending = true);
     _composer.clear();
     final optimistic =
@@ -132,13 +143,17 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
     _animateToBottom();
     try {
       await widget.api.sendRunMessage(run.id, text);
-      // Pull the authoritative transcript right away.
+      // Pull the authoritative transcript right away, and make sure the
+      // poller is running: a settled session just reopened, so replies
+      // stream in from here.
+      _poll ??=
+          Timer.periodic(const Duration(seconds: 3), (_) => _pollOnce());
       await _pollOnce();
     } on PantheonRunFinishedException {
       if (!mounted) return;
       setState(() => _messages.remove(optimistic));
       await _load();
-      toast(context, 'This session finished before your message landed.');
+      toast(context, 'This session could not be reopened.');
     } catch (e) {
       if (!mounted) return;
       setState(() => _messages.remove(optimistic));
@@ -290,12 +305,10 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
   }
 
   Widget _chatTab() {
-    final run = _run!;
-    final active = _isActive(run.status);
     return Column(
       children: [
         Expanded(child: _messageList()),
-        _composerBar(active),
+        _composerBar(),
       ],
     );
   }
@@ -317,7 +330,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
     );
   }
 
-  Widget _composerBar(bool active) {
+  Widget _composerBar() {
     return Container(
       decoration: const BoxDecoration(
         color: P.tabBar,
@@ -327,7 +340,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
         top: false,
         child: Padding(
           padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-          child: active ? _composerRow() : _finishedNote(),
+          child: _composerRow(),
         ),
       ),
     );
@@ -377,21 +390,6 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
                   : const Icon(Icons.arrow_upward_rounded,
                       color: Colors.white, size: 22),
             ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _finishedNote() {
-    return Row(
-      children: [
-        const Icon(Icons.lock_outline_rounded, size: 18, color: P.inkFaint),
-        const SizedBox(width: 10),
-        Expanded(
-          child: Text(
-            'This session has finished. Start a new chat from Sessions to continue.',
-            style: PT.small.copyWith(color: P.inkMuted),
           ),
         ),
       ],
