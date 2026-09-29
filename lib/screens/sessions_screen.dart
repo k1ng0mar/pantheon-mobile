@@ -5,6 +5,7 @@ import '../services/pantheon_api.dart';
 import '../theme.dart';
 import '../widgets/buttons.dart';
 import '../widgets/chips.dart';
+import '../widgets/export_sheet.dart';
 import '../widgets/forms.dart';
 import '../widgets/states.dart';
 import 'session_detail_screen.dart';
@@ -307,6 +308,7 @@ class _SessionsScreenState extends State<SessionsScreen> {
         : '${s.turns} turns · ${s.toolCalls} tool calls';
     return InkWell(
       onTap: () => Navigator.of(context).push(_detailRoute(s)),
+      onLongPress: () => _sessionActions(s),
       child: Padding(
         padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
         child: Row(
@@ -359,6 +361,114 @@ class _SessionsScreenState extends State<SessionsScreen> {
                 ],
               ),
             ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Long-press actions on a session row: rename, export, fork, delete.
+  Future<void> _sessionActions(PantheonRun s) async {
+    final action = await showPSheet<String>(
+      context,
+      SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const SheetHandle(),
+              const SizedBox(height: 8),
+              Text(s.displayTitle,
+                  style: PT.rowTitle,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis),
+              const SizedBox(height: 12),
+              _actionRow(Icons.edit_outlined, 'Rename',
+                  () => Navigator.pop(context, 'rename')),
+              _actionRow(Icons.ios_share_rounded, 'Export transcript',
+                  () => Navigator.pop(context, 'export')),
+              _actionRow(Icons.call_split_rounded, 'Fork session',
+                  () => Navigator.pop(context, 'fork')),
+              _actionRow(Icons.delete_outline_rounded, 'Delete',
+                  () => Navigator.pop(context, 'delete'),
+                  destructive: true),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (action == null || !mounted) return;
+    switch (action) {
+      case 'rename':
+        final title = await promptText(context,
+            title: 'Rename session', initial: s.title);
+        if (title == null || title.isEmpty || !mounted) return;
+        try {
+          await widget.api.renameRun(s.id, title);
+          toast(context, 'Renamed.');
+          await _load();
+        } catch (e) {
+          if (mounted) toastError(context, e);
+        }
+        break;
+      case 'export':
+        try {
+          final bytes = await widget.api.exportRun(s.id);
+          if (!mounted) return;
+          await showExportSheet(context, s.displayTitle, bytes);
+        } catch (e) {
+          if (mounted) toastError(context, e);
+        }
+        break;
+      case 'fork':
+        try {
+          final forked = await widget.api.forkRun(s.id);
+          if (!mounted) return;
+          toast(context, 'Forked.');
+          await Navigator.of(context).push(_detailRoute(forked));
+          await _load();
+        } catch (e) {
+          if (mounted) toastError(context, e);
+        }
+        break;
+      case 'delete':
+        final ok = await confirmAction(
+          context,
+          title: 'Delete session?',
+          body: '“${s.displayTitle}” will be deleted. This cannot be undone.',
+          confirmLabel: 'Delete',
+          destructive: true,
+        );
+        if (ok && mounted) {
+          try {
+            await widget.api.deleteRun(s.id);
+            toast(context, 'Deleted.');
+            await _load();
+          } catch (e) {
+            if (mounted) toastError(context, e);
+          }
+        }
+        break;
+    }
+  }
+
+  Widget _actionRow(IconData icon, String label, VoidCallback onTap,
+      {bool destructive = false}) {
+    final color = destructive ? P.err : P.ink;
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(P.r12),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 12),
+        child: Row(
+          children: [
+            Icon(icon, size: 20, color: color),
+            const SizedBox(width: 14),
+            Text(label,
+                style: PT.rowTitle.copyWith(
+                    fontSize: 15, color: color)),
           ],
         ),
       ),
