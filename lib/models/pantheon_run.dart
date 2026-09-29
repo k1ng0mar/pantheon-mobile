@@ -43,6 +43,8 @@ class PantheonRun {
   final int turns;
   final int toolCalls;
   final int approvalsPending;
+  final int updatedMs;
+  final String? lastActivity;
   final List<TranscriptItem> transcript;
   final List<TimelineItem> timeline;
 
@@ -60,6 +62,8 @@ class PantheonRun {
     required this.turns,
     required this.toolCalls,
     required this.approvalsPending,
+    this.updatedMs = 0,
+    this.lastActivity,
     this.transcript = const [],
     this.timeline = const [],
   });
@@ -87,6 +91,8 @@ class PantheonRun {
       turns: (j['turns'] as num?)?.toInt() ?? 0,
       toolCalls: (j['tool_calls'] as num?)?.toInt() ?? 0,
       approvalsPending: (j['approvals_pending'] as num?)?.toInt() ?? 0,
+      updatedMs: (j['updated_ms'] as num?)?.toInt() ?? 0,
+      lastActivity: j['last_activity'] as String?,
       transcript: listOf(j['transcript'], TranscriptItem.fromJson),
       timeline: listOf(j['timeline'], TimelineItem.fromJson),
     );

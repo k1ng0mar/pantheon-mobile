@@ -1,11 +1,21 @@
 import 'package:flutter/material.dart';
 
 import 'screens/approvals_screen.dart';
+import 'screens/config_screen.dart';
 import 'screens/connect_screen.dart';
+import 'screens/gateway_screen.dart';
 import 'screens/home_screen.dart';
-import 'screens/runs_screen.dart';
+import 'screens/keys_screen.dart';
+import 'screens/logs_screen.dart';
+import 'screens/mcp_screen.dart';
+import 'screens/memory_screen.dart';
+import 'screens/models_screen.dart';
+import 'screens/plugins_screen.dart';
+import 'screens/profiles_screen.dart';
+import 'screens/sessions_screen.dart';
 import 'screens/schedule_screen.dart';
 import 'screens/settings_screen.dart';
+import 'screens/skills_screen.dart';
 import 'screens/stats_screen.dart';
 import 'services/pantheon_api.dart';
 import 'services/settings_store.dart';
@@ -199,7 +209,7 @@ class _MainShellState extends State<MainShell> {
   Widget build(BuildContext context) {
     final pages = [
       HomeScreen(api: _api, pendingApprovals: _pendingApprovals),
-      RunsScreen(api: _api),
+      SessionsScreen(api: _api),
       ApprovalsScreen(api: _api, pendingApprovals: _pendingApprovals),
       StatsScreen(api: _api),
       MoreTab(
@@ -240,7 +250,7 @@ class _NyxTabBar extends StatelessWidget {
   Widget build(BuildContext context) {
     const items = [
       _TabDef(Icons.home_outlined, Icons.home_rounded, 'Home'),
-      _TabDef(Icons.bolt_outlined, Icons.bolt_rounded, 'Runs'),
+      _TabDef(Icons.forum_outlined, Icons.forum_rounded, 'Sessions'),
       _TabDef(Icons.rule_outlined, Icons.rule_rounded, 'Approvals'),
       _TabDef(Icons.bar_chart_outlined, Icons.bar_chart_rounded, 'Usage'),
       _TabDef(Icons.more_horiz_rounded, Icons.more_horiz_rounded, 'More'),
@@ -323,7 +333,9 @@ class _TabDef {
   const _TabDef(this.icon, this.activeIcon, this.label);
 }
 
-/// The "More" tab: Nyx-style hub list of Schedule / Settings.
+/// The "More" tab: Nyx-style hub for the full control plane —
+/// tasks, profiles, models, memory, skills, plugins, MCP, configs,
+/// keys, logs, gateway, and app settings.
 class MoreTab extends StatelessWidget {
   final PantheonApi api;
   final ConnectionSettings settings;
@@ -345,35 +357,117 @@ class MoreTab extends StatelessWidget {
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
         children: [
+          const _HubSection('Control'),
           _hubCard(
             context,
             icon: Icons.schedule_outlined,
-            title: 'Schedule',
-            subtitle: 'Recurring jobs and triggers',
-            onTap: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => ScheduleScreen(api: api)),
-            ),
+            title: 'Tasks',
+            subtitle: 'Scheduled jobs, triggers, templates',
+            onTap: () => _push(context, ScheduleScreen(api: api)),
           ),
           const SizedBox(height: 12),
+          _hubCard(
+            context,
+            icon: Icons.hub_outlined,
+            title: 'Gateway',
+            subtitle: 'Always-on service status and restart',
+            onTap: () => _push(context, GatewayScreen(api: api)),
+          ),
+          const _HubSection('Runtime'),
+          _hubCard(
+            context,
+            icon: Icons.person_outline_rounded,
+            title: 'Profiles',
+            subtitle: 'Agent identities',
+            onTap: () => _push(context, ProfilesScreen(api: api)),
+          ),
+          const SizedBox(height: 12),
+          _hubCard(
+            context,
+            icon: Icons.smart_toy_outlined,
+            title: 'Models',
+            subtitle: 'Default and auxiliary models',
+            onTap: () => _push(context, ModelsScreen(api: api)),
+          ),
+          const SizedBox(height: 12),
+          _hubCard(
+            context,
+            icon: Icons.psychology_outlined,
+            title: 'Memory',
+            subtitle: 'Long-term memory browser',
+            onTap: () => _push(context, MemoryScreen(api: api)),
+          ),
+          const SizedBox(height: 12),
+          _hubCard(
+            context,
+            icon: Icons.extension_outlined,
+            title: 'Skills',
+            subtitle: 'Install, toggle, import',
+            onTap: () => _push(context, SkillsScreen(api: api)),
+          ),
+          const SizedBox(height: 12),
+          _hubCard(
+            context,
+            icon: Icons.widgets_outlined,
+            title: 'Plugins',
+            subtitle: 'Tool plugins and hooks',
+            onTap: () => _push(context, PluginsScreen(api: api)),
+          ),
+          const SizedBox(height: 12),
+          _hubCard(
+            context,
+            icon: Icons.cable_outlined,
+            title: 'Tools & MCP',
+            subtitle: 'MCP servers, health, reload',
+            onTap: () => _push(context, McpScreen(api: api)),
+          ),
+          const _HubSection('System'),
+          _hubCard(
+            context,
+            icon: Icons.tune_rounded,
+            title: 'Configs',
+            subtitle: 'config.toml editor and schema',
+            onTap: () => _push(context, ConfigScreen(api: api)),
+          ),
+          const SizedBox(height: 12),
+          _hubCard(
+            context,
+            icon: Icons.key_outlined,
+            title: 'Keys',
+            subtitle: '.env API key manager',
+            onTap: () => _push(context, KeysScreen(api: api)),
+          ),
+          const SizedBox(height: 12),
+          _hubCard(
+            context,
+            icon: Icons.terminal_rounded,
+            title: 'Logs',
+            subtitle: 'Agent, errors, gateway tails',
+            onTap: () => _push(context, LogsScreen(api: api)),
+          ),
+          const _HubSection('App'),
           _hubCard(
             context,
             icon: Icons.settings_outlined,
             title: 'Settings',
             subtitle: 'Connection, sign out, about',
-            onTap: () => Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (_) => SettingsScreen(
-                  api: api,
-                  settings: settings,
-                  onSignOut: onSignOut,
-                  onReconnect: onReconnect,
-                ),
+            onTap: () => _push(
+              context,
+              SettingsScreen(
+                api: api,
+                settings: settings,
+                onSignOut: onSignOut,
+                onReconnect: onReconnect,
               ),
             ),
           ),
         ],
       ),
     );
+  }
+
+  void _push(BuildContext context, Widget screen) {
+    Navigator.of(context).push(MaterialPageRoute(builder: (_) => screen));
   }
 
   Widget _hubCard(BuildContext context,
@@ -422,6 +516,21 @@ class MoreTab extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// Section header inside the More hub.
+class _HubSection extends StatelessWidget {
+  final String text;
+
+  const _HubSection(this.text);
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(4, 18, 4, 8),
+      child: Text(text.toUpperCase(), style: PT.overline),
     );
   }
 }
