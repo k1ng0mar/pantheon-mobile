@@ -16,13 +16,24 @@ import '../models/plugin.dart';
 import '../models/scheduled_job.dart';
 import '../models/schedule_template.dart';
 import '../models/skill.dart';
+import '../models/todo_item.dart';
 import '../models/usage_stats.dart';
 
-/// Thrown when a message is sent to a run that already finished (HTTP 409).
+/// Thrown when a message is sent to a run that already finished (HTTP 409
+/// with error code RUN_FINISHED).
 class PantheonRunFinishedException extends PantheonApiException {
   PantheonRunFinishedException(String body) : super(409, body);
   @override
   String toString() => 'This session has finished; it can\'t take new messages.';
+}
+
+/// Thrown when a message is sent while a turn is already running
+/// (HTTP 409 with error code TURN_IN_FLIGHT). The caller can offer to
+/// queue or steer instead.
+class PantheonTurnInFlightException extends PantheonApiException {
+  PantheonTurnInFlightException(String body) : super(409, body);
+  @override
+  String toString() => 'A turn is already running in this session.';
 }
 
 class PantheonApiException implements Exception {
@@ -46,6 +57,27 @@ class PantheonUnreachableException implements Exception {
   PantheonUnreachableException(this.message);
   @override
   String toString() => message;
+}
+
+/// How `POST /api/runs/:id/message` resolved.
+enum MessageSendOutcome {
+  /// The message started (or joined) a turn immediately.
+  sent,
+
+  /// A turn was in flight; the message was parked in the one-slot queue.
+  queued,
+
+  /// The running turn was redirected and the message queued behind it.
+  steered,
+}
+
+class MessageSendResult {
+  final MessageSendOutcome outcome;
+  MessageSendResult(this.outcome);
+
+  bool get sent => outcome == MessageSendOutcome.sent;
+  bool get queued => outcome == MessageSendOutcome.queued;
+  bool get steered => outcome == MessageSendOutcome.steered;
 }
 
 /// HTTP client for the Pantheon dashboard API
@@ -128,11 +160,14 @@ class PantheonApi {
     return _decode(res);
   }
 
-  /// Raw-bytes GET for download endpoints (config export).
-  Future<List<int>> _getBytes(String path) async {
+  /// Raw-bytes GET for download endpoints (config export, run export).
+  Future<List<int>> _getBytes(String path,
+      [Map<String, String>? query]) async {
     http.Response res;
     try {
-      res = await http.get(_uri(path), headers: _headers).timeout(_timeout);
+      res = await http
+          .get(_uri(path, query), headers: _headers)
+          .timeout(_timeout);
     } on TimeoutException {
       throw PantheonUnreachableException('Timed out reaching $baseUrl.');
     } catch (e) {
@@ -148,13 +183,36 @@ class PantheonApi {
   Map<String, dynamic> _decode(http.Response res) {
     if (res.statusCode == 401) throw PantheonAuthException();
     if (res.statusCode == 409) {
-      throw PantheonRunFinishedException(_serverMessage(res.body));
+      final msg = _serverMessage(res.body);
+      switch (_serverCode(res.body)) {
+        case 'TURN_IN_FLIGHT':
+          throw PantheonTurnInFlightException(msg);
+        case 'RUN_FINISHED':
+          throw PantheonRunFinishedException(msg);
+        default:
+          throw PantheonApiException(res.statusCode, msg);
+      }
     }
     if (res.statusCode < 200 || res.statusCode >= 300) {
       throw PantheonApiException(res.statusCode, _serverMessage(res.body));
     }
     final v = jsonDecode(res.body);
     return v is Map ? v.cast<String, dynamic>() : {'value': v};
+  }
+
+  /// The dashboard wraps errors as {"ok": false, "error": {"code": "…",
+  /// "message": "…"}} — extract the machine code for typed 409 handling.
+  static String? _serverCode(String body) {
+    try {
+      final v = jsonDecode(body);
+      if (v is Map) {
+        final err = v['error'];
+        if (err is Map && err['code'] is String) {
+          return err['code'] as String;
+        }
+      }
+    } catch (_) {}
+    return null;
   }
 
   /// The dashboard wraps errors as {"ok": false, "error": {"code": "…",
@@ -235,16 +293,114 @@ class PantheonApi {
     return PantheonRun.fromJson(await _post('/api/runs', body));
   }
 
-  /// Send a follow-up message into a live run. Throws
-  /// [PantheonRunFinishedException] (HTTP 409) when the run is done.
-  Future<void> sendRunMessage(String runId, String message) async {
-    await _post('/api/runs/${Uri.encodeComponent(runId)}/message',
-        {'message': message});
+  /// Send a follow-up message into a run.
+  ///
+  /// - 200 → [MessageSendOutcome.sent]: the turn was admitted.
+  /// - 202 with `queued: true` → [MessageSendOutcome.queued]: a turn was
+  ///   in flight and the message was parked in the one-slot queue.
+  /// - 202 with `steered: true` → [MessageSendOutcome.steered]: the
+  ///   running turn was redirected and the message queued behind it.
+  /// - 409 TURN_IN_FLIGHT → [PantheonTurnInFlightException] when neither
+  ///   `queue` nor `steer` was requested.
+  /// - 409 RUN_FINISHED → [PantheonRunFinishedException].
+  Future<MessageSendResult> sendRunMessage(String runId, String message,
+      {bool queue = false, bool steer = false}) async {
+    final body = <String, dynamic>{'message': message};
+    if (queue) body['queue'] = true;
+    if (steer) body['steer'] = true;
+    final j = await _post(
+        '/api/runs/${Uri.encodeComponent(runId)}/message', body);
+    if (j['steered'] == true) {
+      return MessageSendResult(MessageSendOutcome.steered);
+    }
+    if (j['queued'] == true) {
+      return MessageSendResult(MessageSendOutcome.queued);
+    }
+    return MessageSendResult(MessageSendOutcome.sent);
   }
+
+  /// Cooperatively interrupt the running turn, if any.
+  Future<void> cancelRun(String id) async {
+    await _post('/api/runs/${Uri.encodeComponent(id)}/cancel');
+  }
+
+  /// Drop the queued follow-up message, if any.
+  Future<void> clearQueue(String id) async {
+    await _delete('/api/runs/${Uri.encodeComponent(id)}/queue');
+  }
+
+  /// Answer a parked `ask_user` question and resume the turn.
+  Future<void> answerInput(
+      String id, String callId, String answer) async {
+    await _post('/api/runs/${Uri.encodeComponent(id)}/input',
+        {'call_id': callId, 'answer': answer});
+  }
+
+  /// Rename a session.
+  Future<void> renameRun(String id, String title) async {
+    await _put('/api/runs/${Uri.encodeComponent(id)}/title',
+        {'title': title});
+  }
+
+  /// Switch the session's agent mode ("plan" | "build"). Returns the
+  /// effective mode.
+  Future<String> setRunMode(String id, String mode) async {
+    final j = await _post('/api/runs/${Uri.encodeComponent(id)}/mode',
+        {'mode': mode});
+    return j['mode'] as String? ?? mode;
+  }
+
+  /// Compress the session's context now. Returns the human summary.
+  Future<String> compressRun(String id) async {
+    final j = await _post('/api/runs/${Uri.encodeComponent(id)}/compress');
+    final report = j['report'] as String?;
+    final summary = j['summary'] as String?;
+    return (report != null && report.isNotEmpty)
+        ? report
+        : (summary != null && summary.isNotEmpty)
+            ? summary
+            : 'Context compressed.';
+  }
+
+  /// Fork the run at user turn [turn] (1-based; null = latest) into a
+  /// brand-new run. Returns the new run's detail.
+  Future<PantheonRun> forkRun(String id, {int? turn}) async {
+    final body = <String, dynamic>{};
+    if (turn != null) body['turn'] = turn;
+    final j =
+        await _post('/api/runs/${Uri.encodeComponent(id)}/fork', body);
+    final newId = j['run_id'] as String?;
+    if (newId == null || newId.isEmpty) {
+      throw PantheonApiException(500, 'Fork returned no run_id.');
+    }
+    return runDetail(newId);
+  }
+
+  /// Download the session transcript as markdown bytes.
+  Future<List<int>> exportRun(String id) => _getBytes(
+      '/api/runs/${Uri.encodeComponent(id)}/export', {'format': 'markdown'});
 
   /// Delete a run from the ledger.
   Future<void> deleteRun(String id) async {
     await _delete('/api/runs/${Uri.encodeComponent(id)}');
+  }
+
+  // ------------------------------------------------------------------
+  // Session todos
+  // ------------------------------------------------------------------
+
+  Future<List<TodoItem>> getTodos(String id) async {
+    final j = await _get('/api/runs/${Uri.encodeComponent(id)}/todos');
+    final list = (j['todos'] as List?) ?? [];
+    return list
+        .whereType<Map>()
+        .map((e) => TodoItem.fromJson(e.cast<String, dynamic>()))
+        .toList();
+  }
+
+  Future<void> saveTodos(String id, List<TodoItem> todos) async {
+    await _put('/api/runs/${Uri.encodeComponent(id)}/todos',
+        {'todos': todos.map((t) => t.toJson()).toList()});
   }
 
   // ------------------------------------------------------------------

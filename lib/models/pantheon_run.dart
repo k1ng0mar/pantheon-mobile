@@ -1,3 +1,5 @@
+import 'pending_input.dart';
+
 class TranscriptItem {
   final String type; // message | reasoning
   final String? role;
@@ -29,6 +31,23 @@ class TimelineItem {
       );
 }
 
+/// Token usage snapshot from `context_tokens: {input, output, total}`.
+class ContextTokens {
+  final int input;
+  final int output;
+  final int total;
+
+  const ContextTokens({this.input = 0, this.output = 0, this.total = 0});
+
+  factory ContextTokens.fromJson(Map<String, dynamic> j) => ContextTokens(
+        input: (j['input'] as num?)?.toInt() ?? 0,
+        output: (j['output'] as num?)?.toInt() ?? 0,
+        total: (j['total'] as num?)?.toInt() ??
+            ((j['input'] as num?)?.toInt() ?? 0) +
+                ((j['output'] as num?)?.toInt() ?? 0),
+      );
+}
+
 class PantheonRun {
   final String id;
   final String status;
@@ -47,6 +66,10 @@ class PantheonRun {
   final String? lastActivity;
   final List<TranscriptItem> transcript;
   final List<TimelineItem> timeline;
+  final List<PendingInput> pendingInput;
+  final String? queuedMessage;
+  final String mode; // plan | build
+  final ContextTokens contextTokens;
 
   PantheonRun({
     required this.id,
@@ -66,6 +89,10 @@ class PantheonRun {
     this.lastActivity,
     this.transcript = const [],
     this.timeline = const [],
+    this.pendingInput = const [],
+    this.queuedMessage,
+    this.mode = 'build',
+    this.contextTokens = const ContextTokens(),
   });
 
   factory PantheonRun.fromJson(Map<String, dynamic> j) {
@@ -77,6 +104,7 @@ class PantheonRun {
           .toList();
     }
 
+    final ctx = j['context_tokens'];
     return PantheonRun(
       id: j['id'] as String? ?? '',
       status: j['status'] as String? ?? 'unknown',
@@ -95,6 +123,12 @@ class PantheonRun {
       lastActivity: j['last_activity'] as String?,
       transcript: listOf(j['transcript'], TranscriptItem.fromJson),
       timeline: listOf(j['timeline'], TimelineItem.fromJson),
+      pendingInput: listOf(j['pending_input'], PendingInput.fromJson),
+      queuedMessage: j['queued_message'] as String?,
+      mode: j['mode'] as String? ?? 'build',
+      contextTokens: ctx is Map
+          ? ContextTokens.fromJson(ctx.cast<String, dynamic>())
+          : const ContextTokens(),
     );
   }
 
