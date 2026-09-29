@@ -9,10 +9,12 @@ import '../models/todo_item.dart';
 import '../services/app_preferences.dart';
 import '../services/pantheon_api.dart';
 import '../theme.dart';
+import '../widgets/agent_avatar.dart';
 import '../widgets/buttons.dart';
 import '../widgets/chips.dart';
 import '../widgets/export_sheet.dart';
 import '../widgets/forms.dart';
+import '../widgets/message_content.dart';
 import '../widgets/states.dart';
 import '../widgets/todos_sheet.dart';
 
@@ -1497,14 +1499,23 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
             children: [
               if (!isUser)
                 Padding(
-                  padding: const EdgeInsets.only(bottom: 4),
-                  child: Text((t.role ?? 'assistant').toUpperCase(),
-                      style: PT.monoEyebrow
-                          .copyWith(color: isTool ? P.info : P.accent)),
+                  padding: const EdgeInsets.only(bottom: 6),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const AgentAvatar(size: 22),
+                      const SizedBox(width: 8),
+                      Text((t.role ?? 'assistant').toUpperCase(),
+                          style: PT.monoEyebrow
+                              .copyWith(color: isTool ? P.info : P.accent)),
+                    ],
+                  ),
                 ),
-              SelectableText(t.content,
-                  style: PT.body.copyWith(
-                      fontSize: 14, color: isUser ? Colors.white : P.ink)),
+              MessageContent(
+                text: t.content,
+                textStyle: PT.body.copyWith(
+                    fontSize: 14, color: isUser ? Colors.white : P.ink),
+              ),
             ],
           ),
         ),
@@ -2194,9 +2205,11 @@ class _ThinkingBlockState extends State<_ThinkingBlock> {
           if (_open)
             Padding(
               padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-              child: SelectableText(widget.content,
-                  style: PT.small.copyWith(
-                      fontStyle: FontStyle.italic, color: P.inkMuted)),
+              child: MessageContent(
+                text: widget.content,
+                textStyle: PT.small.copyWith(
+                    fontStyle: FontStyle.italic, color: P.inkMuted),
+              ),
             ),
         ],
       ),
