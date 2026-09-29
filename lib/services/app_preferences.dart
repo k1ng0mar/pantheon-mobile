@@ -34,6 +34,9 @@ class AppPreferences {
   static const _kReduceMotion = 'app.reduce_motion';
   static const _kHaptics = 'app.haptics';
 
+  static const _kCodeTheme = 'app.code_theme'; // github|dracula|atom-one-dark
+  static const _kAgentAvatar = 'app.agent_avatar_path';
+
   static const _kNotifMaster = 'notif.enabled';
   static const _kNotifRunCompleted = 'notif.run_completed';
   static const _kNotifRunFailed = 'notif.run_failed';
@@ -68,6 +71,13 @@ class AppPreferences {
 
   final reduceMotion = ValueNotifier<bool>(false);
   final hapticsEnabled = ValueNotifier<bool>(true);
+
+  /// Code block theme id: 'github', 'dracula', or 'atom-one-dark'.
+  final codeTheme = ValueNotifier<String>('dracula');
+
+  /// Custom agent avatar image path (device gallery pick), or null for
+  /// the default avatar.
+  final agentAvatarPath = ValueNotifier<String?>(null);
 
   final notificationsEnabled = ValueNotifier<bool>(true);
   final notifRunCompleted = ValueNotifier<bool>(true);
@@ -115,6 +125,10 @@ class AppPreferences {
 
     reduceMotion.value = p.getBool(_kReduceMotion) ?? false;
     hapticsEnabled.value = p.getBool(_kHaptics) ?? true;
+
+    final storedTheme = p.getString(_kCodeTheme);
+    codeTheme.value = _validCodeTheme(storedTheme) ? storedTheme! : 'dracula';
+    agentAvatarPath.value = p.getString(_kAgentAvatar);
 
     notificationsEnabled.value = p.getBool(_kNotifMaster) ?? true;
     notifRunCompleted.value = p.getBool(_kNotifRunCompleted) ?? true;
@@ -188,6 +202,25 @@ class AppPreferences {
       _setBool(_kReduceMotion, reduceMotion, v, bump: true);
   Future<void> setHapticsEnabled(bool v) =>
       _setBool(_kHaptics, hapticsEnabled, v, bump: true);
+
+  Future<void> setCodeTheme(String t) async {
+    if (!_validCodeTheme(t)) return;
+    await _setString(_kCodeTheme, codeTheme, t);
+  }
+
+  Future<void> setAgentAvatarPath(String? path) async {
+    agentAvatarPath.value = path;
+    _bump();
+    final sp = await SharedPreferences.getInstance();
+    if (path == null) {
+      await sp.remove(_kAgentAvatar);
+    } else {
+      await sp.setString(_kAgentAvatar, path);
+    }
+  }
+
+  static bool _validCodeTheme(String? t) =>
+      t == 'github' || t == 'dracula' || t == 'atom-one-dark';
 
   // Notification setters (persisted; no root rebuild needed).
 

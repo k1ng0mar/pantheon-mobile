@@ -13,6 +13,8 @@ dependencies:
   http: ^1.2.2
   shared_preferences: ^2.5.5
   flutter_secure_storage: ^11.2.0
+  image_picker: ^1.1.2
+  syntax_highlight: ^0.5.0
 
 dev_dependencies:
   flutter_test:
@@ -26,6 +28,7 @@ flutter:
     - assets/fonts/OFL-spacegrotesk.txt
     - assets/fonts/OFL-inter.txt
     - assets/fonts/OFL-jetbrainsmono.txt
+    - assets/themes/
 
   fonts:
     - family: SpaceGrotesk

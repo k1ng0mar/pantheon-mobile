@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../services/app_preferences.dart';
 import '../theme.dart';
+import '../widgets/agent_avatar.dart';
 import '../widgets/buttons.dart';
 import '../widgets/chips.dart';
+import '../widgets/forms.dart';
 import '../widgets/pantheon_card.dart';
 
 /// Appearance: theme, custom colors, typography, chat, loading indicator,
@@ -252,6 +255,25 @@ class AppearanceScreen extends StatelessWidget {
               ),
             ),
           ),
+          const Overline('Agent'),
+          const PCard(child: _AgentProfileRow()),
+          const Overline('Code blocks'),
+          PCard(
+            child: ValueListenableBuilder<String>(
+              valueListenable: prefs.codeTheme,
+              builder: (_, theme, __) => SegmentedButton<String>(
+                segments: const [
+                  ButtonSegment(value: 'github', label: Text('GitHub')),
+                  ButtonSegment(value: 'dracula', label: Text('Dracula')),
+                  ButtonSegment(
+                      value: 'atom-one-dark', label: Text('Atom One Dark')),
+                ],
+                selected: {theme},
+                onSelectionChanged: (s) => prefs.setCodeTheme(s.first),
+                showSelectedIcon: false,
+              ),
+            ),
+          ),
           const Overline('Loading indicator'),
           PCard(
             child: ValueListenableBuilder<String>(
@@ -338,6 +360,72 @@ class AppearanceScreen extends StatelessWidget {
                 ),
               ],
             ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Agent profile image row: circular preview, gallery pick, remove/reset.
+/// The picked path persists in [AppPreferences.agentAvatarPath]; the chat
+/// avatar reads it live.
+class _AgentProfileRow extends StatefulWidget {
+  const _AgentProfileRow();
+
+  @override
+  State<_AgentProfileRow> createState() => _AgentProfileRowState();
+}
+
+class _AgentProfileRowState extends State<_AgentProfileRow> {
+  bool _picking = false;
+
+  Future<void> _pick() async {
+    if (_picking) return;
+    setState(() => _picking = true);
+    try {
+      final file =
+          await ImagePicker().pickImage(source: ImageSource.gallery);
+      if (file != null) {
+        await AppPreferences.instance.setAgentAvatarPath(file.path);
+      }
+    } catch (e) {
+      if (mounted) toastError(context, e);
+    } finally {
+      if (mounted) setState(() => _picking = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ValueListenableBuilder<String?>(
+      valueListenable: AppPreferences.instance.agentAvatarPath,
+      builder: (_, path, __) => Row(
+        children: [
+          const AgentAvatar(size: 46),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Profile image', style: PT.rowTitle),
+                const SizedBox(height: 2),
+                Text(
+                  path == null ? 'Default avatar' : 'Custom image set',
+                  style: PT.faint,
+                ),
+              ],
+            ),
+          ),
+          if (path != null)
+            TextButton(
+              onPressed: () =>
+                  AppPreferences.instance.setAgentAvatarPath(null),
+              child: Text('Remove', style: PT.label.copyWith(color: P.warn)),
+            ),
+          TonalButton(
+            label: _picking ? 'Picking…' : 'Choose',
+            onTap: _picking ? null : _pick,
           ),
         ],
       ),
