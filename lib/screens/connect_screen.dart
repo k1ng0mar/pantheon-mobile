@@ -97,7 +97,7 @@ class _ConnectScreenState extends State<ConnectScreen>
               children: [
                 _Delayed(
                     index: 0,
-                    child: const Text('Pantheon', style: PT.screenTitle)),
+                    child:  Text('Pantheon', style: PT.screenTitle)),
                 _Delayed(
                     index: 1,
                     child: Padding(
@@ -113,14 +113,14 @@ class _ConnectScreenState extends State<ConnectScreen>
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text('DASHBOARD URL', style: PT.overline),
+                         Text('DASHBOARD URL', style: PT.overline),
                         const SizedBox(height: 8),
                         TextField(
                           controller: _url,
                           keyboardType: TextInputType.url,
                           autocorrect: false,
                           style: PT.body,
-                          decoration: const InputDecoration(
+                          decoration:  InputDecoration(
                             hintText: 'http://192.168.1.10:7171',
                             prefixIcon: Icon(Icons.link_rounded,
                                 color: P.inkFaint, weight: 1.6),
@@ -134,7 +134,7 @@ class _ConnectScreenState extends State<ConnectScreen>
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text('TOKEN', style: PT.overline),
+                         Text('TOKEN', style: PT.overline),
                         const SizedBox(height: 8),
                         TextField(
                           controller: _token,
@@ -143,7 +143,7 @@ class _ConnectScreenState extends State<ConnectScreen>
                           style: PT.mono,
                           decoration: InputDecoration(
                             hintText: 'paste the dashboard token',
-                            prefixIcon: const Icon(Icons.key_outlined,
+                            prefixIcon:  Icon(Icons.key_outlined,
                                 color: P.inkFaint, weight: 1.6),
                             suffixIcon: IconButton(
                               icon: Icon(
@@ -181,7 +181,7 @@ class _ConnectScreenState extends State<ConnectScreen>
                 _Delayed(
                     index: 4,
                     child: _busy
-                        ? const SizedBox(
+                        ?  SizedBox(
                             height: 52,
                             child: Center(
                                 child: SizedBox(

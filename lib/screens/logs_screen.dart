@@ -65,7 +65,7 @@ class _LogsScreenState extends State<LogsScreen> {
         title: const Text('Logs'),
         actions: [
           IconButton(
-            icon: const Icon(Icons.refresh_rounded,
+            icon:  Icon(Icons.refresh_rounded,
                 color: P.inkSecondary, weight: 1.6),
             onPressed: _load,
           ),
@@ -119,12 +119,12 @@ class _LogsScreenState extends State<LogsScreen> {
               style: PT.mono.copyWith(color: P.ink),
               decoration: InputDecoration(
                 hintText: 'grep…',
-                prefixIcon: const Icon(Icons.search_rounded,
+                prefixIcon:  Icon(Icons.search_rounded,
                     color: P.inkFaint, weight: 1.6),
                 suffixIcon: _grep.text.isEmpty
                     ? null
                     : IconButton(
-                        icon: const Icon(Icons.clear_rounded,
+                        icon:  Icon(Icons.clear_rounded,
                             color: P.inkFaint),
                         onPressed: () {
                           _grep.clear();

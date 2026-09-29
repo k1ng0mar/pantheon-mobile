@@ -74,7 +74,7 @@ class _ConfigScreenState extends State<ConfigScreen> {
           if (_tab == 0 && !_editing)
             IconButton(
               tooltip: 'Copy',
-              icon: const Icon(Icons.copy_rounded,
+              icon:  Icon(Icons.copy_rounded,
                   color: P.inkSecondary, weight: 1.6),
               onPressed: () {
                 Clipboard.setData(ClipboardData(text: _editor.text));
@@ -82,7 +82,7 @@ class _ConfigScreenState extends State<ConfigScreen> {
               },
             ),
           IconButton(
-            icon: const Icon(Icons.refresh_rounded,
+            icon:  Icon(Icons.refresh_rounded,
                 color: P.inkSecondary, weight: 1.6),
             onPressed: _load,
           ),
@@ -136,7 +136,7 @@ class _ConfigScreenState extends State<ConfigScreen> {
       builder: (context, snap) {
         if (snap.connectionState == ConnectionState.waiting &&
             _editor.text.isEmpty) {
-          return const Center(
+          return  Center(
               child: CircularProgressIndicator(color: P.accent));
         }
         if (snap.hasError && _editor.text.isEmpty) {

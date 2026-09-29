@@ -6,12 +6,12 @@ import '../theme.dart';
 class _Pressable extends StatefulWidget {
   final Widget child;
   final VoidCallback? onTap;
-  final BorderRadius borderRadius;
+  final BorderRadius? borderRadius;
 
   const _Pressable({
     required this.child,
     this.onTap,
-    this.borderRadius = const BorderRadius.all(Radius.circular(P.r20)),
+    this.borderRadius,
   });
 
   @override
@@ -112,19 +112,20 @@ class TonalButton extends StatelessWidget {
 class PillButton extends StatelessWidget {
   final String label;
   final VoidCallback? onTap;
-  final Color color;
+  final Color? color;
   final bool filled;
 
   const PillButton({
     super.key,
     required this.label,
     this.onTap,
-    this.color = P.accent,
+    this.color,
     this.filled = true,
   });
 
   @override
   Widget build(BuildContext context) {
+    final c = color ?? P.accent;
     return _Pressable(
       onTap: onTap,
       borderRadius: BorderRadius.circular(999),
@@ -132,14 +133,14 @@ class PillButton extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(999),
-          color: filled ? color : Colors.transparent,
-          border: Border.all(color: color, width: 1),
+          color: filled ? c : Colors.transparent,
+          border: Border.all(color: c, width: 1),
         ),
         child: Text(
           label,
           style: PT.label.copyWith(
             fontSize: 13,
-            color: filled ? Colors.white : color,
+            color: filled ? Colors.white : c,
           ),
         ),
       ),

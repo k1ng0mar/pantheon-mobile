@@ -99,7 +99,7 @@ class _SkillsScreenState extends State<SkillsScreen> {
         title: const Text('Skills'),
         actions: [
           IconButton(
-            icon: const Icon(Icons.refresh_rounded,
+            icon:  Icon(Icons.refresh_rounded,
                 color: P.inkSecondary, weight: 1.6),
             onPressed: _load,
           ),
@@ -194,7 +194,7 @@ class _SkillsScreenState extends State<SkillsScreen> {
             ],
             const SizedBox(height: 10),
             if (busy)
-              const SizedBox(
+               SizedBox(
                 height: 36,
                 child: Center(
                     child: SizedBox(

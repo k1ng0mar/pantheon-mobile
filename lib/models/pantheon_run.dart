@@ -4,13 +4,19 @@ class TranscriptItem {
   final String type; // message | reasoning
   final String? role;
   final String content;
+  /// Milliseconds since epoch when present. The dashboard does not emit
+  /// per-message timestamps yet, so this is usually null; the app stamps
+  /// its own optimistic messages.
+  final int? tsMs;
 
-  TranscriptItem({required this.type, this.role, required this.content});
+  TranscriptItem(
+      {required this.type, this.role, required this.content, this.tsMs});
 
   factory TranscriptItem.fromJson(Map<String, dynamic> j) => TranscriptItem(
         type: j['type'] as String? ?? 'message',
         role: j['role'] as String?,
         content: j['content'] as String? ?? '',
+        tsMs: (j['ts_ms'] as num?)?.toInt(),
       );
 }
 

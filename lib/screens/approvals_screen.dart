@@ -110,7 +110,7 @@ class _ApprovalsScreenState extends State<ApprovalsScreen> {
         title: const Text('Approvals'),
         actions: [
           IconButton(
-            icon: const Icon(Icons.refresh_rounded,
+            icon:  Icon(Icons.refresh_rounded,
                 color: P.inkSecondary, weight: 1.6),
             onPressed: _load,
           ),
@@ -223,7 +223,7 @@ class _ApprovalsScreenState extends State<ApprovalsScreen> {
                 Text('requested ${timeAgo(a.runCreatedMs)}', style: PT.faint),
                 const SizedBox(height: 14),
                 if (busy)
-                  const SizedBox(
+                   SizedBox(
                     height: 42,
                     child: Center(
                         child: SizedBox(

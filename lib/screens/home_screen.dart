@@ -55,7 +55,7 @@ class _HomeScreenState extends State<HomeScreen> {
         title: const Text('Overview'),
         actions: [
           IconButton(
-            icon: const Icon(Icons.refresh_rounded,
+            icon:  Icon(Icons.refresh_rounded,
                 color: P.inkSecondary, weight: 1.6),
             onPressed: _load,
           ),
@@ -152,7 +152,7 @@ class _HomeScreenState extends State<HomeScreen> {
           if (running)
             const LiveDot()
           else
-            const StatusDot(color: P.inkFaint, hollow: true),
+             StatusDot(color: P.inkFaint, hollow: true),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
@@ -222,7 +222,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _statusCard(Overview ov) {
     if (ov.byStatus.isEmpty) {
-      return const PCard(child: Text('No runs yet.', style: PT.small));
+      return  PCard(child: Text('No runs yet.', style: PT.small));
     }
     final entries = ov.byStatus.entries.toList()
       ..sort((a, b) => b.value.compareTo(a.value));

@@ -1,37 +1,133 @@
 import 'package:flutter/material.dart';
 
+import 'services/app_preferences.dart';
+
 /// Pantheon design tokens.
 ///
 /// Nyx's discipline, re-inked: deep purple-navy surfaces, hairline borders
 /// instead of shadows, one purple reserved for interactive/live elements.
 /// Brand gradient: #7223FF → #4B00CD → #0C0046.
+///
+/// The palette is brightness-aware: [P.apply] selects the dark or light
+/// [_Palette] (called once per frame by the app root before building), and
+/// the dynamic colors are exposed as static getters so every existing
+/// `P.surface` / `PT.small` reference follows the active theme without
+/// being rewritten. Brand, status, radii and font families stay `static
+/// const` — they are identical in both modes.
+class _Palette {
+  final Color bg;
+  final Color surface;
+  final Color tonal;
+  final Color tabBar;
+  final Color border;
+  final Color borderStrong;
+  final Color divider;
+  final Color ink;
+  final Color inkSecondary;
+  final Color inkMuted;
+  final Color inkFaint;
+  final Color inkGhost;
+
+  const _Palette({
+    required this.bg,
+    required this.surface,
+    required this.tonal,
+    required this.tabBar,
+    required this.border,
+    required this.borderStrong,
+    required this.divider,
+    required this.ink,
+    required this.inkSecondary,
+    required this.inkMuted,
+    required this.inkFaint,
+    required this.inkGhost,
+  });
+}
+
+const _darkPalette = _Palette(
+  bg: Color(0xFF0B0130),
+  surface: Color(0xFF12064A),
+  tonal: Color(0xFF1A0B5C),
+  tabBar: Color(0xFF0A0128),
+  border: Color(0x14FFFFFF),
+  borderStrong: Color(0x29FFFFFF),
+  divider: Color(0x0DFFFFFF),
+  ink: Color(0xFFF4F1FF),
+  inkSecondary: Color(0xFFC9BFF0),
+  inkMuted: Color(0xFF9A8BD0),
+  inkFaint: Color(0xFF6E5FA8),
+  inkGhost: Color(0xFF4E4180),
+);
+
+const _lightPalette = _Palette(
+  bg: Color(0xFFF5F3FC),
+  surface: Color(0xFFFFFFFF),
+  tonal: Color(0xFFEAE4FB),
+  tabBar: Color(0xFFF5F3FC),
+  border: Color(0x1A0C0046),
+  borderStrong: Color(0x330C0046),
+  divider: Color(0x140C0046),
+  ink: Color(0xFF1B1140),
+  inkSecondary: Color(0xFF3E3370),
+  inkMuted: Color(0xFF5F5490),
+  inkFaint: Color(0xFF8A7FB8),
+  inkGhost: Color(0xFFB3A9D8),
+);
+
 class P {
-  // Brand
-  static const accent = Color(0xFF8B5CFF); // interactive/live only
+  static _Palette _current = _darkPalette;
+
+  /// Select the active palette. The app root calls this at the top of
+  /// every build with the resolved brightness.
+  static void apply(Brightness brightness) {
+    _current = brightness == Brightness.light ? _lightPalette : _darkPalette;
+  }
+
+  // User custom-color overrides (null = palette default). Set by the app
+  // root from AppPreferences every build.
+  static Color? _accentOv;
+  static Color? _bgOv;
+  static Color? _surfaceOv;
+  static Color? _tonalOv;
+
+  static void setCustomColors({
+    Color? accent,
+    Color? bg,
+    Color? surface,
+    Color? tonal,
+  }) {
+    _accentOv = accent;
+    _bgOv = bg;
+    _surfaceOv = surface;
+    _tonalOv = tonal;
+  }
+
+  // Brand (identical in both modes unless the user overrides the accent)
+  static Color get accent => _accentOv ?? const Color(0xFF8B5CFF); // interactive/live only
+  static Color get accentSoft => accent.withValues(alpha: 0.14); // 14% accent wash
   static const accentDeep = Color(0xFF7223FF);
   static const accentDark = Color(0xFF4B00CD);
   static const accentInk = Color(0xFF0C0046);
-  static const accentSoft = Color(0x248B5CFF); // 14% accent wash
 
-  // Surfaces
-  static const bg = Color(0xFF0B0130); // page
-  static const surface = Color(0xFF12064A); // cards
-  static const tonal = Color(0xFF1A0B5C); // filled tonal: fields, chips
-  static const tabBar = Color(0xFF0A0128);
+  // Dynamic surfaces
+  static Color get bg => _bgOv ?? _current.bg; // page
+  static Color get surface => _surfaceOv ?? _current.surface; // cards
+  static Color get tonal => _tonalOv ?? _current.tonal; // filled tonal: fields, chips
+  static Color get tabBar => _current.tabBar;
 
-  // Hairlines (never shadows)
-  static const border = Color(0x14FFFFFF); // ~8% white
-  static const borderStrong = Color(0x29FFFFFF); // ~16% white
-  static const divider = Color(0x0DFFFFFF); // ~5% white
+  // Dynamic hairlines (never shadows)
+  static Color get border => _current.border;
+  static Color get borderStrong => _current.borderStrong;
+  static Color get divider => _current.divider;
 
-  // Ink
-  static const ink = Color(0xFFF4F1FF);
-  static const inkSecondary = Color(0xFFC9BFF0);
-  static const inkMuted = Color(0xFF9A8BD0);
-  static const inkFaint = Color(0xFF6E5FA8);
-  static const inkGhost = Color(0xFF4E4180);
+  // Dynamic ink
+  static Color get ink => _current.ink;
+  static Color get inkSecondary => _current.inkSecondary;
+  static Color get inkMuted => _current.inkMuted;
+  static Color get inkFaint => _current.inkFaint;
+  static Color get inkGhost => _current.inkGhost;
 
-  // Status
+  // Status (identical in both modes)
   static const ok = Color(0xFF4ADE80);
   static const warn = Color(0xFFFBBF24);
   static const err = Color(0xFFF87171);
@@ -58,126 +154,141 @@ class P {
 }
 
 /// Typography: Space Grotesk (display), Inter (body), JetBrains Mono (machine).
+///
+/// Styles are getters (not const) because they reference the dynamic palette.
 class PT {
   static const displayFamily = 'SpaceGrotesk';
   static const bodyFamily = 'Inter';
   static const monoFamily = 'JetBrainsMono';
 
-  static const screenTitle = TextStyle(
-    fontFamily: displayFamily,
-    fontSize: 28,
-    fontWeight: FontWeight.w600,
-    color: P.ink,
-    letterSpacing: -0.5,
-    height: 1.15,
-  );
-  static const appBarTitle = TextStyle(
-    fontFamily: displayFamily,
-    fontSize: 22,
-    fontWeight: FontWeight.w500,
-    color: P.ink,
-    letterSpacing: -0.25,
-  );
-  static const sectionTitle = TextStyle(
-    fontFamily: displayFamily,
-    fontSize: 20,
-    fontWeight: FontWeight.w600,
-    color: P.ink,
-    letterSpacing: -0.25,
-  );
-  static const cardTitle = TextStyle(
-    fontFamily: displayFamily,
-    fontSize: 17,
-    fontWeight: FontWeight.w600,
-    color: P.ink,
-  );
-  static const body = TextStyle(
-    fontFamily: bodyFamily,
-    fontSize: 15,
-    fontWeight: FontWeight.w400,
-    color: P.ink,
-    height: 1.45,
-  );
-  static const rowTitle = TextStyle(
-    fontFamily: bodyFamily,
-    fontSize: 15,
-    fontWeight: FontWeight.w500,
-    color: P.ink,
-    height: 1.4,
-  );
-  static const label = TextStyle(
-    fontFamily: bodyFamily,
-    fontSize: 14,
-    fontWeight: FontWeight.w500,
-    color: P.ink,
-  );
-  static const small = TextStyle(
-    fontFamily: bodyFamily,
-    fontSize: 13,
-    fontWeight: FontWeight.w400,
-    color: P.inkSecondary,
-    height: 1.4,
-  );
-  static const meta = TextStyle(
-    fontFamily: bodyFamily,
-    fontSize: 12,
-    fontWeight: FontWeight.w400,
-    color: P.inkMuted,
-  );
-  static const faint = TextStyle(
-    fontFamily: bodyFamily,
-    fontSize: 11,
-    fontWeight: FontWeight.w400,
-    color: P.inkFaint,
-  );
+  /// User-chosen body font (Appearance page). Display and mono stay fixed.
+  static String get _bodyFont => AppPreferences.instance.bodyFont.value;
+
+  static TextStyle get screenTitle => TextStyle(
+        fontFamily: displayFamily,
+        fontSize: 28,
+        fontWeight: FontWeight.w600,
+        color: P.ink,
+        letterSpacing: -0.5,
+        height: 1.15,
+      );
+  static TextStyle get appBarTitle => TextStyle(
+        fontFamily: displayFamily,
+        fontSize: 22,
+        fontWeight: FontWeight.w500,
+        color: P.ink,
+        letterSpacing: -0.25,
+      );
+  static TextStyle get sectionTitle => TextStyle(
+        fontFamily: displayFamily,
+        fontSize: 20,
+        fontWeight: FontWeight.w600,
+        color: P.ink,
+        letterSpacing: -0.25,
+      );
+  static TextStyle get cardTitle => TextStyle(
+        fontFamily: displayFamily,
+        fontSize: 17,
+        fontWeight: FontWeight.w600,
+        color: P.ink,
+      );
+  static TextStyle get body => TextStyle(
+        fontFamily: _bodyFont,
+        fontSize: 15,
+        fontWeight: FontWeight.w400,
+        color: P.ink,
+        height: 1.45,
+      );
+  static TextStyle get rowTitle => TextStyle(
+        fontFamily: _bodyFont,
+        fontSize: 15,
+        fontWeight: FontWeight.w500,
+        color: P.ink,
+        height: 1.4,
+      );
+  static TextStyle get label => TextStyle(
+        fontFamily: _bodyFont,
+        fontSize: 14,
+        fontWeight: FontWeight.w500,
+        color: P.ink,
+      );
+  static TextStyle get small => TextStyle(
+        fontFamily: _bodyFont,
+        fontSize: 13,
+        fontWeight: FontWeight.w400,
+        color: P.inkSecondary,
+        height: 1.4,
+      );
+  static TextStyle get meta => TextStyle(
+        fontFamily: _bodyFont,
+        fontSize: 12,
+        fontWeight: FontWeight.w400,
+        color: P.inkMuted,
+      );
+  static TextStyle get faint => TextStyle(
+        fontFamily: _bodyFont,
+        fontSize: 11,
+        fontWeight: FontWeight.w400,
+        color: P.inkFaint,
+      );
 
   /// The Nyx overline: 11sp uppercase, letterspaced group headers.
-  static const overline = TextStyle(
-    fontFamily: bodyFamily,
-    fontSize: 11,
-    fontWeight: FontWeight.w600,
-    color: P.inkMuted,
-    letterSpacing: 1.5,
-  );
+  static TextStyle get overline => TextStyle(
+        fontFamily: _bodyFont,
+        fontSize: 11,
+        fontWeight: FontWeight.w600,
+        color: P.inkMuted,
+        letterSpacing: 1.5,
+      );
 
-  static const monoSm = TextStyle(
-    fontFamily: monoFamily,
-    fontSize: 11,
-    fontWeight: FontWeight.w400,
-    color: P.inkSecondary,
-  );
-  static const mono = TextStyle(
-    fontFamily: monoFamily,
-    fontSize: 12,
-    fontWeight: FontWeight.w400,
-    color: P.inkSecondary,
-  );
-  static const monoEyebrow = TextStyle(
-    fontFamily: monoFamily,
-    fontSize: 10,
-    fontWeight: FontWeight.w500,
-    color: P.inkFaint,
-    letterSpacing: 0.8,
-  );
+  static TextStyle get monoSm => TextStyle(
+        fontFamily: monoFamily,
+        fontSize: 11,
+        fontWeight: FontWeight.w400,
+        color: P.inkSecondary,
+      );
+  static TextStyle get mono => TextStyle(
+        fontFamily: monoFamily,
+        fontSize: 12,
+        fontWeight: FontWeight.w400,
+        color: P.inkSecondary,
+      );
+  static TextStyle get monoEyebrow => TextStyle(
+        fontFamily: monoFamily,
+        fontSize: 10,
+        fontWeight: FontWeight.w500,
+        color: P.inkFaint,
+        letterSpacing: 0.8,
+      );
 }
 
-ThemeData pantheonTheme() {
-  final scheme = const ColorScheme.dark(
+/// Build the Pantheon [ThemeData] for [brightness]. Applies the matching
+/// palette first so every `P.*` reference captured below belongs to it
+/// (colors are immutable, so this is safe to call for both modes in one
+/// frame — the caller re-applies the live brightness afterwards).
+ThemeData pantheonTheme(Brightness brightness, {bool compact = false}) {
+  P.apply(brightness);
+  final dark = brightness == Brightness.dark;
+  final scheme = ColorScheme(
+    brightness: brightness,
     primary: P.accent,
-    secondary: P.accentDeep,
-    surface: P.surface,
-    error: P.err,
     onPrimary: Colors.white,
+    secondary: P.accentDeep,
+    onSecondary: Colors.white,
+    surface: P.surface,
     onSurface: P.ink,
+    error: P.err,
+    onError: Colors.white,
   );
   return ThemeData(
     useMaterial3: true,
-    brightness: Brightness.dark,
     colorScheme: scheme,
     scaffoldBackgroundColor: P.bg,
     splashFactory: InkSparkle.splashFactory,
     dividerColor: P.divider,
-    appBarTheme: const AppBarTheme(
+    visualDensity:
+        compact ? VisualDensity.compact : VisualDensity.standard,
+    appBarTheme: AppBarTheme(
       backgroundColor: P.bg,
       foregroundColor: P.ink,
       elevation: 0,
@@ -191,7 +302,7 @@ ThemeData pantheonTheme() {
       margin: EdgeInsets.zero,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(P.r16),
-        side: const BorderSide(color: P.border, width: 1),
+        side: BorderSide(color: P.border, width: 1),
       ),
     ),
     inputDecorationTheme: InputDecorationTheme(
@@ -208,20 +319,20 @@ ThemeData pantheonTheme() {
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(P.r8),
-        borderSide: const BorderSide(color: P.accent, width: 2),
+        borderSide: BorderSide(color: P.accent, width: 2),
       ),
       errorBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(P.r8),
-        borderSide: const BorderSide(color: P.err, width: 2),
+        borderSide: BorderSide(color: P.err, width: 2),
       ),
       labelStyle: PT.meta,
-      hintStyle: const TextStyle(
+      hintStyle: TextStyle(
         fontFamily: PT.bodyFamily,
         fontSize: 15,
         color: P.inkFaint,
       ),
     ),
-    bottomSheetTheme: const BottomSheetThemeData(
+    bottomSheetTheme: BottomSheetThemeData(
       backgroundColor: P.surface,
       modalBackgroundColor: P.surface,
       shape: RoundedRectangleBorder(
@@ -230,12 +341,13 @@ ThemeData pantheonTheme() {
       showDragHandle: true,
     ),
     snackBarTheme: SnackBarThemeData(
-      backgroundColor: const Color(0xFF1E1060),
-      contentTextStyle: PT.small.copyWith(color: P.ink),
+      backgroundColor:
+          dark ? const Color(0xFF1E1060) : const Color(0xFF241645),
+      contentTextStyle: PT.small.copyWith(color: Colors.white),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(P.r4)),
       behavior: SnackBarBehavior.floating,
     ),
-    textTheme: const TextTheme(
+    textTheme: TextTheme(
       displayLarge: PT.screenTitle,
       titleLarge: PT.appBarTitle,
       titleMedium: PT.sectionTitle,
@@ -256,6 +368,29 @@ String compactNum(num n) {
 
 String money(num usd) => '\$${usd.toDouble().toStringAsFixed(2)}';
 
+/// Absolute clock time: "10:29pm".
+String clockTime(int tsMs) {
+  final dt = DateTime.fromMillisecondsSinceEpoch(tsMs);
+  var h = dt.hour % 12;
+  if (h == 0) h = 12;
+  final ap = dt.hour < 12 ? 'am' : 'pm';
+  return '$h:${dt.minute.toString().padLeft(2, '0')}$ap';
+}
+
+/// Day divider label: Today / Yesterday / "Sep 28".
+String dayLabel(DateTime day) {
+  final now = DateTime.now();
+  final today = DateTime(now.year, now.month, now.day);
+  final diff = today.difference(day).inDays;
+  if (diff == 0) return 'Today';
+  if (diff == 1) return 'Yesterday';
+  const months = [
+    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+  ];
+  return '${months[day.month - 1]} ${day.day}';
+}
+
 String timeAgo(int tsMs, {bool future = false}) {
   final dt = DateTime.fromMillisecondsSinceEpoch(tsMs);
   final d =
@@ -265,7 +400,7 @@ String timeAgo(int tsMs, {bool future = false}) {
   if (future) {
     if (d.inMinutes < 1) return 'now';
     if (d.inMinutes < 60) return 'in ${d.inMinutes}m';
-    if (d.inHours < 24) return 'in ${d.inHours}h';
+    if (d.inMinutes < 24 * 60) return 'in ${d.inHours}h';
     if (d.inDays < 30) return 'in ${d.inDays}d';
     return 'on ${date()}';
   }

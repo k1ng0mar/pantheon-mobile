@@ -76,9 +76,9 @@ class _SessionsScreenState extends State<SessionsScreen> {
                 children: [
                   const SheetHandle(),
                   const SizedBox(height: 8),
-                  const Text('New chat', style: PT.sectionTitle),
+                   Text('New chat', style: PT.sectionTitle),
                   const SizedBox(height: 4),
-                  const Text('Your first message starts the session.',
+                   Text('Your first message starts the session.',
                       style: PT.meta),
                   const SizedBox(height: 16),
                   TextField(
@@ -101,7 +101,7 @@ class _SessionsScreenState extends State<SessionsScreen> {
                   ),
                   const SizedBox(height: 20),
                   if (busy)
-                    const SizedBox(
+                     SizedBox(
                       height: 52,
                       child: Center(
                           child: SizedBox(
@@ -168,7 +168,7 @@ class _SessionsScreenState extends State<SessionsScreen> {
         title: const Text('Sessions'),
         actions: [
           IconButton(
-            icon: const Icon(Icons.refresh_rounded,
+            icon:  Icon(Icons.refresh_rounded,
                 color: P.inkSecondary, weight: 1.6),
             onPressed: _load,
           ),
@@ -194,12 +194,12 @@ class _SessionsScreenState extends State<SessionsScreen> {
               style: PT.body,
               decoration: InputDecoration(
                 hintText: 'Search sessions…',
-                prefixIcon: const Icon(Icons.search_rounded,
+                prefixIcon:  Icon(Icons.search_rounded,
                     color: P.inkFaint, weight: 1.6),
                 suffixIcon: _search.text.isEmpty
                     ? null
                     : IconButton(
-                        icon: const Icon(Icons.clear_rounded,
+                        icon:  Icon(Icons.clear_rounded,
                             color: P.inkFaint),
                         onPressed: () {
                           _search.clear();
@@ -324,7 +324,7 @@ class _SessionsScreenState extends State<SessionsScreen> {
                     color: P.accentSoft,
                     border: Border.all(color: P.borderStrong),
                   ),
-                  child: const Icon(Icons.hub_outlined,
+                  child:  Icon(Icons.hub_outlined,
                       color: P.accent, size: 26, weight: 1.6),
                 ),
                 if (live)

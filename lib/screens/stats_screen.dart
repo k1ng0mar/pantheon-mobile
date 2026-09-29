@@ -37,7 +37,7 @@ class _StatsScreenState extends State<StatsScreen> {
         title: const Text('Usage'),
         actions: [
           IconButton(
-            icon: const Icon(Icons.refresh_rounded,
+            icon:  Icon(Icons.refresh_rounded,
                 color: P.inkSecondary, weight: 1.6),
             onPressed: _load,
           ),
@@ -161,7 +161,7 @@ class _StatsScreenState extends State<StatsScreen> {
     final days = s.byDay.entries.toList()
       ..sort((a, b) => a.key.compareTo(b.key));
     if (days.isEmpty) {
-      return const PCard(child: Text('No daily data.', style: PT.small));
+      return  PCard(child: Text('No daily data.', style: PT.small));
     }
     final maxCost = days
         .map((e) => e.value.costUsd)
@@ -200,7 +200,7 @@ class _StatsScreenState extends State<StatsScreen> {
     final models = s.byModel.entries.toList()
       ..sort((a, b) => b.value.costUsd.compareTo(a.value.costUsd));
     if (models.isEmpty) {
-      return const PCard(child: Text('No model data.', style: PT.small));
+      return  PCard(child: Text('No model data.', style: PT.small));
     }
     final maxCost = models.first.value.costUsd;
     return PCard(
@@ -240,7 +240,7 @@ class _StatsScreenState extends State<StatsScreen> {
                         minHeight: 6,
                         backgroundColor: P.tonal,
                         valueColor:
-                            const AlwaysStoppedAnimation<Color>(P.accent),
+                            AlwaysStoppedAnimation<Color>(P.accent),
                       ),
                     ),
                   ),

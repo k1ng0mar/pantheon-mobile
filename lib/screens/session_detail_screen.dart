@@ -1,10 +1,12 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../models/approval.dart';
 import '../models/pantheon_run.dart';
 import '../models/todo_item.dart';
+import '../services/app_preferences.dart';
 import '../services/pantheon_api.dart';
 import '../theme.dart';
 import '../widgets/buttons.dart';
@@ -201,7 +203,10 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
       // Always take the fresh run: the queued chip, mode pills, and
       // context meter read from _run, not just its status.
       setState(() => _run = run);
-      // Auto-drain a queue this screen set, once the turn settles.
+      // Turn settled: haptic + auto-drain a queue this screen set.
+      if (wasLive && !_isLive(run.status)) {
+        _haptic(HapticFeedback.lightImpact);
+      }
       if (wasLive && !_isLive(run.status) && _queuedByMe) {
         final q = run.queuedMessage;
         _queuedByMe = false;
@@ -277,6 +282,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
   Future<void> _send() async {
     final text = _composer.text.trim();
     if (text.isEmpty || _sending) return;
+    _haptic(HapticFeedback.mediumImpact);
     if (text.startsWith('/')) {
       _composer.clear();
       await _runSlash(text);
@@ -286,8 +292,11 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
     if (run == null || !_canChat(run.status)) return;
     setState(() => _sending = true);
     _composer.clear();
-    final optimistic =
-        TranscriptItem(type: 'message', role: 'user', content: text);
+    final optimistic = TranscriptItem(
+        type: 'message',
+        role: 'user',
+        content: text,
+        tsMs: DateTime.now().millisecondsSinceEpoch);
     _addOptimistic(optimistic);
     _animateToBottom();
     try {
@@ -319,6 +328,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
     } catch (e) {
       if (!mounted) return;
       _removeOptimistic(optimistic);
+      _haptic(HapticFeedback.heavyImpact);
       toastError(context, e);
     } finally {
       if (mounted) setState(() => _sending = false);
@@ -338,10 +348,10 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
             children: [
               const SheetHandle(),
               const SizedBox(height: 8),
-              const Text('A turn is already running',
+               Text('A turn is already running',
                   style: PT.sectionTitle),
               const SizedBox(height: 8),
-              const Text(
+               Text(
                   'Queue your message behind it, or steer the running turn toward it.',
                   style: PT.small),
               const SizedBox(height: 20),
@@ -387,6 +397,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
     } catch (e) {
       if (!mounted) return;
       _removeOptimistic(optimistic);
+      _haptic(HapticFeedback.heavyImpact);
       toastError(context, e);
     } finally {
       if (mounted) setState(() => _sending = false);
@@ -563,7 +574,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
                   children: [
                     const SheetHandle(),
                     const SizedBox(height: 8),
-                    const Text('New chat', style: PT.sectionTitle),
+                     Text('New chat', style: PT.sectionTitle),
                     const SizedBox(height: 16),
                     TextField(
                       controller: messageCtrl,
@@ -684,9 +695,9 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
                   children: [
                     const SheetHandle(),
                     const SizedBox(height: 8),
-                    const Text('Default model', style: PT.sectionTitle),
+                     Text('Default model', style: PT.sectionTitle),
                     const SizedBox(height: 4),
-                    const Text(
+                     Text(
                         'Switches the global [model] default, like /model in the TUI.',
                         style: PT.meta),
                     const SizedBox(height: 16),
@@ -854,7 +865,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
             children: [
               const SheetHandle(),
               const SizedBox(height: 8),
-              const Text('Slash commands', style: PT.sectionTitle),
+               Text('Slash commands', style: PT.sectionTitle),
               const SizedBox(height: 12),
               for (final c in _slashCommands)
                 Padding(
@@ -921,7 +932,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
     return Scaffold(
       appBar: AppBar(
         leading: IconButton(
-          icon: const Icon(Icons.chevron_left_rounded,
+          icon:  Icon(Icons.chevron_left_rounded,
               size: 30, color: P.ink, weight: 1.6),
           onPressed: () => Navigator.of(context).pop(),
         ),
@@ -1041,7 +1052,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        const Icon(Icons.checklist_rounded,
+                         Icon(Icons.checklist_rounded,
                             size: 14, color: P.accent),
                         const SizedBox(width: 6),
                         Text('$_openTodos todos',
@@ -1125,20 +1136,29 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
 
   Widget _chatTab() {
     final run = _run;
-    return Column(
-      children: [
-        Expanded(child: _messageList()),
-        if (run != null && run.pendingInput.isNotEmpty)
-          _clarifyCard(run.pendingInput.first),
-        if (run != null && run.status == 'awaiting_approval')
-          _approvalBanner(),
-        if (run != null &&
-            run.queuedMessage != null &&
-            run.queuedMessage!.isNotEmpty)
-          _queuedChip(run.queuedMessage!),
-        _SlashSuggestions(controller: _composer, onPick: _pickSlash),
-        _composerBar(),
-      ],
+    final chatBg = AppPreferences.instance.chatBg.value;
+    final bg = switch (chatBg) {
+      'tinted' => P.accentSoft,
+      'dim' => P.tonal,
+      _ => null,
+    };
+    return Container(
+      color: bg,
+      child: Column(
+        children: [
+          Expanded(child: _messageList()),
+          if (run != null && run.pendingInput.isNotEmpty)
+            _clarifyCard(run.pendingInput.first),
+          if (run != null && run.status == 'awaiting_approval')
+            _approvalBanner(),
+          if (run != null &&
+              run.queuedMessage != null &&
+              run.queuedMessage!.isNotEmpty)
+            _queuedChip(run.queuedMessage!),
+          _SlashSuggestions(controller: _composer, onPick: _pickSlash),
+          _composerBar(),
+        ],
+      ),
     );
   }
 
@@ -1237,7 +1257,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
         children: [
           Row(
             children: [
-              const Icon(Icons.gpp_maybe_rounded, size: 18, color: P.warn),
+              Icon(Icons.gpp_maybe_rounded, size: 18, color: P.warn),
               const SizedBox(width: 8),
               Text('Needs your approval',
                   style: PT.label.copyWith(color: P.warn)),
@@ -1245,7 +1265,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
           ),
           const SizedBox(height: 10),
           if (_runApprovals.isEmpty)
-            const Text('Waiting on an approval decision…',
+             Text('Waiting on an approval decision…',
                 style: PT.small)
           else
             for (final a in _runApprovals) ...[
@@ -1301,7 +1321,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
       ),
       child: Row(
         children: [
-          const Icon(Icons.schedule_rounded, size: 16, color: P.accent),
+           Icon(Icons.schedule_rounded, size: 16, color: P.accent),
           const SizedBox(width: 8),
           Expanded(
             child: GestureDetector(
@@ -1314,7 +1334,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
           ),
           GestureDetector(
             onTap: _clearQueue,
-            child: const Padding(
+            child:  Padding(
               padding: EdgeInsets.all(4),
               child: Icon(Icons.close_rounded,
                   size: 18, color: P.inkMuted),
@@ -1333,18 +1353,35 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
         body: 'Say something below to start the conversation.',
       );
     }
+    // Interleave day dividers when enabled (only items carrying a real
+    // timestamp can trigger one).
+    final prefs = AppPreferences.instance;
+    final dividers = prefs.dateDividers.value;
+    final rows = <Widget>[];
+    DateTime? lastDay;
+    for (var i = 0; i < _messages.length; i++) {
+      final t = _messages[i];
+      if (dividers && t.tsMs != null) {
+        final d = DateTime.fromMillisecondsSinceEpoch(t.tsMs!);
+        final day = DateTime(d.year, d.month, d.day);
+        if (lastDay == null || day != lastDay) {
+          rows.add(_dateDivider(day));
+          lastDay = day;
+        }
+      }
+      rows.add(StaggerItem(index: i, child: _bubble(t)));
+    }
     return ListView.builder(
       controller: _scroll,
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
-      itemCount: _messages.length,
-      itemBuilder: (context, i) =>
-          StaggerItem(index: i, child: _bubble(_messages[i])),
+      itemCount: rows.length,
+      itemBuilder: (context, i) => rows[i],
     );
   }
 
   Widget _composerBar() {
     return Container(
-      decoration: const BoxDecoration(
+      decoration:  BoxDecoration(
         color: P.tabBar,
         border: Border(top: BorderSide(color: P.border, width: 1)),
       ),
@@ -1359,6 +1396,8 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
   }
 
   Widget _composerRow() {
+    final returnSends = AppPreferences.instance.returnSends.value;
+    final reduceMotion = AppPreferences.instance.reduceMotion.value;
     return Row(
       crossAxisAlignment: CrossAxisAlignment.end,
       children: [
@@ -1368,8 +1407,10 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
             enabled: !_sending,
             minLines: 1,
             maxLines: 5,
-            textInputAction: TextInputAction.send,
-            onSubmitted: (_) => _send(),
+            textInputAction: returnSends
+                ? TextInputAction.send
+                : TextInputAction.newline,
+            onSubmitted: returnSends ? (_) => _send() : null,
             style: PT.body.copyWith(fontSize: 14),
             decoration: const InputDecoration(
               hintText: 'Message Pantheon…  ( / for commands)',
@@ -1382,7 +1423,8 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
         GestureDetector(
           onTap: _send,
           child: AnimatedOpacity(
-            duration: const Duration(milliseconds: 150),
+            duration: Duration(
+                milliseconds: reduceMotion ? 0 : 150),
             opacity: _sending ? 0.5 : 1,
             child: Container(
               width: 48,
@@ -1396,8 +1438,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
                   ? const SizedBox(
                       width: 20,
                       height: 20,
-                      child: CircularProgressIndicator(
-                          strokeWidth: 2.5, color: Colors.white),
+                      child: _SendGlyph(),
                     )
                   : const Icon(Icons.arrow_upward_rounded,
                       color: Colors.white, size: 22),
@@ -1408,60 +1449,101 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
     );
   }
 
+  /// Haptic feedback, gated by the Appearance toggle.
+  void _haptic(Future<void> Function() feedback) {
+    if (AppPreferences.instance.hapticsEnabled.value) feedback();
+  }
+
   Widget _bubble(TranscriptItem t) {
+    final prefs = AppPreferences.instance;
+    final flat = prefs.bubbleStyle.value == 'flat';
+    final compactChat = prefs.chatDensity.value == 'compact';
+    final vPad = compactChat ? 6.0 : 10.0;
+    final hPad = compactChat ? 10.0 : 14.0;
+
+    Widget core;
+    bool isUser = false;
     if (t.type == 'reasoning') {
-      return Container(
-        margin: const EdgeInsets.only(bottom: 10),
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: P.surface,
-          borderRadius: BorderRadius.circular(P.r12),
-          border: Border.all(color: P.border),
+      core = _ThinkingBlock(content: t.content);
+    } else {
+      isUser = t.role == 'user';
+      final isTool = t.role == 'tool';
+      core = Align(
+        alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
+        child: Container(
+          margin: EdgeInsets.only(bottom: vPad),
+          padding: EdgeInsets.symmetric(horizontal: hPad, vertical: vPad),
+          constraints:
+              BoxConstraints(maxWidth: MediaQuery.sizeOf(context).width * 0.85),
+          decoration: BoxDecoration(
+            gradient: isUser ? P.gradient : null,
+            color: isUser
+                ? null
+                : isTool
+                    ? P.tonal
+                    : P.surface,
+            borderRadius: flat
+                ? BorderRadius.circular(P.r4)
+                : BorderRadius.only(
+                    topLeft: Radius.circular(P.r18),
+                    topRight: Radius.circular(P.r18),
+                    bottomLeft: Radius.circular(isUser ? P.r18 : P.r4),
+                    bottomRight: Radius.circular(isUser ? P.r4 : P.r18),
+                  ),
+            border: isUser ? null : Border.all(color: P.border),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (!isUser)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 4),
+                  child: Text((t.role ?? 'assistant').toUpperCase(),
+                      style: PT.monoEyebrow
+                          .copyWith(color: isTool ? P.info : P.accent)),
+                ),
+              SelectableText(t.content,
+                  style: PT.body.copyWith(
+                      fontSize: 14, color: isUser ? Colors.white : P.ink)),
+            ],
+          ),
         ),
-        child: Text(t.content,
-            style: PT.small
-                .copyWith(fontStyle: FontStyle.italic, color: P.inkMuted)),
       );
     }
-    final isUser = t.role == 'user';
-    final isTool = t.role == 'tool';
-    return Align(
-      alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 10),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-        constraints:
-            BoxConstraints(maxWidth: MediaQuery.sizeOf(context).width * 0.85),
-        decoration: BoxDecoration(
-          gradient: isUser ? P.gradient : null,
-          color: isUser
-              ? null
-              : isTool
-                  ? P.tonal
-                  : P.surface,
-          borderRadius: BorderRadius.only(
-            topLeft: const Radius.circular(P.r18),
-            topRight: const Radius.circular(P.r18),
-            bottomLeft: Radius.circular(isUser ? P.r18 : P.r4),
-            bottomRight: Radius.circular(isUser ? P.r4 : P.r18),
+
+    // Optional per-message timestamp (only when the item carries one —
+    // the dashboard doesn't emit these yet, so it mostly covers messages
+    // just sent from this device).
+    if (!prefs.showTimestamps.value || t.tsMs == null) return core;
+    final label = prefs.timestampFormat.value == 'absolute'
+        ? clockTime(t.tsMs!)
+        : timeAgo(t.tsMs!);
+    return Column(
+      crossAxisAlignment:
+          isUser ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+      children: [
+        core,
+        Padding(
+          padding: const EdgeInsets.only(left: 4, right: 4, bottom: 8),
+          child: Text(label, style: PT.faint),
+        ),
+      ],
+    );
+  }
+
+  /// A day divider row for the chat list ("Today", "Yesterday", "Sep 28").
+  Widget _dateDivider(DateTime day) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 12),
+      child: Row(
+        children: [
+          const Expanded(child: Divider()),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: Text(dayLabel(day), style: PT.faint),
           ),
-          border: isUser ? null : Border.all(color: P.border),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (!isUser)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 4),
-                child: Text((t.role ?? 'assistant').toUpperCase(),
-                    style: PT.monoEyebrow
-                        .copyWith(color: isTool ? P.info : P.accent)),
-              ),
-            SelectableText(t.content,
-                style: PT.body.copyWith(
-                    fontSize: 14, color: isUser ? Colors.white : P.ink)),
-          ],
-        ),
+          const Expanded(child: Divider()),
+        ],
       ),
     );
   }
@@ -1564,7 +1646,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
           ),
           if (detail.isNotEmpty) ...[
             const SizedBox(height: 12),
-            const Divider(color: P.divider, height: 1),
+             Divider(color: P.divider, height: 1),
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 10),
               child: SelectableText(detail,
@@ -1625,7 +1707,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Divider(color: P.divider, height: 1),
+         Divider(color: P.divider, height: 1),
         Padding(
           padding: const EdgeInsets.fromLTRB(20, 12, 20, 4),
           child: Row(
@@ -1746,33 +1828,33 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
       case 'agent_completed':
       case 'approval_granted':
       case 'model_completed':
-        return const _GlyphSpec(Icons.check_rounded, P.ok);
+        return _GlyphSpec(Icons.check_rounded, P.ok);
       case 'run_failed':
       case 'approval_denied':
-        return const _GlyphSpec(Icons.close_rounded, P.err);
+        return _GlyphSpec(Icons.close_rounded, P.err);
       case 'run_canceled':
-        return const _GlyphSpec(Icons.close_rounded, P.warn);
+        return _GlyphSpec(Icons.close_rounded, P.warn);
       case 'approval_requested':
       case 'turn_parked':
-        return const _GlyphSpec(Icons.schedule_rounded, P.warn);
+        return _GlyphSpec(Icons.schedule_rounded, P.warn);
       case 'input_requested':
-        return const _GlyphSpec(Icons.question_answer_rounded, P.accent);
+        return _GlyphSpec(Icons.question_answer_rounded, P.accent);
       case 'input_provided':
-        return const _GlyphSpec(Icons.check_rounded, P.ok);
+        return _GlyphSpec(Icons.check_rounded, P.ok);
       case 'agent_spawned':
-        return const _GlyphSpec(Icons.person_add_alt_rounded, P.info);
+        return _GlyphSpec(Icons.person_add_alt_rounded, P.info);
       case 'agent_message':
-        return const _GlyphSpec(Icons.chat_bubble_outline_rounded, P.info);
+        return _GlyphSpec(Icons.chat_bubble_outline_rounded, P.info);
       case 'titled':
-        return const _GlyphSpec(Icons.edit_rounded, P.inkMuted);
+        return _GlyphSpec(Icons.edit_rounded, P.inkMuted);
       case 'usage':
-        return const _GlyphSpec(Icons.pie_chart_outline_rounded, P.inkMuted);
+        return _GlyphSpec(Icons.pie_chart_outline_rounded, P.inkMuted);
       case 'run_started':
       case 'turn_started':
       case 'model_requested':
-        return const _GlyphSpec(Icons.fiber_manual_record_rounded, P.accent);
+        return _GlyphSpec(Icons.fiber_manual_record_rounded, P.accent);
       default:
-        return const _GlyphSpec(Icons.info_outline_rounded, P.inkMuted);
+        return _GlyphSpec(Icons.info_outline_rounded, P.inkMuted);
     }
   }
 
@@ -2054,4 +2136,89 @@ class _DashPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
+/// A reasoning trace as a collapsible block, collapsed by default.
+/// Tap the header to expand the full deliberation.
+class _ThinkingBlock extends StatefulWidget {
+  final String content;
+
+  const _ThinkingBlock({required this.content});
+
+  @override
+  State<_ThinkingBlock> createState() => _ThinkingBlockState();
+}
+
+class _ThinkingBlockState extends State<_ThinkingBlock> {
+  bool _open = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      decoration: BoxDecoration(
+        color: P.surface,
+        borderRadius: BorderRadius.circular(P.r12),
+        border: Border.all(color: P.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: () => setState(() => _open = !_open),
+              borderRadius: BorderRadius.circular(P.r12),
+              splashColor: P.accentSoft,
+              highlightColor: P.accentSoft,
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Row(
+                  children: [
+                    const Icon(Icons.psychology_outlined,
+                        size: 16, color: P.inkFaint),
+                    const SizedBox(width: 8),
+                    Text('Thinking', style: PT.meta),
+                    const Spacer(),
+                    Icon(
+                        _open
+                            ? Icons.expand_less_rounded
+                            : Icons.expand_more_rounded,
+                        size: 18,
+                        color: P.inkFaint),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          if (_open)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+              child: SelectableText(widget.content,
+                  style: PT.small.copyWith(
+                      fontStyle: FontStyle.italic, color: P.inkMuted)),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+/// The send-button in-flight glyph, honoring the Appearance loading-style
+/// choice (spinner / dots / pulse).
+class _SendGlyph extends StatelessWidget {
+  const _SendGlyph();
+
+  @override
+  Widget build(BuildContext context) {
+    switch (AppPreferences.instance.loadingStyle.value) {
+      case 'dots':
+        return const DotsLoading(color: Colors.white, size: 5);
+      case 'pulse':
+        return const PulseLoading(color: Colors.white, size: 12);
+      default:
+        return const CircularProgressIndicator(
+            strokeWidth: 2.5, color: Colors.white);
+    }
+  }
 }
