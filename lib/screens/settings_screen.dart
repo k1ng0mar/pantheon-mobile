@@ -40,7 +40,7 @@ class SettingsScreen extends StatelessWidget {
                 title: 'Dashboard',
                 subtitle: settings.baseUrl,
                 dotColor: P.ok,
-                trailing: const Icon(Icons.chevron_right_rounded,
+                trailing:  Icon(Icons.chevron_right_rounded,
                     color: P.inkFaint, weight: 1.6),
                 onTap: () => _editConnection(context),
               ),
@@ -48,7 +48,7 @@ class SettingsScreen extends StatelessWidget {
                 title: 'Token',
                 subtitle: '••••••••$tail',
                 dotColor: P.inkFaint,
-                trailing: const Icon(Icons.chevron_right_rounded,
+                trailing:  Icon(Icons.chevron_right_rounded,
                     color: P.inkFaint, weight: 1.6),
                 onTap: () => _editConnection(context),
               ),
@@ -62,7 +62,7 @@ class SettingsScreen extends StatelessWidget {
                 InkWell(
                   onTap: () => _editConnection(context),
                   borderRadius: BorderRadius.circular(P.r16),
-                  child: const Padding(
+                  child:  Padding(
                     padding: EdgeInsets.all(14),
                     child: Row(
                       children: [
@@ -98,7 +98,7 @@ class SettingsScreen extends StatelessWidget {
             ),
           ),
           const Overline('About'),
-          const PCard(
+           PCard(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -145,9 +145,9 @@ class SettingsScreen extends StatelessWidget {
             children: [
               const SheetHandle(),
               const SizedBox(height: 8),
-              const Text('Sign out?', style: PT.sectionTitle),
+               Text('Sign out?', style: PT.sectionTitle),
               const SizedBox(height: 8),
-              const Text(
+               Text(
                 'This forgets the dashboard URL and token on this device.',
                 style: PT.small,
               ),

@@ -98,7 +98,7 @@ class _KeysScreenState extends State<KeysScreen> {
         title: const Text('Keys'),
         actions: [
           IconButton(
-            icon: const Icon(Icons.refresh_rounded,
+            icon:  Icon(Icons.refresh_rounded,
                 color: P.inkSecondary, weight: 1.6),
             onPressed: _load,
           ),

@@ -10,6 +10,7 @@ class Overline extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final color = widget.color ?? P.live;
     return Padding(
       padding: const EdgeInsets.fromLTRB(4, 20, 4, 8),
       child: Text(text.toUpperCase(), style: PT.overline),
@@ -50,7 +51,7 @@ class PillChip extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             if (selected) ...[
-              const Icon(Icons.check_rounded, size: 14, color: P.accent),
+               Icon(Icons.check_rounded, size: 14, color: P.accent),
               const SizedBox(width: 4),
             ],
             Text(
@@ -93,10 +94,10 @@ class StatusChip extends StatelessWidget {
 
 /// Pulsing live indicator (Nyx mic-dot pulse language).
 class LiveDot extends StatefulWidget {
-  final Color color;
+  final Color? color;
   final double size;
 
-  const LiveDot({super.key, this.color = P.live, this.size = 8});
+  const LiveDot({super.key, this.color, this.size = 8});
 
   @override
   State<LiveDot> createState() => _LiveDotState();
@@ -129,10 +130,10 @@ class _LiveDotState extends State<LiveDot> with SingleTickerProviderStateMixin {
         height: widget.size,
         decoration: BoxDecoration(
           shape: BoxShape.circle,
-          color: widget.color.withValues(alpha: 0.45 + 0.55 * _c.value),
+          color: color.withValues(alpha: 0.45 + 0.55 * _c.value),
           boxShadow: [
             BoxShadow(
-              color: widget.color.withValues(alpha: 0.5 * _c.value),
+              color: color.withValues(alpha: 0.5 * _c.value),
               blurRadius: 8 * _c.value,
               spreadRadius: 2 * _c.value,
             ),

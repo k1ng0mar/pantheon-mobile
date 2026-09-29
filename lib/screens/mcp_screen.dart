@@ -112,7 +112,7 @@ class _McpScreenState extends State<McpScreen> {
                 children: [
                   const SheetHandle(),
                   const SizedBox(height: 8),
-                  const Text('Add MCP server', style: PT.sectionTitle),
+                   Text('Add MCP server', style: PT.sectionTitle),
                   const SizedBox(height: 16),
                   TextField(
                     controller: nameCtrl,
@@ -123,7 +123,7 @@ class _McpScreenState extends State<McpScreen> {
                     ),
                   ),
                   const SizedBox(height: 12),
-                  const Text('TRANSPORT', style: PT.overline),
+                   Text('TRANSPORT', style: PT.overline),
                   const SizedBox(height: 8),
                   Row(
                     children: [
@@ -238,12 +238,12 @@ class _McpScreenState extends State<McpScreen> {
         actions: [
           IconButton(
             tooltip: 'Reload MCP',
-            icon: const Icon(Icons.cached_rounded,
+            icon:  Icon(Icons.cached_rounded,
                 color: P.inkSecondary, weight: 1.6),
             onPressed: _reload,
           ),
           IconButton(
-            icon: const Icon(Icons.refresh_rounded,
+            icon:  Icon(Icons.refresh_rounded,
                 color: P.inkSecondary, weight: 1.6),
             onPressed: _load,
           ),
@@ -296,7 +296,7 @@ class _McpScreenState extends State<McpScreen> {
                           const SizedBox(height: 8),
                           Text(data.pending.join(', '), style: PT.mono),
                           const SizedBox(height: 4),
-                          const Text(
+                           Text(
                             'Approve these from the runtime CLI (`pantheon mcp approve <name>`) before they can run.',
                             style: PT.meta,
                           ),
@@ -371,7 +371,7 @@ class _McpScreenState extends State<McpScreen> {
             ],
             const SizedBox(height: 10),
             if (busy)
-              const SizedBox(
+               SizedBox(
                 height: 36,
                 child: Center(
                     child: SizedBox(

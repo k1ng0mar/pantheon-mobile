@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'screens/appearance_screen.dart';
 import 'screens/approvals_screen.dart';
 import 'screens/config_screen.dart';
 import 'screens/connect_screen.dart';
@@ -10,6 +11,7 @@ import 'screens/logs_screen.dart';
 import 'screens/mcp_screen.dart';
 import 'screens/memory_screen.dart';
 import 'screens/models_screen.dart';
+import 'screens/notifications_screen.dart';
 import 'screens/plugins_screen.dart';
 import 'screens/profiles_screen.dart';
 import 'screens/sessions_screen.dart';
@@ -17,6 +19,7 @@ import 'screens/schedule_screen.dart';
 import 'screens/settings_screen.dart';
 import 'screens/skills_screen.dart';
 import 'screens/stats_screen.dart';
+import 'services/app_preferences.dart';
 import 'services/pantheon_api.dart';
 import 'services/settings_store.dart';
 import 'theme.dart';
@@ -35,17 +38,30 @@ class PantheonApp extends StatefulWidget {
 
 class _PantheonAppState extends State<PantheonApp> {
   final _store = SettingsStore();
+  final _prefs = AppPreferences.instance;
   ConnectionSettings? _settings;
   bool _loading = true;
 
   @override
   void initState() {
     super.initState();
+    _prefs.appearance.addListener(_onAppearanceChanged);
     _boot();
+  }
+
+  @override
+  void dispose() {
+    _prefs.appearance.removeListener(_onAppearanceChanged);
+    super.dispose();
+  }
+
+  void _onAppearanceChanged() {
+    if (mounted) setState(() {});
   }
 
   Future<void> _boot() async {
     final s = await _store.load();
+    await _prefs.init();
     // Brief branded beat so the splash reads as intentional, not a flash.
     await Future.delayed(const Duration(milliseconds: 600));
     if (mounted) {
@@ -74,10 +90,40 @@ class _PantheonAppState extends State<PantheonApp> {
 
   @override
   Widget build(BuildContext context) {
+    // Resolve the live brightness, build both theme variants, then select
+    // the palette the widget tree below should paint with.
+    final themeMode = _prefs.themeMode.value;
+    final platformBrightness =
+        WidgetsBinding.instance.platformDispatcher.platformBrightness;
+    final brightness = themeMode == ThemeMode.system
+        ? platformBrightness
+        : (themeMode == ThemeMode.light
+            ? Brightness.light
+            : Brightness.dark);
+    final compact = _prefs.compactDensity.value;
+    final lightTheme = pantheonTheme(Brightness.light, compact: compact);
+    final darkTheme = pantheonTheme(Brightness.dark, compact: compact);
+    P.apply(brightness);
+    P.setCustomColors(
+      accent: _prefs.customAccent.value,
+      bg: _prefs.customBg.value,
+      surface: _prefs.customSurface.value,
+      tonal: _prefs.customTonal.value,
+    );
     return MaterialApp(
       title: 'Pantheon',
-      theme: pantheonTheme(),
+      theme: lightTheme,
+      darkTheme: darkTheme,
+      themeMode: themeMode,
       debugShowCheckedModeBanner: false,
+      builder: (ctx, child) {
+        final mq = MediaQuery.of(ctx);
+        return MediaQuery(
+          data: mq.copyWith(
+              textScaler: TextScaler.linear(_prefs.textScale.value)),
+          child: child!,
+        );
+      },
       home: _loading
           ? const _Splash()
           : (_settings != null && _settings!.isComplete)
@@ -115,6 +161,35 @@ class _SplashState extends State<_Splash> {
 
   @override
   Widget build(BuildContext context) {
+    final reduceMotion = AppPreferences.instance.reduceMotion.value;
+    final content = Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 72,
+          height: 72,
+          decoration: const BoxDecoration(
+            gradient: P.gradient,
+            shape: BoxShape.circle,
+          ),
+          alignment: Alignment.center,
+          child: const Text('P',
+              style: TextStyle(
+                  fontFamily: PT.displayFamily,
+                  fontSize: 34,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.white)),
+        ),
+        const SizedBox(height: 16),
+        Text('Pantheon', style: PT.screenTitle),
+        const SizedBox(height: 4),
+        Text('your runtime, in your pocket',
+            style: PT.small.copyWith(color: P.inkMuted)),
+      ],
+    );
+    if (reduceMotion) {
+      return Scaffold(body: Center(child: content));
+    }
     return Scaffold(
       body: Center(
         child: AnimatedScale(
@@ -124,31 +199,7 @@ class _SplashState extends State<_Splash> {
           child: AnimatedOpacity(
             opacity: _in ? 1 : 0,
             duration: const Duration(milliseconds: 400),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  width: 72,
-                  height: 72,
-                  decoration: const BoxDecoration(
-                    gradient: P.gradient,
-                    shape: BoxShape.circle,
-                  ),
-                  alignment: Alignment.center,
-                  child: const Text('P',
-                      style: TextStyle(
-                          fontFamily: PT.displayFamily,
-                          fontSize: 34,
-                          fontWeight: FontWeight.w600,
-                          color: Colors.white)),
-                ),
-                const SizedBox(height: 16),
-                const Text('Pantheon', style: PT.screenTitle),
-                const SizedBox(height: 4),
-                Text('your runtime, in your pocket',
-                    style: PT.small.copyWith(color: P.inkMuted)),
-              ],
-            ),
+            child: content,
           ),
         ),
       ),
@@ -256,7 +307,7 @@ class _NyxTabBar extends StatelessWidget {
       _TabDef(Icons.more_horiz_rounded, Icons.more_horiz_rounded, 'More'),
     ];
     return Container(
-      decoration: const BoxDecoration(
+      decoration:  BoxDecoration(
         color: P.tabBar,
         border: Border(top: BorderSide(color: P.border, width: 1)),
       ),
@@ -448,6 +499,21 @@ class MoreTab extends StatelessWidget {
           const _HubSection('App'),
           _hubCard(
             context,
+            icon: Icons.palette_outlined,
+            title: 'Appearance',
+            subtitle: 'Theme, text size, density',
+            onTap: () => _push(context, const AppearanceScreen()),
+          ),
+          const SizedBox(height: 12),
+          _hubCard(
+            context,
+            icon: Icons.notifications_outlined,
+            title: 'Notifications',
+            subtitle: 'Run and schedule alerts',
+            onTap: () => _push(context, NotificationsScreen(api: api)),
+          ),
+          const SizedBox(height: 12),          _hubCard(
+            context,
             icon: Icons.settings_outlined,
             title: 'Settings',
             subtitle: 'Connection, sign out, about',
@@ -510,7 +576,7 @@ class MoreTab extends StatelessWidget {
                   ],
                 ),
               ),
-              const Icon(Icons.chevron_right_rounded,
+               Icon(Icons.chevron_right_rounded,
                   color: P.inkFaint, size: 22),
             ],
           ),

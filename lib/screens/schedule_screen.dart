@@ -123,7 +123,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
         title: const Text('Tasks'),
         actions: [
           IconButton(
-            icon: const Icon(Icons.refresh_rounded,
+            icon:  Icon(Icons.refresh_rounded,
                 color: P.inkSecondary, weight: 1.6),
             onPressed: () {
               _loadJobs();
@@ -271,7 +271,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
             ),
             const SizedBox(height: 12),
             if (busy)
-              const SizedBox(
+               SizedBox(
                 height: 36,
                 child: Center(
                     child: SizedBox(
@@ -337,7 +337,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                 children: [
                   const SheetHandle(),
                   const SizedBox(height: 8),
-                  const Text('New scheduled job', style: PT.sectionTitle),
+                   Text('New scheduled job', style: PT.sectionTitle),
                   const SizedBox(height: 16),
                   TextField(
                     controller: taskCtrl,
@@ -350,7 +350,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                     ),
                   ),
                   const SizedBox(height: 12),
-                  const Text('SCHEDULE', style: PT.overline),
+                   Text('SCHEDULE', style: PT.overline),
                   const SizedBox(height: 8),
                   Row(
                     children: [
@@ -644,7 +644,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                 children: [
                   const SheetHandle(),
                   const SizedBox(height: 8),
-                  const Text('New template', style: PT.sectionTitle),
+                   Text('New template', style: PT.sectionTitle),
                   const SizedBox(height: 16),
                   TextField(
                     controller: nameCtrl,

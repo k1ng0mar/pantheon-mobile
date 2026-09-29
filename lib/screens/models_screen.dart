@@ -181,7 +181,7 @@ class _ModelsScreenState extends State<ModelsScreen> {
         title: const Text('Models'),
         actions: [
           IconButton(
-            icon: const Icon(Icons.refresh_rounded,
+            icon:  Icon(Icons.refresh_rounded,
                 color: P.inkSecondary, weight: 1.6),
             onPressed: _load,
           ),
@@ -286,7 +286,7 @@ class _ModelsScreenState extends State<ModelsScreen> {
                 ],
               ),
             ),
-            const Icon(Icons.chevron_right_rounded,
+             Icon(Icons.chevron_right_rounded,
                 color: P.inkFaint, size: 22),
           ],
         ),

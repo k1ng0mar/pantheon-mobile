@@ -1,5 +1,8 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
+import '../services/app_preferences.dart';
 import '../theme.dart';
 
 /// Nyx empty state: centered thin icon, title, body, CTA.
@@ -94,7 +97,7 @@ class _ShimmerState extends State<Shimmer> with SingleTickerProviderStateMixin {
       animation: _c,
       builder: (_, __) => ShaderMask(
         shaderCallback: (bounds) => LinearGradient(
-          colors: const [P.tonal, P.borderStrong, P.tonal],
+          colors:  [P.tonal, P.borderStrong, P.tonal],
           stops: [0.0, _c.value, 1.0],
           begin: Alignment.centerLeft,
           end: Alignment.centerRight,
@@ -137,6 +140,8 @@ class _StaggerItemState extends State<StaggerItem> {
 
   @override
   Widget build(BuildContext context) {
+    // Reduce motion: no entrance animation, render the child directly.
+    if (AppPreferences.instance.reduceMotion.value) return widget.child;
     return AnimatedOpacity(
       duration: const Duration(milliseconds: 320),
       curve: Curves.easeOut,
@@ -208,6 +213,115 @@ class SheetHandle extends StatelessWidget {
         decoration: BoxDecoration(
           color: P.borderStrong,
           borderRadius: BorderRadius.circular(999),
+        ),
+      ),
+    );
+  }
+}
+
+/// Three-dot typing indicator (an alternative to the spinner).
+class DotsLoading extends StatefulWidget {
+  final Color? color;
+  final double size;
+
+  const DotsLoading({super.key, this.color, this.size = 6});
+
+  @override
+  State<DotsLoading> createState() => _DotsLoadingState();
+}
+
+class _DotsLoadingState extends State<DotsLoading>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _c;
+
+  @override
+  void initState() {
+    super.initState();
+    _c = AnimationController(
+        vsync: this, duration: const Duration(milliseconds: 1200))
+      ..repeat();
+  }
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final color = widget.color ?? P.accent;
+    return AnimatedBuilder(
+      animation: _c,
+      builder: (_, __) => Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          for (var i = 0; i < 3; i++) ...[
+            if (i > 0) const SizedBox(width: 4),
+            Builder(builder: (_) {
+              final phase = (_c.value + i / 3) % 1.0;
+              final opacity =
+                  0.25 + 0.75 * (0.5 + 0.5 * math.sin(phase * 2 * math.pi));
+              return Opacity(
+                opacity: opacity,
+                child: Container(
+                  width: widget.size,
+                  height: widget.size,
+                  decoration:
+                      BoxDecoration(shape: BoxShape.circle, color: color),
+                ),
+              );
+            }),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+/// Pulsing dot loading indicator (an alternative to the spinner).
+class PulseLoading extends StatefulWidget {
+  final Color? color;
+  final double size;
+
+  const PulseLoading({super.key, this.color, this.size = 12});
+
+  @override
+  State<PulseLoading> createState() => _PulseLoadingState();
+}
+
+class _PulseLoadingState extends State<PulseLoading>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _c;
+
+  @override
+  void initState() {
+    super.initState();
+    _c = AnimationController(
+        vsync: this, duration: const Duration(milliseconds: 1100))
+      ..repeat(reverse: true);
+  }
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final color = widget.color ?? P.accent;
+    return AnimatedBuilder(
+      animation: _c,
+      builder: (_, __) => Opacity(
+        opacity: 0.35 + 0.65 * _c.value,
+        child: Transform.scale(
+          scale: 0.7 + 0.3 * _c.value,
+          child: Container(
+            width: widget.size,
+            height: widget.size,
+            decoration: BoxDecoration(shape: BoxShape.circle, color: color),
+          ),
         ),
       ),
     );

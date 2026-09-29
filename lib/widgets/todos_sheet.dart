@@ -106,10 +106,10 @@ class _TodosSheetState extends State<_TodosSheet> {
             const SizedBox(height: 8),
             Row(
               children: [
-                const Text('Session todos', style: PT.sectionTitle),
+                 Text('Session todos', style: PT.sectionTitle),
                 const Spacer(),
                 if (_saving)
-                  const SizedBox(
+                   SizedBox(
                     width: 16,
                     height: 16,
                     child: CircularProgressIndicator(
@@ -124,7 +124,7 @@ class _TodosSheetState extends State<_TodosSheet> {
                 child: Text(_error!, style: PT.small.copyWith(color: P.err)),
               )
             else if (_todos == null)
-              const Padding(
+               Padding(
                 padding: EdgeInsets.symmetric(vertical: 24),
                 child: Center(
                   child: SizedBox(
@@ -136,7 +136,7 @@ class _TodosSheetState extends State<_TodosSheet> {
                 ),
               )
             else if (_todos!.isEmpty)
-              const Padding(
+               Padding(
                 padding: EdgeInsets.symmetric(vertical: 16),
                 child: Text('No todos yet. Add the first one below.',
                     style: PT.small, textAlign: TextAlign.center),
@@ -218,9 +218,9 @@ class _TodosSheetState extends State<_TodosSheet> {
               ),
               alignment: Alignment.center,
               child: t.done
-                  ? const Icon(Icons.check_rounded, size: 16, color: P.ok)
+                  ? Icon(Icons.check_rounded, size: 16, color: P.ok)
                   : t.status == 'in_progress'
-                      ? const Icon(Icons.remove_rounded,
+                      ?  Icon(Icons.remove_rounded,
                           size: 16, color: P.accent)
                       : null,
             ),
@@ -250,7 +250,7 @@ class _TodosSheetState extends State<_TodosSheet> {
             ),
           ),
           IconButton(
-            icon: const Icon(Icons.delete_outline_rounded,
+            icon:  Icon(Icons.delete_outline_rounded,
                 size: 18, color: P.inkFaint),
             onPressed: () => _remove(i),
           ),

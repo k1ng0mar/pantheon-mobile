@@ -125,7 +125,7 @@ class PRow extends StatelessWidget {
                 ),
               trailing ??
                   (onTap != null
-                      ? const Padding(
+                      ?  Padding(
                           padding: EdgeInsets.only(top: 2, left: 8),
                           child: Icon(Icons.chevron_right_rounded,
                               size: 20, color: P.inkFaint),

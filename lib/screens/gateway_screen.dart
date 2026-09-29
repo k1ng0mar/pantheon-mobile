@@ -63,7 +63,7 @@ class _GatewayScreenState extends State<GatewayScreen> {
         title: const Text('Gateway'),
         actions: [
           IconButton(
-            icon: const Icon(Icons.refresh_rounded,
+            icon:  Icon(Icons.refresh_rounded,
                 color: P.inkSecondary, weight: 1.6),
             onPressed: _load,
           ),
@@ -73,7 +73,7 @@ class _GatewayScreenState extends State<GatewayScreen> {
         future: _future,
         builder: (context, snap) {
           if (snap.connectionState == ConnectionState.waiting) {
-            return const Center(
+            return  Center(
                 child: CircularProgressIndicator(color: P.accent));
           }
           if (snap.hasError) {
