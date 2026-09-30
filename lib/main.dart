@@ -2,11 +2,13 @@ import 'package:flutter/material.dart';
 
 import 'screens/appearance_screen.dart';
 import 'screens/approvals_screen.dart';
+import 'screens/browser_screen.dart';
 import 'screens/config_screen.dart';
 import 'screens/connect_screen.dart';
 import 'screens/gateway_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/keys_screen.dart';
+import 'screens/logins_screen.dart';
 import 'screens/logs_screen.dart';
 import 'screens/mcp_screen.dart';
 import 'screens/memory_screen.dart';
@@ -507,6 +509,14 @@ class MoreTab extends StatelessWidget {
             title: 'Keys',
             subtitle: '.env API key manager',
             onTap: () => _push(context, KeysScreen(api: api)),
+          ),
+          const SizedBox(height: 12),
+          _hubCard(
+            context,
+            icon: Icons.web_outlined,
+            title: 'Website logins',
+            subtitle: 'Browser sign-in credentials',
+            onTap: () => _push(context, LoginsScreen(api: api)),
           ),
           const SizedBox(height: 12),
           _hubCard(

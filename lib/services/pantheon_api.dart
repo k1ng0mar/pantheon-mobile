@@ -14,6 +14,14 @@ class PantheonTurnInFlightException extends PantheonApiException {
   String toString() => 'A turn is already running in this session.';
 }
 
+/// Thrown when a run can't be retried because it's parked on an
+/// approval (HTTP 409 with error code RUN_PARKED).
+class PantheonRetryParkedException extends PantheonApiException {
+  PantheonRetryParkedException(String body) : super(409, body);
+  @override
+  String toString() => 'Parked on approval — grant or deny it first.';
+}
+
 class PantheonApiException implements Exception {
   final int status;
   final String body;
@@ -130,6 +138,23 @@ class PantheonApi {
     http.Response res;
     try {
       res = await http.delete(_uri(path), headers: _headers).timeout(_timeout);
+    } on TimeoutException {
+      throw PantheonUnreachableException('Timed out reaching $baseUrl.');
+    } catch (e) {
+      throw PantheonUnreachableException('Cannot reach $baseUrl ($e).');
+    }
+    return _decode(res);
+  }
+
+  Future<Map<String, dynamic>> _patch(String path,
+      [Map<String, dynamic>? body]) async {
+    http.Response res;
+    try {
+      res = await http
+          .patch(_uri(path),
+              headers: {..._headers, 'Content-Type': 'application/json'},
+              body: jsonEncode(body ?? {}))
+          .timeout(_timeout);
     } on TimeoutException {
       throw PantheonUnreachableException('Timed out reaching $baseUrl.');
     } catch (e) {
@@ -315,6 +340,32 @@ class PantheonApi {
     await _delete('/api/runs/${Uri.encodeComponent(id)}/queue');
   }
 
+  /// Drop one queued message by its FIFO index.
+  Future<void> deleteQueueItem(String id, int index) async {
+    await _delete('/api/runs/${Uri.encodeComponent(id)}/queue/$index');
+  }
+
+  /// Replace the text of one queued message by its FIFO index.
+  Future<void> editQueueItem(String id, int index, String text) async {
+    await _patch(
+        '/api/runs/${Uri.encodeComponent(id)}/queue/$index', {'text': text});
+  }
+
+  /// Retry a failed turn: the server replays the last user message as a
+  /// new turn. Throws [PantheonTurnInFlightException] when a turn is
+  /// already running, [PantheonRetryParkedException] when the run is
+  /// parked on an approval.
+  Future<void> retryRun(String id) async {
+    try {
+      await _post('/api/runs/${Uri.encodeComponent(id)}/retry');
+    } on PantheonApiException catch (e) {
+      if (e.status == 409 && e.body.contains('parked on approval')) {
+        throw PantheonRetryParkedException(e.body);
+      }
+      rethrow;
+    }
+  }
+
   /// Answer a parked `ask_user` question and resume the turn.
   Future<void> answerInput(
       String id, String callId, String answer) async {
@@ -481,6 +532,54 @@ class PantheonApi {
 
   Future<void> deleteEnv(String key) async {
     await _delete('/api/env/${Uri.encodeComponent(key)}');
+  }
+
+  // ------------------------------------------------------------------
+  // Website logins
+  // ------------------------------------------------------------------
+
+  /// `GET /api/logins` → masked entries. Passwords are never returned.
+  Future<List<LoginEntry>> listLogins() async {
+    final j = await _get('/api/logins');
+    final list = (j['logins'] as List?) ?? [];
+    return list
+        .whereType<Map>()
+        .map((e) => LoginEntry.fromJson(e.cast<String, dynamic>()))
+        .toList();
+  }
+
+  /// `POST /api/logins` with `{site, username, password}`.
+  Future<LoginEntry> createLogin(
+      String site, String username, String password) async {
+    final j = await _post('/api/logins', {
+      'site': site,
+      'username': username,
+      'password': password,
+    });
+    final entry = j['login'];
+    if (entry is Map) {
+      return LoginEntry.fromJson(entry.cast<String, dynamic>());
+    }
+    // Fall back to a refresh if the shape is unexpected.
+    final all = await listLogins();
+    return all.firstWhere((e) => e.site == site && e.username == username,
+        orElse: () => LoginEntry(id: '', site: site, username: username));
+  }
+
+  /// `PUT /api/logins/:id` with any of `{site, username, password}`.
+  /// The password key is only sent when it changed.
+  Future<void> updateLogin(String id,
+      {String? site, String? username, String? password}) async {
+    final body = <String, dynamic>{};
+    if (site != null) body['site'] = site;
+    if (username != null) body['username'] = username;
+    if (password != null && password.isNotEmpty) body['password'] = password;
+    await _put('/api/logins/${Uri.encodeComponent(id)}', body);
+  }
+
+  /// `DELETE /api/logins/:id`.
+  Future<void> deleteLogin(String id) async {
+    await _delete('/api/logins/${Uri.encodeComponent(id)}');
   }
 
   // ------------------------------------------------------------------
@@ -716,5 +815,19 @@ class PantheonApi {
   Future<void> deleteTemplate(String name) async {
     await _delete(
         '/api/schedule/templates/${Uri.encodeComponent(name)}');
+  }
+
+  /// Browser tool backend status (`GET /api/browser/status`).
+  Future<BrowserStatus> browserStatus() async {
+    final j = await _get('/api/browser/status');
+    return BrowserStatus.fromJson(j);
+  }
+
+  /// Forward an input action to a browser session
+  /// (`POST /api/browser/input`). `action` is one of `tap` ({x, y}),
+  /// `type` ({text}), `scroll` ({dx, dy}), `press` ({key}), `navigate`
+  /// ({url}), `back`, `forward`, `reload`; `session` is optional.
+  Future<void> browserInput(Map<String, dynamic> body) async {
+    await _post('/api/browser/input', body);
   }
 }
