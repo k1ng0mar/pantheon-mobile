@@ -23,6 +23,12 @@ class ConfigDoc {
         k.toString(),
         v is Map ? (v as Map).cast<String, dynamic>() : <String, dynamic>{}));
   }
+
+  /// The active profile selector: the top-level `agent` key, if set.
+  String? get activeAgent {
+    final a = values['agent'];
+    return a is String && a.isNotEmpty ? a : null;
+  }
 }
 
 /// One flattened schema field from `GET /api/config/schema`:

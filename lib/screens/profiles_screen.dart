@@ -1,14 +1,22 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:path_provider/path_provider.dart';
 
 import '../models/models.dart';
 import '../services/pantheon_api.dart';
 import '../theme.dart';
+import '../widgets/buttons.dart';
+import '../widgets/chips.dart';
 import '../widgets/forms.dart';
 import '../widgets/pantheon_card.dart';
 import '../widgets/states.dart';
 
 /// Agent profiles: the `[agents]` table of the runtime config.
-/// Read-only list with a detail sheet; edits go through Configs.
+///
+/// Circular avatars (six bundled presets or a custom upload), profile
+/// switching, and profile creation — all through `PUT /api/config`.
 class ProfilesScreen extends StatefulWidget {
   final PantheonApi api;
 
@@ -38,7 +46,20 @@ class _ProfilesScreenState extends State<ProfilesScreen> {
         title: const Text('Profiles'),
         actions: [
           IconButton(
-            icon:  Icon(Icons.refresh_rounded,
+            icon: const Icon(Icons.add_rounded,
+                color: P.accent, weight: 1.6),
+            tooltip: 'New profile',
+            onPressed: () async {
+              final names = (await _future)?.agents.keys.toSet() ?? {};
+              final created = await showPSheet<bool>(
+                context,
+                _CreateProfileSheet(api: widget.api, existing: names),
+              );
+              if (created == true && mounted) _load();
+            },
+          ),
+          IconButton(
+            icon: const Icon(Icons.refresh_rounded,
                 color: P.inkSecondary, weight: 1.6),
             onPressed: _load,
           ),
@@ -59,14 +80,24 @@ class _ProfilesScreenState extends State<ProfilesScreen> {
               onCta: _load,
             );
           }
-          final agents = snap.data!.agents;
+          final doc = snap.data!;
+          final agents = doc.agents;
+          final active = doc.activeAgent;
           if (agents.isEmpty) {
-            return const EmptyState(
+            return EmptyState(
               icon: Icons.person_outline_rounded,
               title: 'No profiles declared',
               body:
                   'This install has no [agents] table in its config yet. '
-                  'Add one under Configs to give Pantheon a named identity.',
+                  'Tap + to create the first profile.',
+              ctaLabel: 'New profile',
+              onCta: () async {
+                final created = await showPSheet<bool>(
+                  context,
+                  _CreateProfileSheet(api: widget.api, existing: {}),
+                );
+                if (created == true && mounted) _load();
+              },
             );
           }
           final names = agents.keys.toList()..sort();
@@ -82,7 +113,7 @@ class _ProfilesScreenState extends State<ProfilesScreen> {
                 return StaggerItem(
                     index: i,
                     child: _profileCard(
-                        name, agents[name] ?? {}));
+                        name, agents[name] ?? {}, active == name));
               },
             ),
           );
@@ -91,7 +122,7 @@ class _ProfilesScreenState extends State<ProfilesScreen> {
     );
   }
 
-  Widget _profileCard(String name, Map<String, dynamic> p) {
+  Widget _profileCard(String name, Map<String, dynamic> p, bool isActive) {
     final display = p['display_name'] as String?;
     final inherits = p['inherits'] as String?;
     final policy = p['policy'] as String?;
@@ -100,33 +131,34 @@ class _ProfilesScreenState extends State<ProfilesScreen> {
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
       child: PCard(
-        onTap: () => _detail(name, p),
+        onTap: () => _detail(name, p, isActive),
         child: Row(
           children: [
-            Container(
-              width: 48,
-              height: 48,
-              decoration: const BoxDecoration(
-                gradient: P.gradient,
-                shape: BoxShape.circle,
-              ),
-              alignment: Alignment.center,
-              child: Text(
-                name.isEmpty ? '?' : name[0].toUpperCase(),
-                style: const TextStyle(
-                    fontFamily: PT.displayFamily,
-                    fontSize: 20,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.white),
-              ),
+            ProfilePicture(
+              avatar: p['avatar'] as String?,
+              name: name,
+              size: 48,
+              active: isActive,
             ),
             const SizedBox(width: 14),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(display?.isNotEmpty == true ? display! : name,
-                      style: PT.rowTitle),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                            display?.isNotEmpty == true ? display! : name,
+                            style: PT.rowTitle,
+                            overflow: TextOverflow.ellipsis),
+                      ),
+                      if (isActive) ...[
+                        const SizedBox(width: 8),
+                        const PillChip(label: 'Active', selected: true),
+                      ],
+                    ],
+                  ),
                   const SizedBox(height: 3),
                   Text(
                     [
@@ -152,44 +184,19 @@ class _ProfilesScreenState extends State<ProfilesScreen> {
     );
   }
 
-  Future<void> _detail(String name, Map<String, dynamic> p) async {
-    await showPSheet(
+  Future<void> _detail(
+      String name, Map<String, dynamic> p, bool isActive) async {
+    final changed = await showPSheet<bool>(
       context,
-      SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const SheetHandle(),
-              const SizedBox(height: 8),
-              Text(name, style: PT.sectionTitle),
-              const SizedBox(height: 4),
-               Text('AGENT PROFILE', style: PT.overline),
-              const SizedBox(height: 16),
-              KvRow('display name', p['display_name']?.toString() ?? '—'),
-              KvRow('inherits', p['inherits']?.toString() ?? '—'),
-              KvRow('policy', p['policy']?.toString() ?? '—'),
-              KvRow('model', p['model']?.toString() ?? 'runtime default'),
-              KvRow('memory namespace',
-                  p['memory_namespace']?.toString() ?? '—',
-                  mono: true),
-              KvRow('persona file', p['soul_file']?.toString() ?? '—',
-                  mono: true),
-              KvRow('instructions file',
-                  p['agents_file']?.toString() ?? '—',
-                  mono: true),
-              const SizedBox(height: 8),
-              Text(
-                'Edit profiles under Configs → [agents].',
-                style: PT.meta.copyWith(color: P.inkFaint),
-              ),
-            ],
-          ),
-        ),
+      _ProfileDetailSheet(
+        api: widget.api,
+        name: name,
+        profile: p,
+        active: isActive,
+        onChanged: _load,
       ),
     );
+    if (changed == true && mounted) _load();
   }
 
   Widget _skeleton() {
@@ -206,4 +213,585 @@ class _ProfilesScreenState extends State<ProfilesScreen> {
 
 extension on String {
   String ifEmpty(String fallback) => isEmpty ? fallback : this;
+}
+
+/// Circular agent avatar.
+///
+/// `avatar` is `preset:avatar-N` (1–6) for the bundled set, an absolute
+/// file path for a custom upload, or null — which falls back to the
+/// gradient-initial circle. An unresolvable value (unknown preset, missing
+/// file) also falls back instead of crashing.
+class ProfilePicture extends StatelessWidget {
+  final String? avatar;
+  final String name;
+  final double size;
+  final bool active;
+
+  const ProfilePicture({
+    super.key,
+    required this.avatar,
+    required this.name,
+    this.size = 48,
+    this.active = false,
+  });
+
+  /// Bundled asset for `preset:avatar-N`; null for anything else.
+  static String? presetAsset(String? avatar) {
+    if (avatar == null || !avatar.startsWith('preset:')) return null;
+    final preset = avatar.substring('preset:'.length);
+    return RegExp(r'^avatar-[1-6]$').hasMatch(preset)
+        ? 'assets/avatars/$preset.jpg'
+        : null;
+  }
+
+  static final Map<String, Future<bool>> _existsCache = {};
+
+  static Future<bool> _fileExists(String path) => _existsCache
+      .putIfAbsent(path, () async => await File(path).exists());
+
+  Widget _fallback() {
+    return Container(
+      width: size,
+      height: size,
+      decoration: const BoxDecoration(
+        gradient: P.gradient,
+        shape: BoxShape.circle,
+      ),
+      alignment: Alignment.center,
+      child: Text(
+        name.isEmpty ? '?' : name[0].toUpperCase(),
+        style: TextStyle(
+            fontFamily: PT.displayFamily,
+            fontSize: size * 0.42,
+            fontWeight: FontWeight.w600,
+            color: Colors.white),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final asset = presetAsset(avatar);
+    Widget face;
+    if (asset != null) {
+      face = CircleAvatar(
+          radius: size / 2, backgroundImage: AssetImage(asset));
+    } else if (avatar != null && avatar!.startsWith('/')) {
+      face = FutureBuilder<bool>(
+        future: _fileExists(avatar!),
+        builder: (_, snap) {
+          if (snap.data == true) {
+            return CircleAvatar(
+                radius: size / 2,
+                backgroundImage: FileImage(File(avatar!)));
+          }
+          return _fallback();
+        },
+      );
+    } else {
+      face = _fallback();
+    }
+    if (!active) return face;
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        face,
+        Positioned(
+          right: -2,
+          bottom: -2,
+          child: Container(
+            width: 18,
+            height: 18,
+            decoration: BoxDecoration(
+              color: P.ok,
+              shape: BoxShape.circle,
+              border: Border.all(color: P.surface, width: 2),
+            ),
+            child: const Icon(Icons.check_rounded,
+                size: 11, color: Colors.white, weight: 2.4),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// Detail sheet for one profile: avatar change, fields, and (when not
+/// already active) the "set as active" switch.
+class _ProfileDetailSheet extends StatefulWidget {
+  final PantheonApi api;
+  final String name;
+  final Map<String, dynamic> profile;
+  final bool active;
+
+  /// Called after an in-sheet change (e.g. a new picture) so the list
+  /// behind the sheet refreshes even if the sheet is dismissed by swipe.
+  final VoidCallback onChanged;
+
+  const _ProfileDetailSheet({
+    required this.api,
+    required this.name,
+    required this.profile,
+    required this.active,
+    required this.onChanged,
+  });
+
+  @override
+  State<_ProfileDetailSheet> createState() => _ProfileDetailSheetState();
+}
+
+class _ProfileDetailSheetState extends State<_ProfileDetailSheet> {
+  late String? _avatar;
+  bool _busy = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _avatar = widget.profile['avatar'] as String?;
+  }
+
+  Future<void> _changePicture() async {
+    final picked =
+        await showPSheet<String>(context, _AvatarPicker(current: _avatar));
+    if (picked == null || !mounted) return;
+    setState(() => _busy = true);
+    try {
+      await widget.api.putConfig({'agents.${widget.name}.avatar': picked});
+      setState(() => _avatar = picked);
+      widget.onChanged();
+    } catch (e) {
+      if (mounted) toastError(context, e);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _setActive() async {
+    setState(() => _busy = true);
+    try {
+      await widget.api.putConfig({'agent': widget.name});
+      if (!mounted) return;
+      toast(context, '${widget.name} is now the active profile');
+      Navigator.pop(context, true);
+    } catch (e) {
+      if (mounted) {
+        toastError(context, e);
+        setState(() => _busy = false);
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final p = widget.profile;
+    return SafeArea(
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const SheetHandle(),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                ProfilePicture(
+                    avatar: _avatar,
+                    name: widget.name,
+                    size: 64,
+                    active: widget.active),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(widget.name, style: PT.sectionTitle),
+                      const SizedBox(height: 4),
+                      const Text('AGENT PROFILE', style: PT.overline),
+                    ],
+                  ),
+                ),
+                if (widget.active)
+                  const PillChip(label: 'Active', selected: true),
+              ],
+            ),
+            const SizedBox(height: 16),
+            KvRow('display name', p['display_name']?.toString() ?? '—'),
+            KvRow('inherits', p['inherits']?.toString() ?? '—'),
+            KvRow('policy', p['policy']?.toString() ?? '—'),
+            KvRow('model', p['model']?.toString() ?? 'runtime default'),
+            KvRow('provider', p['provider']?.toString() ?? 'runtime default'),
+            KvRow('memory namespace', p['memory_namespace']?.toString() ?? '—',
+                mono: true),
+            KvRow('persona file', p['soul_file']?.toString() ?? '—',
+                mono: true),
+            KvRow('instructions file', p['agents_file']?.toString() ?? '—',
+                mono: true),
+            KvRow('picture', _avatar ?? '—', mono: true),
+            const SizedBox(height: 16),
+            TonalButton(
+              label: _busy ? 'Working…' : 'Change picture',
+              onTap: _busy ? null : _changePicture,
+            ),
+            const SizedBox(height: 12),
+            if (!widget.active) ...[
+              GradientButton(
+                label: _busy ? 'Working…' : 'Set as active',
+                onTap: _busy ? null : _setActive,
+              ),
+              const SizedBox(height: 12),
+              Text(
+                'Applies to new sessions and runs. Turns already in '
+                'flight keep their current profile.',
+                style: PT.meta.copyWith(color: P.inkFaint),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Avatar picker: the six bundled presets in a circular grid, plus a
+/// custom-upload tile. Returns the `avatar` config value on pick.
+class _AvatarPicker extends StatefulWidget {
+  final String? current;
+
+  const _AvatarPicker({required this.current});
+
+  @override
+  State<_AvatarPicker> createState() => _AvatarPickerState();
+}
+
+class _AvatarPickerState extends State<_AvatarPicker> {
+  bool _picking = false;
+
+  Future<void> _uploadCustom() async {
+    if (_picking) return;
+    setState(() => _picking = true);
+    try {
+      final file =
+          await ImagePicker().pickImage(source: ImageSource.gallery);
+      if (file == null) return;
+      // ImagePicker hands back a temp/cache path the OS can purge, so
+      // copy the image into our own documents directory and persist
+      // THAT path instead.
+      final dir = await getApplicationDocumentsDirectory();
+      final avatars = Directory('${dir.path}/profile-avatars');
+      await avatars.create(recursive: true);
+      final ext =
+          file.name.contains('.') ? '.${file.name.split('.').last}' : '.jpg';
+      final target =
+          File('${avatars.path}/avatar-${DateTime.now().millisecondsSinceEpoch}$ext');
+      await File(file.path).copy(target.path);
+      if (mounted) Navigator.pop(context, target.path);
+    } catch (e) {
+      if (mounted) toastError(context, e);
+    } finally {
+      if (mounted) setState(() => _picking = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(20, 8, 20, 28),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const SheetHandle(),
+            const SizedBox(height: 12),
+            Text('Choose a picture', style: PT.sectionTitle),
+            const SizedBox(height: 4),
+            const Text('PROFILE PICTURE', style: PT.overline),
+            const SizedBox(height: 16),
+            GridView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 3,
+                mainAxisSpacing: 16,
+                crossAxisSpacing: 16,
+              ),
+              itemCount: 7,
+              itemBuilder: (context, i) {
+                if (i < 6) {
+                  final value = 'preset:avatar-${i + 1}';
+                  final selected = widget.current == value;
+                  return GestureDetector(
+                    onTap: () => Navigator.pop(context, value),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 150),
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: selected ? P.accent : Colors.transparent,
+                          width: 3,
+                        ),
+                      ),
+                      child: ClipOval(
+                        child: Image.asset(
+                          'assets/avatars/avatar-${i + 1}.jpg',
+                          fit: BoxFit.cover,
+                        ),
+                      ),
+                    ),
+                  );
+                }
+                return GestureDetector(
+                  onTap: _uploadCustom,
+                  child: Container(
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: P.tonal,
+                      border: Border.all(color: P.borderStrong, width: 1),
+                    ),
+                    child: _picking
+                        ? const Center(
+                            child: SizedBox(
+                                width: 24,
+                                height: 24,
+                                child: CircularProgressIndicator(
+                                    strokeWidth: 2)))
+                        : Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              const Icon(Icons.upload_rounded,
+                                  color: P.inkSecondary, size: 26),
+                              const SizedBox(height: 4),
+                              Text('Upload',
+                                  style: PT.meta
+                                      .copyWith(color: P.inkSecondary)),
+                            ],
+                          ),
+                  ),
+                );
+              },
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Custom uploads are copied into the app\'s storage and kept '
+              'as an absolute path on the profile.',
+              style: PT.meta.copyWith(color: P.inkFaint),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Create-profile form. Writes the new `[agents.<name>]` table through
+/// dotted-path `PUT /api/config` changes.
+class _CreateProfileSheet extends StatefulWidget {
+  final PantheonApi api;
+  final Set<String> existing;
+
+  const _CreateProfileSheet({required this.api, required this.existing});
+
+  @override
+  State<_CreateProfileSheet> createState() => _CreateProfileSheetState();
+}
+
+class _CreateProfileSheetState extends State<_CreateProfileSheet> {
+  final _name = TextEditingController();
+  final _display = TextEditingController();
+  final _model = TextEditingController();
+  final _provider = TextEditingController();
+  final _namespace = TextEditingController();
+  final _soul = TextEditingController();
+  final _agentsFile = TextEditingController();
+  String? _inherits;
+  String? _policy;
+  String? _avatar;
+  bool _saving = false;
+
+  static final _slug = RegExp(r'^[a-z0-9][a-z0-9_-]*$');
+
+  @override
+  void initState() {
+    super.initState();
+    // Keep the avatar-preview initial in sync with the typed name.
+    _name.addListener(() => setState(() {}));
+  }
+
+  @override
+  void dispose() {
+    _name.dispose();
+    _display.dispose();
+    _model.dispose();
+    _provider.dispose();
+    _namespace.dispose();
+    _soul.dispose();
+    _agentsFile.dispose();
+    super.dispose();
+  }
+
+  Future<void> _pickAvatar() async {
+    final picked =
+        await showPSheet<String>(context, _AvatarPicker(current: _avatar));
+    if (picked != null) setState(() => _avatar = picked);
+  }
+
+  Future<void> _save() async {
+    final name = _name.text.trim().toLowerCase();
+    if (name.isEmpty) {
+      toast(context, 'Give the profile a name first');
+      return;
+    }
+    if (!_slug.hasMatch(name)) {
+      toast(context,
+          'Name must be a slug: lowercase letters, digits, - and _');
+      return;
+    }
+    if (widget.existing.contains(name)) {
+      toast(context, 'A profile named "$name" already exists');
+      return;
+    }
+    setState(() => _saving = true);
+    try {
+      final prefix = 'agents.$name';
+      final changes = <String, dynamic>{
+        // Always send display_name so the table is created even when
+        // every other field is left blank.
+        '$prefix.display_name':
+            _display.text.trim().ifEmpty(name),
+      };
+      void put(String key, String value) {
+        final v = value.trim();
+        if (v.isNotEmpty) changes['$prefix.$key'] = v;
+      }
+
+      put('inherits', _inherits ?? '');
+      put('policy', _policy ?? '');
+      put('model', _model.text);
+      put('provider', _provider.text);
+      put('memory_namespace', _namespace.text);
+      put('soul_file', _soul.text);
+      put('agents_file', _agentsFile.text);
+      if (_avatar != null) changes['$prefix.avatar'] = _avatar;
+      await widget.api.putConfig(changes);
+      if (!mounted) return;
+      toast(context, 'Profile "$name" created');
+      Navigator.pop(context, true);
+    } catch (e) {
+      if (mounted) {
+        toastError(context, e);
+        setState(() => _saving = false);
+      }
+    }
+  }
+
+  Widget _field(TextEditingController c, String label, String hint,
+      {TextInputType? keyboard}) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: TextField(
+        controller: c,
+        style: PT.body,
+        keyboardType: keyboard,
+        decoration:
+            InputDecoration(labelText: label, hintText: hint),
+      ),
+    );
+  }
+
+  Widget _dropdown(String label, String? value, List<String> options,
+      ValueChanged<String?> onChanged) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(label, style: PT.meta),
+          const SizedBox(height: 6),
+          DropdownButtonFormField<String>(
+            value: value,
+            items: options
+                .map((o) => DropdownMenuItem(
+                    value: o.isEmpty ? null : o,
+                    child: Text(o.isEmpty ? '—' : o)))
+                .toList(),
+            onChanged: onChanged,
+            style: PT.body.copyWith(fontSize: 14),
+            dropdownColor: P.surface,
+            decoration: const InputDecoration(
+              contentPadding:
+                  EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final inheritsOptions = <String>['', ...widget.existing.toList()..sort()];
+    return SafeArea(
+      child: SingleChildScrollView(
+        padding: EdgeInsets.fromLTRB(
+            20, 8, 20, 24 + MediaQuery.of(context).viewInsets.bottom),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const SheetHandle(),
+            const SizedBox(height: 12),
+            Text('New profile', style: PT.sectionTitle),
+            const SizedBox(height: 4),
+            const Text('AGENT PROFILE', style: PT.overline),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                GestureDetector(
+                  onTap: _pickAvatar,
+                  child: ProfilePicture(
+                      avatar: _avatar, name: _name.text, size: 64),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    _avatar == null
+                        ? 'Tap the circle to pick a picture.'
+                        : 'Picture selected — tap to change.',
+                    style: PT.meta.copyWith(color: P.inkFaint),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            _field(_name, 'Name', 'e.g. nyx — the [agents.<name>] key'),
+            _field(_display, 'Display name', 'e.g. Nyx'),
+            _dropdown('Inherits', _inherits, inheritsOptions,
+                (v) => setState(() => _inherits = v)),
+            _dropdown('Policy', _policy,
+                const ['', 'reader', 'coder', 'coder_memory'],
+                (v) => setState(() => _policy = v)),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(child: _field(_provider, 'Provider', 'optional')),
+                const SizedBox(width: 12),
+                Expanded(child: _field(_model, 'Model', 'optional')),
+              ],
+            ),
+            _field(_namespace, 'Memory namespace',
+                'defaults to agent:<name>'),
+            _field(_soul, 'Persona file', 'path to SOUL.md equivalent'),
+            _field(_agentsFile, 'Instructions file',
+                'path to AGENTS.md equivalent'),
+            const SizedBox(height: 4),
+            GradientButton(
+              label: _saving ? 'Creating…' : 'Create profile',
+              onTap: _saving ? null : _save,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
