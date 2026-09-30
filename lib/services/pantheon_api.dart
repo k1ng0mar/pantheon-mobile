@@ -910,9 +910,14 @@ class PantheonApi {
         '/api/schedule/templates/${Uri.encodeComponent(name)}');
   }
 
-  /// Browser tool backend status (`GET /api/browser/status`).
-  Future<BrowserStatus> browserStatus() async {
-    final j = await _get('/api/browser/status');
+  /// Browser tool backend status (`GET /api/browser/status`). When
+  /// `session` is given, `last_activity` narrates that session's latest
+  /// browser action (agent tool call or take-control gesture).
+  Future<BrowserStatus> browserStatus({String? session}) async {
+    final q = session == null || session.isEmpty
+        ? ''
+        : '?session=${Uri.encodeQueryComponent(session)}';
+    final j = await _get('/api/browser/status$q');
     return BrowserStatus.fromJson(j);
   }
 
