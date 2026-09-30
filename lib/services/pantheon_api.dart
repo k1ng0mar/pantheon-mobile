@@ -42,7 +42,7 @@ enum MessageSendOutcome {
   /// The message started (or joined) a turn immediately.
   sent,
 
-  /// A turn was in flight; the message was parked in the one-slot queue.
+  /// A turn was in flight; the message was parked in the FIFO queue.
   queued,
 
   /// The running turn was redirected and the message queued behind it.
@@ -283,7 +283,7 @@ class PantheonApi {
   ///
   /// - 200 → [MessageSendOutcome.sent]: the turn was admitted.
   /// - 202 with `queued: true` → [MessageSendOutcome.queued]: a turn was
-  ///   in flight and the message was parked in the one-slot queue.
+  ///   in flight and the message was parked in the FIFO queue.
   /// - 202 with `steered: true` → [MessageSendOutcome.steered]: the
   ///   running turn was redirected and the message queued behind it.
   /// - 409 TURN_IN_FLIGHT → [PantheonTurnInFlightException] when neither

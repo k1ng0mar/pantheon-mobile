@@ -72,7 +72,10 @@ class PantheonRun {
   final List<TranscriptItem> transcript;
   final List<TimelineItem> timeline;
   final List<PendingInput> pendingInput;
-  final String? queuedMessage;
+  /// FIFO list of follow-up messages parked while a turn runs, oldest
+  /// first. Newer backends send a JSON array; older ones sent a single
+  /// string or null (handled in [fromJson]).
+  final List<String> queuedMessages;
   final String mode; // plan | build
   final ContextTokens contextTokens;
 
@@ -94,7 +97,7 @@ class PantheonRun {
     this.transcript = const [],
     this.timeline = const [],
     this.pendingInput = const [],
-    this.queuedMessage,
+    this.queuedMessages = const [],
     this.mode = 'build',
     this.contextTokens = const ContextTokens(),
   });
@@ -118,6 +121,17 @@ class PantheonRun {
     } else {
       pendingInput = listOf(pi, PendingInput.fromJson);
     }
+    // `queued_message` is a FIFO list of message strings on newer
+    // backends; older backends sent a single string or null.
+    final qm = j['queued_message'];
+    final List<String> queuedMessages;
+    if (qm is List) {
+      queuedMessages = qm.whereType<String>().toList();
+    } else if (qm is String && qm.isNotEmpty) {
+      queuedMessages = [qm];
+    } else {
+      queuedMessages = [];
+    }
     return PantheonRun(
       id: j['id'] as String? ?? '',
       status: j['status'] as String? ?? 'unknown',
@@ -136,7 +150,7 @@ class PantheonRun {
       transcript: listOf(j['transcript'], TranscriptItem.fromJson),
       timeline: listOf(j['timeline'], TimelineItem.fromJson),
       pendingInput: pendingInput,
-      queuedMessage: j['queued_message'] as String?,
+      queuedMessages: queuedMessages,
       mode: j['mode'] as String? ?? 'build',
       contextTokens: ctx is Map
           ? ContextTokens.fromJson(ctx.cast<String, dynamic>())

@@ -81,9 +81,14 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
   /// `provider · model` from the `[model]` config section.
   String? _modelLine;
 
-  /// True when the queued message showing in the detail was set from
-  /// this screen — the poller auto-drains it when the turn settles.
-  bool _queuedByMe = false;
+  /// How many of the run's queued messages were parked from this screen.
+  /// The poller auto-drains them oldest-first as turns settle; steer
+  /// resets this to 1 because it wipes the server queue and parks just
+  /// the steered message.
+  int _queuedByMe = 0;
+
+  /// Whether the queue section lists its messages expanded.
+  bool _queueExpanded = false;
 
   /// Attachments staged on the composer: picked locally, uploaded to
   /// `POST /api/uploads`, then sent with the message as attachment ids.
@@ -297,15 +302,19 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
       // Always take the fresh run: the queued chip, mode pills, and
       // context meter read from _run, not just its status.
       setState(() => _run = run);
-      // Turn settled: haptic + auto-drain a queue this screen set.
+      // Turn settled: haptic + auto-drain the oldest message this
+      // screen queued, if any are still waiting server-side.
       if (wasLive && !_isLive(run.status)) {
         _haptic(HapticFeedback.lightImpact);
       }
-      if (wasLive && !_isLive(run.status) && _queuedByMe) {
-        final q = run.queuedMessage;
-        _queuedByMe = false;
-        if (q != null && q.isNotEmpty) {
-          await _drainQueueText(q);
+      if (wasLive && !_isLive(run.status) && _queuedByMe > 0) {
+        final queue = run.queuedMessages;
+        if (queue.isEmpty) {
+          _queuedByMe = 0;
+        } else {
+          // Attempt the drain; on failure _drainQueueText keeps the
+          // poller alive (turn-in-flight) so the next settle retries.
+          if (await _drainQueueText(queue.first)) _queuedByMe--;
           return;
         }
       }
@@ -374,18 +383,24 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
     setState(() => _messages.remove(t));
   }
 
-  /// Send a queued message as a normal turn now that the run settled.
-  Future<void> _drainQueueText(String text) async {
+  /// Send the oldest queued message as a normal turn now that the run
+  /// settled. Returns true when the turn started. The server pops the
+  /// head of its FIFO queue on the idle send, so the rest stay queued —
+  /// never clear the whole queue here.
+  Future<bool> _drainQueueText(String text) async {
     try {
       await widget.api.sendRunMessage(widget.runId, text);
-      // Idempotent: the backend may already have consumed the slot.
-      await widget.api.clearQueue(widget.runId);
       _ensurePolling();
       await _pollOnce();
+      return true;
     } on PantheonTurnInFlightException {
-      // A new turn started before we drained; retry on the next settle.
-      _queuedByMe = true;
-    } catch (_) {}
+      // A new turn started before we drained; keep polling so the next
+      // settle retries.
+      _ensurePolling();
+      return false;
+    } catch (_) {
+      return false;
+    }
   }
 
   Future<void> _send() async {
@@ -432,7 +447,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
       // The staged attachments are now on their way: clear the chips.
       if (mounted) setState(() => _attachments.clear());
       if (result.queued || result.steered) {
-        _queuedByMe = true;
+        _queuedByMe++;
         if (!mounted) return;
         toast(
             context,
@@ -507,7 +522,9 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
     try {
       final result = await widget.api.sendRunMessage(widget.runId, text,
           queue: true, steer: choice == 'steer', attachments: attachments);
-      _queuedByMe = true;
+      // Steer wipes the server queue and parks just this message; a
+      // plain queue appends behind what's already waiting.
+      _queuedByMe = result.steered ? 1 : _queuedByMe + 1;
       // The staged attachments are now queued/steered with the message:
       // clear the chips so a later send can't attach them twice.
       if (mounted) setState(() => _attachments.clear());
@@ -602,12 +619,12 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
     }
   }
 
-  /// Drop the queued message. The optimistic bubble (if any) is
+  /// Drop every queued message. The optimistic bubbles (if any) are
   /// retracted by the [_load] below, which reconciles from the server.
   Future<void> _clearQueue() async {
     try {
       await widget.api.clearQueue(widget.runId);
-      _queuedByMe = false;
+      _queuedByMe = 0;
       if (!mounted) return;
       toast(context, 'Queue cleared.');
       await _load();
@@ -616,15 +633,16 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
     }
   }
 
-  /// Tap the queued chip to send it now.
+  /// Tap the queue header to send the oldest queued message now. The
+  /// server pops the head of its FIFO queue on the idle send, so the
+  /// rest stay queued — never clear the whole queue here.
   Future<void> _drainQueue() async {
-    final text = _run?.queuedMessage;
-    if (text == null || text.isEmpty || _sending) return;
+    final queue = _run?.queuedMessages ?? [];
+    if (queue.isEmpty || _sending) return;
     setState(() => _sending = true);
     try {
-      await widget.api.sendRunMessage(widget.runId, text);
-      _queuedByMe = false;
-      await widget.api.clearQueue(widget.runId);
+      await widget.api.sendRunMessage(widget.runId, queue.first);
+      if (_queuedByMe > 0) _queuedByMe--;
       _ensurePolling();
       await _pollOnce();
     } on PantheonTurnInFlightException {
@@ -1199,10 +1217,8 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
             _clarifyCard(run.pendingInput.first),
           if (run != null && run.status == 'awaiting_approval')
             _approvalBanner(),
-          if (run != null &&
-              run.queuedMessage != null &&
-              run.queuedMessage!.isNotEmpty)
-            _queuedChip(run.queuedMessage!),
+          if (run != null && run.queuedMessages.isNotEmpty)
+            _queueSection(run.queuedMessages),
           _SlashSuggestions(controller: _composer, onPick: _pickSlash),
           _composerBar(),
         ],
@@ -1356,38 +1372,81 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
     );
   }
 
-  /// The queued follow-up: tap to send now, × to drop.
-  Widget _queuedChip(String text) {
+  /// The queued follow-ups as a FIFO section, oldest first. Collapsed it
+  /// shows the count; expanded it lists each message. Tap the label to
+  /// send the oldest now; Clear drops the whole server queue.
+  Widget _queueSection(List<String> queue) {
     return Container(
       margin: const EdgeInsets.fromLTRB(12, 8, 12, 0),
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
         color: P.accentSoft,
-        borderRadius: BorderRadius.circular(999),
-        border:
-            Border.all(color: P.accent.withValues(alpha: 0.4), width: 1),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: P.accent.withValues(alpha: 0.4), width: 1),
       ),
-      child: Row(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
-           Icon(Icons.schedule_rounded, size: 16, color: P.accent),
-          const SizedBox(width: 8),
-          Expanded(
-            child: GestureDetector(
-              onTap: _drainQueue,
-              child: Text('Queued: $text',
-                  style: PT.small,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis),
-            ),
+          Row(
+            children: [
+              const Icon(Icons.schedule_rounded, size: 16, color: P.accent),
+              const SizedBox(width: 8),
+              Expanded(
+                child: GestureDetector(
+                  onTap: _drainQueue,
+                  child: Text(
+                    '${queue.length} queued',
+                    style: PT.small,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ),
+              GestureDetector(
+                onTap: _clearQueue,
+                child: Padding(
+                  padding: const EdgeInsets.all(4),
+                  child: Text('Clear',
+                      style: PT.small.copyWith(color: P.accent)),
+                ),
+              ),
+              GestureDetector(
+                onTap: () =>
+                    setState(() => _queueExpanded = !_queueExpanded),
+                child: Padding(
+                  padding: const EdgeInsets.all(4),
+                  child: Icon(
+                    _queueExpanded
+                        ? Icons.expand_less_rounded
+                        : Icons.expand_more_rounded,
+                    size: 18,
+                    color: P.inkMuted,
+                  ),
+                ),
+              ),
+            ],
           ),
-          GestureDetector(
-            onTap: _clearQueue,
-            child:  Padding(
-              padding: EdgeInsets.all(4),
-              child: Icon(Icons.close_rounded,
-                  size: 18, color: P.inkMuted),
-            ),
-          ),
+          if (_queueExpanded) ...[
+            const SizedBox(height: 4),
+            for (var i = 0; i < queue.length; i++)
+              Padding(
+                padding: const EdgeInsets.only(top: 6),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('${i + 1}.',
+                        style: PT.meta.copyWith(color: P.inkFaint)),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(queue[i],
+                          style: PT.small.copyWith(color: P.inkMuted),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis),
+                    ),
+                  ],
+                ),
+              ),
+          ],
         ],
       ),
     );
