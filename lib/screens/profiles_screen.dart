@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../models/config_doc.dart';
+import '../models/models.dart';
 import '../services/pantheon_api.dart';
 import '../theme.dart';
 import '../widgets/forms.dart';

@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../models/gateway_status.dart';
-import '../models/overview.dart';
+import '../models/models.dart';
 import '../services/pantheon_api.dart';
 import '../theme.dart';
 import '../widgets/chips.dart';
@@ -92,25 +91,42 @@ class _HomeScreenState extends State<HomeScreen> {
                   children: [
                     StaggerItem(
                         index: 1,
-                        child: _kpi('Total runs', '${ov.totalRuns}',
-                            Icons.bolt_outlined, P.info)),
+                        child: _kpi(
+                            'Total runs',
+                            Text('${ov.totalRuns}',
+                                style: PT.screenTitle
+                                    .copyWith(fontSize: 24)),
+                            Icons.bolt_outlined,
+                            P.info)),
                     StaggerItem(
                         index: 2,
                         child: _kpi(
                             'Awaiting approval',
-                            '${ov.approvalsPending}',
+                            Text('${ov.approvalsPending}',
+                                style: PT.screenTitle
+                                    .copyWith(fontSize: 24)),
                             Icons.rule_outlined,
                             P.warn)),
                     StaggerItem(
                         index: 3,
-                        child: _kpiNum('Cost · 24h', ov.cost24h,
-                            (v) => money(v), Icons.payments_outlined, P.ok)),
+                        child: _kpi(
+                            'Cost · 24h',
+                            CountUp(
+                                value: ov.cost24h,
+                                format: (v) => money(v),
+                                style: PT.screenTitle
+                                    .copyWith(fontSize: 24)),
+                            Icons.payments_outlined,
+                            P.ok)),
                     StaggerItem(
                         index: 4,
-                        child: _kpiNum(
+                        child: _kpi(
                             'Tokens · 24h',
-                            ov.tokens24h,
-                            (v) => compactNum(v),
+                            CountUp(
+                                value: ov.tokens24h,
+                                format: (v) => compactNum(v),
+                                style: PT.screenTitle
+                                    .copyWith(fontSize: 24)),
                             Icons.token_outlined,
                             P.accent)),
                   ],
@@ -176,7 +192,7 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _kpi(String label, String value, IconData icon, Color accent) {
+  Widget _kpi(String label, Widget value, IconData icon, Color accent) {
     return PCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -186,31 +202,7 @@ class _HomeScreenState extends State<HomeScreen> {
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(value, style: PT.screenTitle.copyWith(fontSize: 24)),
-              const SizedBox(height: 2),
-              Text(label, style: PT.faint),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _kpiNum(String label, num value, String Function(num) fmt,
-      IconData icon, Color accent) {
-    return PCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Icon(icon, size: 20, color: accent, weight: 1.6),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              CountUp(
-                  value: value,
-                  format: fmt,
-                  style: PT.screenTitle.copyWith(fontSize: 24)),
+              value,
               const SizedBox(height: 2),
               Text(label, style: PT.faint),
             ],

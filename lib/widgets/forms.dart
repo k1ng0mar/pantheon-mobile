@@ -123,6 +123,40 @@ Future<bool> confirmAction(
   return ok == true;
 }
 
+/// Press feedback matching the Nyx button language (0.88 opacity while
+/// pressed). Mirrors the private `_Pressable` in buttons.dart, which this
+/// file cannot import.
+class _Pressable extends StatefulWidget {
+  final Widget child;
+  final VoidCallback? onTap;
+
+  const _Pressable({required this.child, this.onTap});
+
+  @override
+  State<_Pressable> createState() => _PressableState();
+}
+
+class _PressableState extends State<_Pressable> {
+  bool _down = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTapDown:
+          widget.onTap == null ? null : (_) => setState(() => _down = true),
+      onTapUp:
+          widget.onTap == null ? null : (_) => setState(() => _down = false),
+      onTapCancel: () => setState(() => _down = false),
+      onTap: widget.onTap,
+      child: AnimatedOpacity(
+        duration: const Duration(milliseconds: 120),
+        opacity: _down ? 0.88 : 1.0,
+        child: widget.child,
+      ),
+    );
+  }
+}
+
 class _DangerButton extends StatelessWidget {
   final String label;
   final bool destructive;
@@ -134,7 +168,7 @@ class _DangerButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final color = destructive ? P.err : P.accent;
-    return GestureDetector(
+    return _Pressable(
       onTap: onTap,
       child: Container(
         height: 52,

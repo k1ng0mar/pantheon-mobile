@@ -11,11 +11,37 @@ import 'forms.dart';
 /// JetBrains Mono. The theme follows the Appearance "Code blocks" choice
 /// (each theme carries its own background, so the block reads correctly
 /// in either app brightness).
-class CodeBlock extends StatelessWidget {
+class CodeBlock extends StatefulWidget {
   final String code;
   final String languageTag;
 
   const CodeBlock({super.key, required this.code, required this.languageTag});
+
+  @override
+  State<CodeBlock> createState() => _CodeBlockState();
+}
+
+class _CodeBlockState extends State<CodeBlock> {
+  // The highlight future is memoized per (code, language, theme) so an
+  // unrelated parent rebuild doesn't re-run syntax highlighting.
+  late Future<TextSpan> _highlighted;
+  late String _code;
+  late String _languageTag;
+  late String _themeId;
+
+  @override
+  void initState() {
+    super.initState();
+    _code = widget.code;
+    _languageTag = widget.languageTag;
+    _themeId = AppPreferences.instance.codeTheme.value;
+    _highlight();
+  }
+
+  void _highlight() {
+    _highlighted = CodeHighlight.instance
+        .highlight(_code, _languageTag, _themeId);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -23,6 +49,18 @@ class CodeBlock extends StatelessWidget {
     return ValueListenableBuilder<String>(
       valueListenable: prefs.codeTheme,
       builder: (_, themeId, __) {
+        // Re-highlight only when the inputs actually changed. Assigning
+        // the cached fields here (without setState) is safe: the rebuild
+        // already reflects the new inputs, and the FutureBuilder below
+        // shows the previous result until the new future completes.
+        if (themeId != _themeId ||
+            widget.code != _code ||
+            widget.languageTag != _languageTag) {
+          _themeId = themeId;
+          _code = widget.code;
+          _languageTag = widget.languageTag;
+          _highlight();
+        }
         final bg =
             CodeHighlight.themeBackgrounds[themeId] ?? const Color(0xFF282A36);
         final fg =
@@ -46,15 +84,16 @@ class CodeBlock extends StatelessWidget {
                 child: Row(
                   children: [
                     Text(
-                      languageTag.trim().isEmpty
+                      widget.languageTag.trim().isEmpty
                           ? 'CODE'
-                          : languageTag.trim().toUpperCase(),
+                          : widget.languageTag.trim().toUpperCase(),
                       style: PT.monoEyebrow.copyWith(color: dim),
                     ),
                     const Spacer(),
                     GestureDetector(
                       onTap: () {
-                        Clipboard.setData(ClipboardData(text: code));
+                        Clipboard.setData(
+                            ClipboardData(text: widget.code));
                         toast(context, 'Code copied');
                       },
                       child: Padding(
@@ -67,10 +106,9 @@ class CodeBlock extends StatelessWidget {
               ),
               Divider(height: 1, color: fg.withOpacity(0.12)),
               FutureBuilder<TextSpan>(
-                future: CodeHighlight.instance
-                    .highlight(code, languageTag, themeId),
+                future: _highlighted,
                 builder: (_, snap) {
-                  final span = snap.data ?? TextSpan(text: code);
+                  final span = snap.data ?? TextSpan(text: widget.code);
                   return SingleChildScrollView(
                     scrollDirection: Axis.horizontal,
                     padding: const EdgeInsets.all(12),

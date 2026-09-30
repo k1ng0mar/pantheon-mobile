@@ -8,11 +8,9 @@ class McpServer {
   final List<String> args;
   final String? url;
   final List<String> requiresEnv;
-  final bool needsCredentials;
   final bool enabled;
   final String readiness;
   final bool approved;
-  final Map<String, dynamic>? health;
 
   McpServer({
     required this.name,
@@ -21,11 +19,9 @@ class McpServer {
     required this.args,
     this.url,
     required this.requiresEnv,
-    required this.needsCredentials,
     required this.enabled,
     required this.readiness,
     required this.approved,
-    this.health,
   });
 
   factory McpServer.fromJson(Map<String, dynamic> j) => McpServer(
@@ -38,13 +34,9 @@ class McpServer {
                 ?.map((e) => e.toString())
                 .toList() ??
             [],
-        needsCredentials: j['needs_credentials'] as bool? ?? false,
         enabled: j['enabled'] as bool? ?? true,
         readiness: j['readiness'] as String? ?? 'unknown',
         approved: j['approved'] as bool? ?? false,
-        health: j['health'] is Map
-            ? (j['health'] as Map).cast<String, dynamic>()
-            : null,
       );
 
   String get describe {

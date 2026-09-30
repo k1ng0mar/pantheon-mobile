@@ -1,10 +1,9 @@
 import 'package:flutter/material.dart';
 
-import '../models/log_tail.dart';
+import '../models/models.dart';
 import '../services/pantheon_api.dart';
 import '../theme.dart';
 import '../widgets/chips.dart';
-import '../widgets/forms.dart';
 import '../widgets/states.dart';
 
 /// Logs: tail viewer for the runtime logs (agent / errors / gateway),

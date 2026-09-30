@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import '../models/config_doc.dart';
+import '../models/models.dart';
 import '../services/pantheon_api.dart';
 import '../theme.dart';
 import '../widgets/buttons.dart';
@@ -47,7 +47,6 @@ class _ConfigScreenState extends State<ConfigScreen> {
         return d;
       });
       _schemaFuture = widget.api.configSchema();
-      _editing = false;
     });
   }
 
@@ -57,6 +56,7 @@ class _ConfigScreenState extends State<ConfigScreen> {
       await widget.api.importConfig(_editor.text);
       if (!mounted) return;
       toast(context, 'Config saved.');
+      setState(() => _editing = false);
       _load();
     } catch (e) {
       if (mounted) toastError(context, e);
@@ -94,38 +94,24 @@ class _ConfigScreenState extends State<ConfigScreen> {
             padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
             child: Row(
               children: [
-                _segTab(0, 'config.toml'),
+                Expanded(
+                  child: SegTab(
+                      label: 'config.toml',
+                      selected: _tab == 0,
+                      onTap: () => setState(() => _tab = 0)),
+                ),
                 const SizedBox(width: 8),
-                _segTab(1, 'Schema'),
+                Expanded(
+                  child: SegTab(
+                      label: 'Schema',
+                      selected: _tab == 1,
+                      onTap: () => setState(() => _tab = 1)),
+                ),
               ],
             ),
           ),
           Expanded(child: _tab == 0 ? _configTab() : _schemaTab()),
         ],
-      ),
-    );
-  }
-
-  Widget _segTab(int i, String label) {
-    final selected = _tab == i;
-    return Expanded(
-      child: GestureDetector(
-        onTap: () => setState(() => _tab = i),
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 200),
-          padding: const EdgeInsets.symmetric(vertical: 10),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(999),
-            color: selected ? P.accentSoft : Colors.transparent,
-            border: Border.all(
-                color: selected ? P.accent : P.borderStrong, width: 1),
-          ),
-          alignment: Alignment.center,
-          child: Text(label,
-              style: PT.label.copyWith(
-                  fontSize: 13,
-                  color: selected ? P.ink : P.inkSecondary)),
-        ),
       ),
     );
   }

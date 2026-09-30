@@ -79,9 +79,6 @@ class ScheduledJob {
   final int? nextFireMs;
   final String? model;
   final String? provider;
-  final int? timeoutSecs;
-  final String? overlap;
-  final String? deliver;
 
   ScheduledJob({
     required this.id,
@@ -93,9 +90,6 @@ class ScheduledJob {
     this.nextFireMs,
     this.model,
     this.provider,
-    this.timeoutSecs,
-    this.overlap,
-    this.deliver,
   });
 
   factory ScheduledJob.fromJson(Map<String, dynamic> j) => ScheduledJob(
@@ -104,12 +98,9 @@ class ScheduledJob {
         kind: JobKind.fromJson(j['kind']),
         agent: j['agent'] as String?,
         paused: j['paused'] as bool? ?? false,
-        lastRunMs: (j['last_run_ms'] as num?)?.toInt(),
+        lastRunMs: ((j['last_run_ms'] ?? j['last_run']) as num?)?.toInt(),
         nextFireMs: (j['next_fire_ms'] as num?)?.toInt(),
         model: j['model'] as String?,
         provider: j['provider'] as String?,
-        timeoutSecs: (j['timeout_secs'] as num?)?.toInt(),
-        overlap: j['overlap'] as String?,
-        deliver: j['deliver'] as String?,
       );
 }

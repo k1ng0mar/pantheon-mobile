@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../models/scheduled_job.dart';
-import '../models/schedule_template.dart';
+import '../models/models.dart';
 import '../services/pantheon_api.dart';
 import '../theme.dart';
 import '../widgets/buttons.dart';
@@ -147,9 +146,19 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
             padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
             child: Row(
               children: [
-                _segTab(0, 'Jobs'),
+                Expanded(
+                  child: SegTab(
+                      label: 'Jobs',
+                      selected: _tab == 0,
+                      onTap: () => setState(() => _tab = 0)),
+                ),
                 const SizedBox(width: 8),
-                _segTab(1, 'Templates'),
+                Expanded(
+                  child: SegTab(
+                      label: 'Templates',
+                      selected: _tab == 1,
+                      onTap: () => setState(() => _tab = 1)),
+                ),
               ],
             ),
           ),
@@ -157,30 +166,6 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
             child: _tab == 0 ? _jobsList() : _templatesList(),
           ),
         ],
-      ),
-    );
-  }
-
-  Widget _segTab(int i, String label) {
-    final selected = _tab == i;
-    return Expanded(
-      child: GestureDetector(
-        onTap: () => setState(() => _tab = i),
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 200),
-          padding: const EdgeInsets.symmetric(vertical: 10),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(999),
-            color: selected ? P.accentSoft : Colors.transparent,
-            border: Border.all(
-                color: selected ? P.accent : P.borderStrong, width: 1),
-          ),
-          alignment: Alignment.center,
-          child: Text(label,
-              style: PT.label.copyWith(
-                  fontSize: 13,
-                  color: selected ? P.ink : P.inkSecondary)),
-        ),
       ),
     );
   }
@@ -443,8 +428,13 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                         child: GradientButton(
                           label: 'Create',
                           onTap: () async {
+                            final task = taskCtrl.text.trim();
+                            if (task.isEmpty) {
+                              toast(ctx, 'Describe the task first.');
+                              return;
+                            }
                             final body = <String, dynamic>{
-                              'task': taskCtrl.text.trim(),
+                              'task': task,
                             };
                             if (kind == 'every') {
                               body['every'] = everyCtrl.text.trim();

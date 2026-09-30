@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../models/config_doc.dart';
+import '../models/models.dart';
 import '../services/pantheon_api.dart';
 import '../theme.dart';
 import '../widgets/buttons.dart';
@@ -94,6 +94,7 @@ class _ModelsScreenState extends State<ModelsScreen> {
   Future<void> _edit(ModelSlot slot) async {
     final providerCtrl = TextEditingController(text: slot.provider ?? '');
     final modelCtrl = TextEditingController(text: slot.model ?? '');
+    setState(() => _busy.add(slot.section));
     try {
       final saved = await showPSheet<bool>(
         context,
@@ -171,6 +172,7 @@ class _ModelsScreenState extends State<ModelsScreen> {
     } finally {
       providerCtrl.dispose();
       modelCtrl.dispose();
+      if (mounted) setState(() => _busy.remove(slot.section));
     }
   }
 

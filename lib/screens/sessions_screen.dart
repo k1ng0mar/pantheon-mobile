@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
 
-import '../models/pantheon_run.dart';
+import '../models/models.dart';
 import '../services/pantheon_api.dart';
 import '../theme.dart';
-import '../widgets/buttons.dart';
 import '../widgets/chips.dart';
 import '../widgets/export_sheet.dart';
 import '../widgets/forms.dart';
+import '../widgets/new_chat_sheet.dart';
 import '../widgets/states.dart';
 import 'session_detail_screen.dart';
 
@@ -16,7 +16,13 @@ import 'session_detail_screen.dart';
 class SessionsScreen extends StatefulWidget {
   final PantheonApi api;
 
-  const SessionsScreen({super.key, required this.api});
+  /// Optional badge notifier, threaded through to detail screens opened
+  /// from here so inline approval decisions refresh the Approvals tab.
+  /// Wired from main.dart's `_pendingApprovals`.
+  final ValueNotifier<int>? pendingApprovals;
+
+  const SessionsScreen(
+      {super.key, required this.api, this.pendingApprovals});
 
   @override
   State<SessionsScreen> createState() => _SessionsScreenState();
@@ -56,109 +62,11 @@ class _SessionsScreenState extends State<SessionsScreen> {
     });
   }
 
-  /// Start a new chat: ask for the opening message (+ optional title),
-  /// create the run, and drop straight into it.
+  /// Start a new chat via the shared sheet, then refresh the list once
+  /// the created session's detail view is closed.
   Future<void> _newChat() async {
-    final messageCtrl = TextEditingController();
-    final titleCtrl = TextEditingController();
-    bool busy = false;
-    try {
-      final created = await showPSheet<PantheonRun>(
-        context,
-        StatefulBuilder(
-          builder: (ctx, setSheet) => SafeArea(
-            child: Padding(
-              padding: EdgeInsets.fromLTRB(
-                  20, 8, 20, 24 + MediaQuery.of(ctx).viewInsets.bottom),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  const SheetHandle(),
-                  const SizedBox(height: 8),
-                   Text('New chat', style: PT.sectionTitle),
-                  const SizedBox(height: 4),
-                   Text('Your first message starts the session.',
-                      style: PT.meta),
-                  const SizedBox(height: 16),
-                  TextField(
-                    controller: messageCtrl,
-                    autofocus: true,
-                    minLines: 2,
-                    maxLines: 5,
-                    style: PT.body,
-                    decoration: const InputDecoration(
-                      hintText: 'What should Pantheon do?',
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: titleCtrl,
-                    style: PT.body,
-                    decoration: const InputDecoration(
-                      hintText: 'Title (optional)',
-                    ),
-                  ),
-                  const SizedBox(height: 20),
-                  if (busy)
-                     SizedBox(
-                      height: 52,
-                      child: Center(
-                          child: SizedBox(
-                              width: 22,
-                              height: 22,
-                              child: CircularProgressIndicator(
-                                  strokeWidth: 2.5, color: P.accent))),
-                    )
-                  else
-                    Row(
-                      children: [
-                        Expanded(
-                          child: TonalButton(
-                              label: 'Cancel',
-                              onTap: () => Navigator.pop(ctx)),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: GradientButton(
-                            label: 'Start',
-                            onTap: () async {
-                              final msg = messageCtrl.text.trim();
-                              if (msg.isEmpty) return;
-                              setSheet(() => busy = true);
-                              try {
-                                final run = await widget.api.createRun(
-                                  message: msg,
-                                  title: titleCtrl.text.trim().isEmpty
-                                      ? null
-                                      : titleCtrl.text.trim(),
-                                );
-                                if (ctx.mounted) Navigator.pop(ctx, run);
-                              } catch (e) {
-                                if (ctx.mounted) {
-                                  setSheet(() => busy = false);
-                                  toastError(ctx, e);
-                                }
-                              }
-                            },
-                          ),
-                        ),
-                      ],
-                    ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      );
-      if (created != null && mounted) {
-        _load();
-        Navigator.of(context).push(_detailRoute(created));
-      }
-    } finally {
-      messageCtrl.dispose();
-      titleCtrl.dispose();
-    }
+    await showNewChatSheet(context, widget.api);
+    if (mounted) _load();
   }
 
   @override
@@ -307,7 +215,11 @@ class _SessionsScreenState extends State<SessionsScreen> {
         ? s.lastActivity!
         : '${s.turns} turns · ${s.toolCalls} tool calls';
     return InkWell(
-      onTap: () => Navigator.of(context).push(_detailRoute(s)),
+      onTap: () => Navigator.of(context).push(buildDetailRoute(
+          SessionDetailScreen(
+              api: widget.api,
+              runId: s.id,
+              pendingApprovals: widget.pendingApprovals))),
       onLongPress: () => _sessionActions(s),
       child: Padding(
         padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
@@ -427,7 +339,11 @@ class _SessionsScreenState extends State<SessionsScreen> {
           final forked = await widget.api.forkRun(s.id);
           if (!mounted) return;
           toast(context, 'Forked.');
-          await Navigator.of(context).push(_detailRoute(forked));
+          await Navigator.of(context).push(buildDetailRoute(
+              SessionDetailScreen(
+                  api: widget.api,
+                  runId: forked.id,
+                  pendingApprovals: widget.pendingApprovals)));
           await _load();
         } catch (e) {
           if (mounted) toastError(context, e);
@@ -472,25 +388,6 @@ class _SessionsScreenState extends State<SessionsScreen> {
           ],
         ),
       ),
-    );
-  }
-
-  Route _detailRoute(PantheonRun s) {
-    return PageRouteBuilder(
-      transitionDuration: const Duration(milliseconds: 280),
-      reverseTransitionDuration: const Duration(milliseconds: 220),
-      pageBuilder: (_, __, ___) =>
-          SessionDetailScreen(api: widget.api, runId: s.id),
-      transitionsBuilder: (_, anim, __, child) {
-        final slide = Tween<Offset>(
-                begin: const Offset(0.08, 0), end: Offset.zero)
-            .animate(CurvedAnimation(parent: anim, curve: Curves.easeOutCubic));
-        final fade = Tween<double>(begin: 0, end: 1)
-            .animate(CurvedAnimation(parent: anim, curve: Curves.easeOut));
-        return SlideTransition(
-            position: slide,
-            child: FadeTransition(opacity: fade, child: child));
-      },
     );
   }
 

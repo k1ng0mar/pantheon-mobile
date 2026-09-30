@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../models/mcp_server.dart';
+import '../models/models.dart';
 import '../services/pantheon_api.dart';
 import '../theme.dart';
 import '../widgets/buttons.dart';
@@ -89,6 +89,20 @@ class _McpScreenState extends State<McpScreen> {
       _load();
     } catch (e) {
       if (mounted) toastError(context, e);
+    }
+  }
+
+  Future<void> _approve(String name) async {
+    setState(() => _busy.add(name));
+    try {
+      await widget.api.approveMcpServer(name);
+      if (!mounted) return;
+      toast(context, '“$name” approved.');
+      _load();
+    } catch (e) {
+      if (mounted) toastError(context, e);
+    } finally {
+      if (mounted) setState(() => _busy.remove(name));
     }
   }
 
@@ -294,10 +308,32 @@ class _McpScreenState extends State<McpScreen> {
                           Text('PENDING APPROVAL',
                               style: PT.overline.copyWith(color: P.warn)),
                           const SizedBox(height: 8),
-                          Text(data.pending.join(', '), style: PT.mono),
-                          const SizedBox(height: 4),
-                           Text(
-                            'Approve these from the runtime CLI (`pantheon mcp approve <name>`) before they can run.',
+                          for (final name in data.pending) ...[
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: Text(name, style: PT.mono),
+                                ),
+                                if (_busy.contains(name))
+                                  const SizedBox(
+                                    width: 18,
+                                    height: 18,
+                                    child: CircularProgressIndicator(
+                                        strokeWidth: 2.5, color: P.accent),
+                                  )
+                                else
+                                  PillButton(
+                                    label: 'Approve',
+                                    filled: false,
+                                    color: P.ok,
+                                    onTap: () => _approve(name),
+                                  ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                          ],
+                          Text(
+                            'Approved servers can run; unapproved ones stay inert.',
                             style: PT.meta,
                           ),
                         ],

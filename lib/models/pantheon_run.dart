@@ -64,7 +64,6 @@ class PantheonRun {
   final int inputTokens;
   final int outputTokens;
   final double costUsd;
-  final int? endedMs;
   final int turns;
   final int toolCalls;
   final int approvalsPending;
@@ -87,7 +86,6 @@ class PantheonRun {
     required this.inputTokens,
     required this.outputTokens,
     required this.costUsd,
-    this.endedMs,
     required this.turns,
     required this.toolCalls,
     required this.approvalsPending,
@@ -111,6 +109,15 @@ class PantheonRun {
     }
 
     final ctx = j['context_tokens'];
+    // Backend sends `pending_input` as a single object or null
+    // (runs.rs:311-317); wrap the object so clarify cards render.
+    final pi = j['pending_input'];
+    final List<PendingInput> pendingInput;
+    if (pi is Map) {
+      pendingInput = [PendingInput.fromJson(pi.cast<String, dynamic>())];
+    } else {
+      pendingInput = listOf(pi, PendingInput.fromJson);
+    }
     return PantheonRun(
       id: j['id'] as String? ?? '',
       status: j['status'] as String? ?? 'unknown',
@@ -121,7 +128,6 @@ class PantheonRun {
       inputTokens: (j['input_tokens'] as num?)?.toInt() ?? 0,
       outputTokens: (j['output_tokens'] as num?)?.toInt() ?? 0,
       costUsd: (j['cost_usd'] as num?)?.toDouble() ?? 0,
-      endedMs: (j['ended_ms'] as num?)?.toInt(),
       turns: (j['turns'] as num?)?.toInt() ?? 0,
       toolCalls: (j['tool_calls'] as num?)?.toInt() ?? 0,
       approvalsPending: (j['approvals_pending'] as num?)?.toInt() ?? 0,
@@ -129,7 +135,7 @@ class PantheonRun {
       lastActivity: j['last_activity'] as String?,
       transcript: listOf(j['transcript'], TranscriptItem.fromJson),
       timeline: listOf(j['timeline'], TimelineItem.fromJson),
-      pendingInput: listOf(j['pending_input'], PendingInput.fromJson),
+      pendingInput: pendingInput,
       queuedMessage: j['queued_message'] as String?,
       mode: j['mode'] as String? ?? 'build',
       contextTokens: ctx is Map
