@@ -23,6 +23,7 @@ import '../widgets/forms.dart';
 import '../widgets/message_content.dart';
 import '../widgets/new_chat_sheet.dart';
 import '../widgets/states.dart';
+import '../widgets/team_run_view.dart';
 import '../widgets/todos_sheet.dart';
 import '../widgets/voice_note_pill.dart';
 import 'voice_screen.dart';
@@ -57,6 +58,11 @@ class SessionDetailScreen extends StatefulWidget {
   /// Icon shown on the attached-team/expert chip.
   final IconData attachedIcon;
 
+  /// When set, this session is a team run: a Team tab renders the
+  /// staged swarm as a multi-agent conversation with per-expert
+  /// attribution. The Chat tab stays the lead's primary thread.
+  final String? swarmId;
+
   const SessionDetailScreen(
       {super.key,
       required this.api,
@@ -64,7 +70,8 @@ class SessionDetailScreen extends StatefulWidget {
       this.pendingApprovals,
       this.initialDraft,
       this.attachedName,
-      this.attachedIcon = Icons.groups_outlined});
+      this.attachedIcon = Icons.groups_outlined,
+      this.swarmId});
 
   @override
   State<SessionDetailScreen> createState() => _SessionDetailScreenState();
@@ -1306,14 +1313,15 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
                   onCta: () => _load(initial: true),
                 )
               : DefaultTabController(
-                  length: 2,
+                  length: widget.swarmId != null ? 3 : 2,
                   child: Column(
                     children: [
                       _header(_run!),
                       TabBar(
-                        tabs: const [
-                          Tab(text: 'Chat'),
-                          Tab(text: 'Timeline')
+                        tabs: [
+                          const Tab(text: 'Chat'),
+                          if (widget.swarmId != null) const Tab(text: 'Team'),
+                          const Tab(text: 'Timeline')
                         ],
                         labelColor: P.ink,
                         unselectedLabelColor: P.inkMuted,
@@ -1326,6 +1334,10 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
                         child: TabBarView(
                           children: [
                             _chatTab(),
+                            if (widget.swarmId != null)
+                              TeamRunView(
+                                  api: widget.api,
+                                  swarmId: widget.swarmId!),
                             _timeline(_run!),
                           ],
                         ),
