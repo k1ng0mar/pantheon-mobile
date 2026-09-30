@@ -15,7 +15,7 @@ import '../models/models.dart';
 import '../services/app_preferences.dart';
 import '../services/pantheon_api.dart';
 import '../theme.dart';
-import '../widgets/agent_avatar.dart';
+import '../widgets/active_profile_avatar.dart';
 import '../widgets/buttons.dart';
 import '../widgets/chips.dart';
 import '../widgets/export_sheet.dart';
@@ -2708,7 +2708,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const AgentAvatar(size: 22),
+            ActiveProfileAvatar(api: widget.api, size: 22),
             const SizedBox(width: 8),
             Text((t.role ?? 'assistant').toUpperCase(),
                 style: PT.monoEyebrow

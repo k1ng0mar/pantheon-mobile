@@ -9,7 +9,7 @@ import '../widgets/chips.dart';
 import '../widgets/forms.dart';
 import '../widgets/pantheon_card.dart';
 import '../widgets/states.dart';
-import 'profiles_screen.dart';
+import '../widgets/profile_picture.dart';
 
 /// Swarm coordination: split a task across N subagents (or hand-picked
 /// profiles) and watch them work live while an optional judge rules on
