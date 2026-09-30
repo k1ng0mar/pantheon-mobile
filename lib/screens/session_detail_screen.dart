@@ -2380,6 +2380,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
         textStyle: PT.body
             .copyWith(fontSize: 14, color: isUser ? Colors.white : P.ink),
         onQuote: _quoteInReply,
+        api: widget.api,
       );
       final body = <Widget>[msg];
       if (sentAtts.isNotEmpty) body.add(_sentAttachmentGrid(sentAtts));
