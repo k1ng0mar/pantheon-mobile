@@ -342,12 +342,21 @@ class _ProfileDetailSheet extends StatefulWidget {
 
 class _ProfileDetailSheetState extends State<_ProfileDetailSheet> {
   late String? _avatar;
+  late final TextEditingController _userFile;
   bool _busy = false;
 
   @override
   void initState() {
     super.initState();
     _avatar = widget.profile['avatar'] as String?;
+    _userFile = TextEditingController(
+        text: widget.profile['user_file']?.toString() ?? '');
+  }
+
+  @override
+  void dispose() {
+    _userFile.dispose();
+    super.dispose();
   }
 
   Future<void> _changePicture() async {
@@ -359,6 +368,20 @@ class _ProfileDetailSheetState extends State<_ProfileDetailSheet> {
       await widget.api.putConfig({'agents.${widget.name}.avatar': picked});
       setState(() => _avatar = picked);
       widget.onChanged();
+    } catch (e) {
+      if (mounted) toastError(context, e);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _saveUserFile() async {
+    setState(() => _busy = true);
+    try {
+      await widget.api
+          .putConfig({'agents.${widget.name}.user_file': _userFile.text.trim()});
+      widget.onChanged();
+      if (mounted) toast(context, 'User file saved');
     } catch (e) {
       if (mounted) toastError(context, e);
     } finally {
@@ -428,6 +451,23 @@ class _ProfileDetailSheetState extends State<_ProfileDetailSheet> {
             KvRow('instructions file', p['agents_file']?.toString() ?? '—',
                 mono: true),
             KvRow('picture', _avatar ?? '—', mono: true),
+            const SizedBox(height: 12),
+            Text('User file', style: PT.meta),
+            const SizedBox(height: 6),
+            TextField(
+              controller: _userFile,
+              style: PT.body.copyWith(fontSize: 14),
+              decoration: const InputDecoration(
+                hintText: 'path to USER.md equivalent',
+                contentPadding:
+                    EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              ),
+            ),
+            const SizedBox(height: 8),
+            TonalButton(
+              label: _busy ? 'Working…' : 'Save user file',
+              onTap: _busy ? null : _saveUserFile,
+            ),
             const SizedBox(height: 16),
             TonalButton(
               label: _busy ? 'Working…' : 'Change picture',
@@ -604,6 +644,7 @@ class _CreateProfileSheetState extends State<_CreateProfileSheet> {
   final _namespace = TextEditingController();
   final _soul = TextEditingController();
   final _agentsFile = TextEditingController();
+  final _userFile = TextEditingController();
   String? _inherits;
   String? _policy;
   String? _avatar;
@@ -627,6 +668,7 @@ class _CreateProfileSheetState extends State<_CreateProfileSheet> {
     _namespace.dispose();
     _soul.dispose();
     _agentsFile.dispose();
+    _userFile.dispose();
     super.dispose();
   }
 
@@ -672,6 +714,7 @@ class _CreateProfileSheetState extends State<_CreateProfileSheet> {
       put('memory_namespace', _namespace.text);
       put('soul_file', _soul.text);
       put('agents_file', _agentsFile.text);
+      put('user_file', _userFile.text);
       if (_avatar != null) changes['$prefix.avatar'] = _avatar;
       await widget.api.putConfig(changes);
       if (!mounted) return;
@@ -782,6 +825,7 @@ class _CreateProfileSheetState extends State<_CreateProfileSheet> {
             _field(_namespace, 'Memory namespace',
                 'defaults to agent:<name>'),
             _field(_soul, 'Persona file', 'path to SOUL.md equivalent'),
+            _field(_userFile, 'User file', 'path to USER.md equivalent'),
             _field(_agentsFile, 'Instructions file',
                 'path to AGENTS.md equivalent'),
             const SizedBox(height: 4),
