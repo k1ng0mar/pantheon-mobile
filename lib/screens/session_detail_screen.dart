@@ -1,7 +1,10 @@
 import 'dart:async';
+import 'dart:io';
 
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../models/models.dart';
 import '../services/app_preferences.dart';
@@ -57,6 +60,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
   bool _loading = true;
 
   final _composer = TextEditingController();
+  final _composerFocus = FocusNode();
   final _answerCtrl = TextEditingController();
   final _scroll = ScrollController();
   Timer? _poll;
@@ -76,11 +80,20 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
   /// this screen — the poller auto-drains it when the turn settles.
   bool _queuedByMe = false;
 
+  /// Attachments staged on the composer: picked locally, uploaded to
+  /// `POST /api/uploads`, then sent with the message as attachment ids.
+  final List<_PendingAttachment> _attachments = [];
+
   /// Timeline rows the user expanded, by item seq.
   final Set<int> _expandedTl = {};
 
   static bool _isLive(String status) =>
       status == 'running' || status == 'awaiting_approval';
+
+  /// The `[attachments]` block the server appends to a user message when
+  /// files were attached — stripped before rendering the bubble so the
+  /// raw file list never shows in chat.
+  static final _attachmentBlock = RegExp(r'\n*\[attachments\][\s\S]*$');
 
   /// The composer stays enabled for settled sessions: completed/failed/
   /// canceled mark the end of a turn, not the death of the session — the
@@ -102,6 +115,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
   void dispose() {
     _poll?.cancel();
     _composer.dispose();
+    _composerFocus.dispose();
     _answerCtrl.dispose();
     _scroll.dispose();
     super.dispose();
@@ -313,7 +327,15 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
 
   Future<void> _send() async {
     final raw = _composer.text.trim();
-    if (raw.isEmpty || _sending) return;
+    final ids = _attachments
+        .where((a) => a.record != null)
+        .map((a) => a.record!.id)
+        .toList();
+    if ((raw.isEmpty && ids.isEmpty) || _sending) return;
+    if (_attachments.any((a) => a.uploading)) {
+      toast(context, 'Waiting for uploads to finish…');
+      return;
+    }
     _haptic(HapticFeedback.mediumImpact);
     // `//` escapes the slash-command prefix: `//deploy` sends a literal
     // `/deploy` as chat text instead of running a command.
@@ -324,6 +346,9 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
       return;
     }
     final text = escaped ? raw.substring(1) : raw;
+    final messageText = text.isEmpty
+        ? '(shared ${ids.length} attachment${ids.length == 1 ? '' : 's'})'
+        : text;
     final run = _run;
     if (run == null || !_canChat(run.status)) return;
     setState(() => _sending = true);
@@ -331,12 +356,18 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
     final optimistic = TranscriptItem(
         type: 'message',
         role: 'user',
-        content: text,
+        content: messageText,
         tsMs: DateTime.now().millisecondsSinceEpoch);
     _addOptimistic(optimistic);
     _animateToBottom();
     try {
-      final result = await widget.api.sendRunMessage(run.id, text);
+      final result = await widget.api.sendRunMessage(
+        run.id,
+        messageText,
+        attachments: ids,
+      );
+      // The staged attachments are now on their way: clear the chips.
+      if (mounted) setState(() => _attachments.clear());
       if (result.queued || result.steered) {
         _queuedByMe = true;
         if (!mounted) return;
@@ -354,7 +385,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
     } on PantheonTurnInFlightException {
       if (!mounted) return;
       _removeOptimistic(optimistic);
-      await _turnBusySheet(text);
+      await _turnBusySheet(messageText, attachments: ids);
     } catch (e) {
       if (!mounted) return;
       _removeOptimistic(optimistic);
@@ -366,7 +397,8 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
   }
 
   /// A turn is already running: offer queue / steer / dismiss.
-  Future<void> _turnBusySheet(String text) async {
+  Future<void> _turnBusySheet(String text,
+      {List<String> attachments = const []}) async {
     final choice = await showPSheet<String>(
       context,
       SafeArea(
@@ -411,8 +443,11 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
     _addOptimistic(optimistic);
     try {
       final result = await widget.api.sendRunMessage(widget.runId, text,
-          queue: true, steer: choice == 'steer');
+          queue: true, steer: choice == 'steer', attachments: attachments);
       _queuedByMe = true;
+      // The staged attachments are now queued/steered with the message:
+      // clear the chips so a later send can't attach them twice.
+      if (mounted) setState(() => _attachments.clear());
       if (!mounted) return;
       toast(
           context,
@@ -1337,7 +1372,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
 
   Widget _composerBar() {
     return Container(
-      decoration:  BoxDecoration(
+      decoration: BoxDecoration(
         color: P.tabBar,
         border: Border(top: BorderSide(color: P.border, width: 1)),
       ),
@@ -1345,7 +1380,17 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
         top: false,
         child: Padding(
           padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-          child: _composerRow(),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              if (_attachments.isNotEmpty) ...[
+                _attachmentChips(),
+                const SizedBox(height: 8),
+              ],
+              _composerRow(),
+            ],
+          ),
         ),
       ),
     );
@@ -1357,9 +1402,13 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.end,
       children: [
+        _composerIconButton(
+            Icons.add_rounded, 'Add to chat', _addSheet),
+        const SizedBox(width: 4),
         Expanded(
           child: TextField(
             controller: _composer,
+            focusNode: _composerFocus,
             enabled: !_sending,
             minLines: 1,
             maxLines: 5,
@@ -1375,6 +1424,9 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
             ),
           ),
         ),
+        const SizedBox(width: 4),
+        _composerIconButton(
+            Icons.mic_rounded, 'Live voice', _openVoice),
         const SizedBox(width: 8),
         GestureDetector(
           onTap: _send,
@@ -1403,6 +1455,318 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
         ),
       ],
     );
+  }
+
+  /// Round tonal icon button flanking the composer field (`+`, mic).
+  Widget _composerIconButton(
+      IconData icon, String tooltip, VoidCallback onTap) {
+    return GestureDetector(
+      onTap: () {
+        _haptic(HapticFeedback.lightImpact);
+        onTap();
+      },
+      child: Container(
+        width: 44,
+        height: 44,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: P.tonal,
+        ),
+        alignment: Alignment.center,
+        child: Icon(icon,
+            size: 22, color: P.inkSecondary, weight: 1.6,
+            semanticLabel: tooltip),
+      ),
+    );
+  }
+
+  void _openVoice() {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => VoiceScreen(api: widget.api),
+      ),
+    );
+  }
+
+  // ------------------------------------------------------- attachments --
+
+  /// "Add to Chat" bottom sheet: camera, photo library, files.
+  Future<void> _addSheet() async {
+    final choice = await showPSheet<String>(
+      context,
+      SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const SheetHandle(),
+              const SizedBox(height: 12),
+              Text('Add to Chat', style: PT.sectionTitle),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Expanded(
+                    child: _addTile(Icons.photo_camera_rounded, 'Camera',
+                        () => Navigator.pop(context, 'camera')),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: _addTile(Icons.photo_library_rounded, 'Photos',
+                        () => Navigator.pop(context, 'photos')),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              _addRowTile(
+                Icons.attach_file_rounded,
+                'Add files',
+                'Documents and other files',
+                () => Navigator.pop(context, 'files'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (choice == null || !mounted) return;
+    switch (choice) {
+      case 'camera':
+        await _pickImages(ImageSource.camera);
+      case 'photos':
+        await _pickImages(ImageSource.gallery);
+      case 'files':
+        await _pickFiles();
+    }
+  }
+
+  Widget _addTile(IconData icon, String label, VoidCallback onTap) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 20),
+        decoration: BoxDecoration(
+          color: P.surface,
+          borderRadius: BorderRadius.circular(P.r16),
+          border: Border.all(color: P.border),
+        ),
+        child: Column(
+          children: [
+            Icon(icon, size: 28, color: P.accent, weight: 1.6),
+            const SizedBox(height: 8),
+            Text(label, style: PT.body.copyWith(fontSize: 14)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _addRowTile(
+      IconData icon, String title, String subtitle, VoidCallback onTap) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: P.surface,
+          borderRadius: BorderRadius.circular(P.r16),
+          border: Border.all(color: P.border),
+        ),
+        child: Row(
+          children: [
+            Icon(icon, size: 22, color: P.accent, weight: 1.6),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title, style: PT.body.copyWith(fontSize: 14)),
+                  Text(subtitle, style: PT.meta),
+                ],
+              ),
+            ),
+            Icon(Icons.chevron_right_rounded, color: P.inkFaint),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _pickImages(ImageSource source) async {
+    try {
+      final picker = ImagePicker();
+      if (source == ImageSource.gallery) {
+        final files = await picker.pickMultiImage(imageQuality: 85);
+        for (final f in files) {
+          await _stageUpload(f.path, await f.readAsBytes());
+        }
+      } else {
+        final f =
+            await picker.pickImage(source: source, imageQuality: 85);
+        if (f != null) await _stageUpload(f.path, await f.readAsBytes());
+      }
+    } catch (e) {
+      if (mounted) toastError(context, e);
+    }
+  }
+
+  Future<void> _pickFiles() async {
+    try {
+      final result =
+          await FilePicker.platform.pickFiles(allowMultiple: true);
+      if (result == null) return;
+      for (final f in result.files) {
+        if (f.path != null) {
+          await _stageUpload(f.path!, await File(f.path!).readAsBytes());
+        } else if (f.bytes != null) {
+          await _stageUpload(f.name, f.bytes!);
+        }
+      }
+    } catch (e) {
+      if (mounted) toastError(context, e);
+    }
+  }
+
+  /// Stage a picked file: show the chip immediately, upload in the
+  /// background, then fill in the record (or the error).
+  Future<void> _stageUpload(String path, List<int> bytes) async {
+    final name = path.split('/').last.split('\\').last;
+    final pending = _PendingAttachment(name: name, localPath: path);
+    setState(() => _attachments.add(pending));
+    try {
+      final record = await widget.api.uploadAttachment(
+        name: name.isEmpty ? 'file' : name,
+        mime: _mimeFor(name),
+        bytes: bytes,
+      );
+      if (!mounted) return;
+      setState(() => pending.record = record);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => pending.error = e.toString());
+      toastError(context, e);
+    }
+  }
+
+  String _mimeFor(String name) {
+    final parts = name.toLowerCase().split('.');
+    final ext = parts.length > 1 ? parts.last : '';
+    return switch (ext) {
+      'jpg' || 'jpeg' => 'image/jpeg',
+      'png' => 'image/png',
+      'gif' => 'image/gif',
+      'webp' => 'image/webp',
+      'heic' => 'image/heic',
+      'mp4' || 'mov' => 'video/mp4',
+      'mp3' => 'audio/mpeg',
+      'wav' => 'audio/wav',
+      'm4a' => 'audio/mp4',
+      'pdf' => 'application/pdf',
+      'txt' || 'md' => 'text/plain',
+      'json' => 'application/json',
+      'zip' => 'application/zip',
+      _ => 'application/octet-stream',
+    };
+  }
+
+  Widget _attachmentChips() {
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: _attachments.map(_attachmentChip).toList(),
+    );
+  }
+
+  Widget _attachmentChip(_PendingAttachment a) {
+    return Container(
+      padding:
+          const EdgeInsets.only(left: 6, top: 6, bottom: 6, right: 2),
+      decoration: BoxDecoration(
+        color: P.surface,
+        borderRadius: BorderRadius.circular(P.r12),
+        border: Border.all(color: P.border),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (a.isImage && a.localPath != null)
+            ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: Image.file(
+                File(a.localPath!),
+                width: 36,
+                height: 36,
+                fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) => _fileGlyph(a),
+              ),
+            )
+          else
+            _fileGlyph(a),
+          const SizedBox(width: 8),
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 140),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(a.name,
+                    style: PT.small, overflow: TextOverflow.ellipsis),
+                if (a.uploading)
+                  Text('uploading…', style: PT.faint)
+                else if (a.error != null)
+                  Text('failed — tap ✕ to remove',
+                      style: PT.faint.copyWith(color: P.err))
+                else
+                  Text(a.record!.sizeLabel, style: PT.faint),
+              ],
+            ),
+          ),
+          const SizedBox(width: 2),
+          GestureDetector(
+            onTap: () => setState(() => _attachments.remove(a)),
+            child: Padding(
+              padding: const EdgeInsets.all(8),
+              child:
+                  Icon(Icons.close_rounded, size: 16, color: P.inkFaint),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _fileGlyph(_PendingAttachment a) {
+    return Container(
+      width: 36,
+      height: 36,
+      decoration: BoxDecoration(
+        color: P.accentSoft,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      alignment: Alignment.center,
+      child: a.uploading
+          ? SizedBox(
+              width: 16,
+              height: 16,
+              child: CircularProgressIndicator(
+                  strokeWidth: 2, color: P.accent),
+            )
+          : Icon(Icons.attach_file_rounded,
+              size: 18, color: P.accent, weight: 1.6),
+    );
+  }
+
+  /// Insert a `> quoted` block at the end of the composer (long-press →
+  /// Quote in reply).
+  void _quoteInReply(String text) {
+    final quoted =
+        text.trim().split('\n').map((l) => '> $l').join('\n');
+    final cur = _composer.text;
+    _composer.text = cur.isEmpty ? '$quoted\n\n' : '$cur\n$quoted\n\n';
+    _composer.selection =
+        TextSelection.collapsed(offset: _composer.text.length);
+    FocusScope.of(context).requestFocus(_composerFocus);
   }
 
   /// Haptic feedback, gated by the Appearance toggle.
@@ -1466,9 +1830,12 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
                   ),
                 ),
               MessageContent(
-                text: t.content,
+                text: isUser
+                    ? t.content.replaceFirst(_attachmentBlock, '')
+                    : t.content,
                 textStyle: PT.body.copyWith(
                     fontSize: 14, color: isUser ? Colors.white : P.ink),
+                onQuote: _quoteInReply,
               ),
             ],
           ),
@@ -2188,4 +2555,29 @@ class _SendGlyph extends StatelessWidget {
             strokeWidth: 2.5, color: Colors.white);
     }
   }
+}
+
+/// A file staged on the composer. `record` is null while the upload is
+/// still in flight; `error` is set when the upload failed.
+class _PendingAttachment {
+  final String name;
+  final String? localPath;
+  UploadRecord? record;
+  String? error;
+
+  _PendingAttachment({required this.name, this.localPath});
+
+  bool get uploading => record == null && error == null;
+  bool get isImage =>
+      (record?.isImage ?? false) ||
+      _imageExts.any((e) => name.toLowerCase().endsWith(e));
+
+  static const _imageExts = [
+    '.jpg',
+    '.jpeg',
+    '.png',
+    '.gif',
+    '.webp',
+    '.heic'
+  ];
 }
