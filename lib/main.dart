@@ -11,6 +11,7 @@ import 'screens/logs_screen.dart';
 import 'screens/mcp_screen.dart';
 import 'screens/memory_screen.dart';
 import 'screens/models_screen.dart';
+import 'screens/nightly_screen.dart';
 import 'screens/notifications_screen.dart';
 import 'screens/plugins_screen.dart';
 import 'screens/profiles_screen.dart';
@@ -19,6 +20,7 @@ import 'screens/schedule_screen.dart';
 import 'screens/settings_screen.dart';
 import 'screens/skills_screen.dart';
 import 'screens/stats_screen.dart';
+import 'screens/voice_settings_screen.dart';
 import 'services/app_preferences.dart';
 import 'services/pantheon_api.dart';
 import 'services/settings_store.dart';
@@ -426,6 +428,14 @@ class MoreTab extends StatelessWidget {
             subtitle: 'Always-on service status and restart',
             onTap: () => _push(context, GatewayScreen(api: api)),
           ),
+          const SizedBox(height: 12),
+          _hubCard(
+            context,
+            icon: Icons.nights_stay_outlined,
+            title: 'Nightly repair',
+            subtitle: 'Repair loop status and toggle',
+            onTap: () => _push(context, NightlyScreen(api: api)),
+          ),
           const _HubSection('Runtime'),
           _hubCard(
             context,
@@ -473,6 +483,14 @@ class MoreTab extends StatelessWidget {
             title: 'Tools & MCP',
             subtitle: 'MCP servers, health, reload',
             onTap: () => _push(context, McpScreen(api: api)),
+          ),
+          const SizedBox(height: 12),
+          _hubCard(
+            context,
+            icon: Icons.mic_outlined,
+            title: 'Voice',
+            subtitle: 'Live mode, STT and TTS providers',
+            onTap: () => _push(context, VoiceSettingsScreen(api: api)),
           ),
           const _HubSection('System'),
           _hubCard(

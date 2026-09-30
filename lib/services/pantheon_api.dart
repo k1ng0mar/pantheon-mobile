@@ -289,10 +289,11 @@ class PantheonApi {
   /// - 409 TURN_IN_FLIGHT → [PantheonTurnInFlightException] when neither
   ///   `queue` nor `steer` was requested.
   Future<MessageSendResult> sendRunMessage(String runId, String message,
-      {bool queue = false, bool steer = false}) async {
+      {bool queue = false, bool steer = false, List<String> attachments = const []}) async {
     final body = <String, dynamic>{'message': message};
     if (queue) body['queue'] = true;
     if (steer) body['steer'] = true;
+    if (attachments.isNotEmpty) body['attachments'] = attachments;
     final j = await _post(
         '/api/runs/${Uri.encodeComponent(runId)}/message', body);
     if (j['steered'] == true) {
@@ -601,6 +602,40 @@ class PantheonApi {
 
   Future<void> restartGateway() async {
     await _post('/api/gateway/restart', {'confirm': true});
+  }
+
+  // ------------------------------------------------------------------
+  // Nightly repair loop
+  // ------------------------------------------------------------------
+
+  /// `GET /api/nightly/status` — enable state, reason, next/last run.
+  Future<NightlyStatus> nightlyStatus() async =>
+      NightlyStatus.fromJson(await _get('/api/nightly/status'));
+
+  /// `POST /api/nightly/enabled` — `{enabled, confirm: true}`. Returns
+  /// the fresh status document.
+  Future<NightlyStatus> setNightlyEnabled(bool enabled) async =>
+      NightlyStatus.fromJson(await _post(
+          '/api/nightly/enabled', {'enabled': enabled, 'confirm': true}));
+
+  // ------------------------------------------------------------------
+  // Uploads (chat attachments)
+  // ------------------------------------------------------------------
+
+  /// `POST /api/uploads` — `{name, mime, data: base64}` → the stored
+  /// upload record. The returned id rides `sendRunMessage` as an
+  /// attachment so the agent can read the file.
+  Future<UploadRecord> uploadAttachment({
+    required String name,
+    required String mime,
+    required List<int> bytes,
+  }) async {
+    final j = await _post('/api/uploads', {
+      'name': name,
+      'mime': mime,
+      'data': base64Encode(bytes),
+    });
+    return UploadRecord.fromJson(j);
   }
 
   // ------------------------------------------------------------------
