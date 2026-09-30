@@ -4,6 +4,7 @@ export 'browser_status.dart';
 export 'config_doc.dart';
 export 'env_key.dart';
 export 'gateway_status.dart';
+export 'idea.dart';
 export 'log_tail.dart';
 export 'link_preview.dart';
 export 'login_entry.dart';

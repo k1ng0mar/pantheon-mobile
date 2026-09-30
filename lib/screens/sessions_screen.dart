@@ -182,14 +182,36 @@ class _SessionsScreenState extends State<SessionsScreen> {
     );
   }
 
-  /// Newest activity first, grouped under day headers.
+  /// Newest activity first, grouped under day headers. Pinned sessions
+  /// (the backend's permanent `home` session) stay above everything:
+  /// hoisted under their own header, outside the day grouping, so new
+  /// sessions arriving never push them out of view.
   Widget _groupedList(List<PantheonRun> sessions) {
-    final sorted = sessions.toList()
+    final pinned = sessions.where((s) => s.pinned).toList()
+      ..sort((a, b) => _recency(b).compareTo(_recency(a)));
+    final rest = sessions.where((s) => !s.pinned).toList()
       ..sort((a, b) => _recency(b).compareTo(_recency(a)));
     final items = <Widget>[];
-    String? lastDay;
     var index = 0;
-    for (final s in sorted) {
+    if (pinned.isNotEmpty) {
+      items.add(Padding(
+        padding: const EdgeInsets.fromLTRB(16, 14, 16, 6),
+        child: Row(
+          children: [
+            Icon(Icons.push_pin_rounded,
+                size: 13, color: P.accent, weight: 2),
+            const SizedBox(width: 6),
+            Text('PINNED',
+                style: PT.overline.copyWith(color: P.accent)),
+          ],
+        ),
+      ));
+      for (final s in pinned) {
+        items.add(StaggerItem(index: index++, child: _sessionRow(s)));
+      }
+    }
+    String? lastDay;
+    for (final s in rest) {
       final day = _dayLabel(_recency(s));
       if (day != lastDay) {
         lastDay = day;
@@ -252,11 +274,18 @@ class _SessionsScreenState extends State<SessionsScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    s.displayTitle,
-                    style: PT.rowTitle,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          s.displayTitle,
+                          style: PT.rowTitle,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      if (s.pinned) _pinnedBadge(),
+                    ],
                   ),
                   const SizedBox(height: 3),
                   Text(
@@ -275,6 +304,36 @@ class _SessionsScreenState extends State<SessionsScreen> {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  /// Accent-washed "PINNED" pill shown next to a pinned session's title.
+  Widget _pinnedBadge() {
+    return Container(
+      margin: const EdgeInsets.only(left: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: P.accentSoft,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: P.accent.withValues(alpha: 0.35)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.push_pin_rounded,
+              size: 11, color: P.accent, weight: 2),
+          const SizedBox(width: 3),
+          Text(
+            'PINNED',
+            style: PT.faint.copyWith(
+              color: P.accent,
+              fontSize: 10,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0.6,
+            ),
+          ),
+        ],
       ),
     );
   }

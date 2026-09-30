@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:pantheon_mobile/models/approval.dart';
 import 'package:pantheon_mobile/models/config_doc.dart';
 import 'package:pantheon_mobile/models/env_key.dart';
+import 'package:pantheon_mobile/models/idea.dart';
 import 'package:pantheon_mobile/models/log_tail.dart';
 import 'package:pantheon_mobile/models/mcp_server.dart';
 import 'package:pantheon_mobile/models/memory_entry.dart';
@@ -61,6 +62,61 @@ void main() {
       'title': '',
     });
     expect(r.displayTitle, 'abcdef12');
+  });
+
+  test('PantheonRun detects the pinned home session', () {
+    final byFlag = PantheonRun.fromJson({
+      'id': 'abc123',
+      'status': 'completed',
+      'created_ms': 0,
+      'is_home': true,
+    });
+    expect(byFlag.pinned, true);
+    final byAltFlag = PantheonRun.fromJson({
+      'id': 'abc123',
+      'status': 'completed',
+      'created_ms': 0,
+      'pinned': true,
+    });
+    expect(byAltFlag.pinned, true);
+    final byId = PantheonRun.fromJson({
+      'id': 'home',
+      'status': 'completed',
+      'created_ms': 0,
+    });
+    expect(byId.pinned, true);
+    final plain = PantheonRun.fromJson({
+      'id': 'abc123',
+      'status': 'completed',
+      'created_ms': 0,
+    });
+    expect(plain.pinned, false);
+  });
+
+  test('Idea parses ideas list shape', () {
+    final i = Idea.fromJson({
+      'id': 'idea_1',
+      'title': 'Morning briefing',
+      'description': 'A short digest of the day ahead.',
+      'includes': ['Fetch calendar events', 'Summarize in three lines'],
+      'kind': 'scheduled_task',
+      'status': 'pending',
+      'created_day': '2026-09-30',
+      'schedule': {'type': 'cron', 'expr': '0 8 * * *'},
+    });
+    expect(i.title, 'Morning briefing');
+    expect(i.kind, IdeaKind.scheduledTask);
+    expect(i.includes, hasLength(2));
+    expect(i.isPending, true);
+    expect(i.schedule!['expr'], '0 8 * * *');
+  });
+
+  test('Idea tolerates a sparse payload', () {
+    final i = Idea.fromJson({'id': 'idea_2'});
+    expect(i.kind, IdeaKind.general);
+    expect(i.status, 'pending');
+    expect(i.includes, isEmpty);
+    expect(i.schedule, isNull);
   });
 
   test('Approval parses queue item shape', () {
