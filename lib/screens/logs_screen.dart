@@ -1,10 +1,14 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../models/models.dart';
 import '../services/pantheon_api.dart';
 import '../theme.dart';
 import '../widgets/chips.dart';
+import '../widgets/forms.dart';
+import '../widgets/new_chat_sheet.dart';
 import '../widgets/states.dart';
+import 'session_detail_screen.dart';
 
 /// Logs: tail viewer for the runtime logs (agent / errors / gateway),
 /// with level + grep filters.
@@ -47,6 +51,81 @@ class _LogsScreenState extends State<LogsScreen> {
         grep: _grep.text.trim().isEmpty ? null : _grep.text.trim(),
       );
     });
+  }
+
+  bool _isError(String line) => line.toUpperCase().contains('ERROR');
+
+  void _copyLine(String line) {
+    Clipboard.setData(ClipboardData(text: line));
+    toast(context, 'Error copied to clipboard');
+  }
+
+  Future<void> _lineActions(String line) async {
+    final action = await showPSheet<String>(
+      context,
+      SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const SheetHandle(),
+            const SizedBox(height: 8),
+            ListTile(
+              leading: Icon(Icons.copy_rounded,
+                  color: P.inkSecondary, weight: 1.6),
+              title: Text('Copy error', style: PT.rowTitle),
+              onTap: () => Navigator.of(context).pop('copy'),
+            ),
+            ListTile(
+              leading: Icon(Icons.smart_toy_outlined,
+                  color: P.accent, weight: 1.6),
+              title: Text('Ask the agent', style: PT.rowTitle),
+              subtitle: Text(
+                  'Open the Home session with this error attached',
+                  style: PT.meta),
+              onTap: () => Navigator.of(context).pop('ask'),
+            ),
+            const SizedBox(height: 12),
+          ],
+        ),
+      ),
+    );
+    if (!mounted) return;
+    if (action == 'copy') {
+      _copyLine(line);
+    } else if (action == 'ask') {
+      await _askAgent(line);
+    }
+  }
+
+  /// Opens the pinned Home session with the error pre-filled as a
+  /// composer draft (editable, not auto-sent).
+  Future<void> _askAgent(String line) async {
+    List<PantheonRun> sessions;
+    try {
+      sessions = await widget.api.runs(limit: 100);
+    } catch (e) {
+      if (mounted) toastError(context, e);
+      return;
+    }
+    PantheonRun? home;
+    for (final s in sessions) {
+      if (s.pinned) {
+        home = s;
+        break;
+      }
+    }
+    if (!mounted) return;
+    if (home == null) {
+      toast(context, 'No Home session found');
+      return;
+    }
+    final draft =
+        'This error showed up in the logs — can you take a look?\n\n```\n$line\n```';
+    Navigator.of(context).push(buildDetailRoute(
+      SessionDetailScreen(
+          api: widget.api, runId: home.id, initialDraft: draft),
+    ));
   }
 
   Color _levelColor(String line) {
@@ -167,7 +246,8 @@ class _LogsScreenState extends State<LogsScreen> {
                     itemCount: tail.lines.length,
                     itemBuilder: (context, i) {
                       final line = tail.lines[i];
-                      return Padding(
+                      final isErr = _isError(line);
+                      final row = Padding(
                         padding: const EdgeInsets.only(bottom: 6),
                         child: Row(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -183,13 +263,30 @@ class _LogsScreenState extends State<LogsScreen> {
                             ),
                             const SizedBox(width: 10),
                             Expanded(
-                              child: SelectableText(
-                                line,
-                                style: PT.mono.copyWith(fontSize: 11),
-                              ),
+                              // Error lines use plain Text so tap/long-press
+                              // gestures own the row; other lines keep
+                              // native text selection.
+                              child: isErr
+                                  ? Text(
+                                      line,
+                                      style:
+                                          PT.mono.copyWith(fontSize: 11),
+                                    )
+                                  : SelectableText(
+                                      line,
+                                      style:
+                                          PT.mono.copyWith(fontSize: 11),
+                                    ),
                             ),
                           ],
                         ),
+                      );
+                      if (!isErr) return row;
+                      return GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onTap: () => _copyLine(line),
+                        onLongPress: () => _lineActions(line),
+                        child: row,
                       );
                     },
                   ),
