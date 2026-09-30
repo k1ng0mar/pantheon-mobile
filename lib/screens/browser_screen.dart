@@ -55,10 +55,20 @@ class _BrowserScreenState extends State<BrowserScreen> {
   /// just a reconnect link.
   bool _sessionEnded = false;
 
+  /// Latest browser narration for this session, polled every 2s.
+  /// Independent of `_statusFuture` so the card never flashes on poll.
+  BrowserActivity? _activity;
+  Timer? _activityPoll;
+
   @override
   void initState() {
     super.initState();
     _reloadStatus();
+    _activityPoll = Timer.periodic(
+      const Duration(seconds: 2),
+      (_) => _pollActivity(),
+    );
+    _pollActivity();
   }
 
   void _reloadStatus() {
@@ -68,9 +78,70 @@ class _BrowserScreenState extends State<BrowserScreen> {
     });
   }
 
+  /// Fetch the session's latest browser narration. Quiet: failures
+  /// leave the last subtitle in place.
+  Future<void> _pollActivity() async {
+    if (!mounted) return;
+    try {
+      final status = await widget.api.browserStatus(session: _session);
+      if (!mounted) return;
+      setState(() => _activity = status.lastActivity);
+    } catch (_) {}
+  }
+
+  /// Human subtitle for the latest browser activity. Null when there is
+  /// nothing fresh to narrate: nothing recorded yet, or the action is
+  /// stale (older than ~20s, so it has finished and the subtitle
+  /// clears instead of lying).
+  String? get _narration {
+    final a = _activity;
+    if (a == null || a.action.isEmpty) return null;
+    if (a.at != null && DateTime.now().difference(a.at!).inSeconds > 20) {
+      return null;
+    }
+    final d = a.detail;
+    switch (a.action) {
+      case 'tap':
+        return 'Tapping…';
+      case 'type':
+      case 'fill-ref':
+        return 'Typing…';
+      case 'scroll':
+        return 'Scrolling…';
+      case 'navigate':
+        return 'Opening ${d.isEmpty ? 'page' : d}…';
+      case 'press':
+        return 'Pressing ${d.isEmpty ? 'key' : d}…';
+      case 'snapshot':
+        return 'Reading the page…';
+      case 'click':
+      case 'click-ref':
+        return 'Clicking…';
+      case 'hover-ref':
+        return 'Hovering…';
+      case 'back':
+        return 'Going back…';
+      case 'forward':
+        return 'Going forward…';
+      case 'reload':
+        return 'Reloading…';
+      case 'wait-for':
+        return 'Waiting…';
+      case 'extract':
+        return 'Extracting…';
+      case 'act':
+        return 'Acting…';
+      case 'screenshot':
+        return 'Capturing…';
+      default:
+        return '${a.action[0].toUpperCase()}${a.action.substring(1)}…';
+    }
+  }
+
   @override
   void dispose() {
     // Tear down the stream without setState: the widget is going away.
+    _activityPoll?.cancel();
     _frameSub?.cancel();
     _stateSub?.cancel();
     _client?.close();
@@ -277,6 +348,15 @@ class _BrowserScreenState extends State<BrowserScreen> {
                   Text(status.backend, style: PT.mono),
                 ],
               ),
+              if (_narration != null) ...[
+                const SizedBox(height: 2),
+                Text(
+                  _narration!,
+                  style: PT.meta,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
               if (!live) ...[
                 const SizedBox(height: 14),
                 Text('Session name', style: PT.meta),
