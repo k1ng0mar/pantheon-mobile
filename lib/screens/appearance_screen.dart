@@ -139,20 +139,33 @@ class AppearanceScreen extends StatelessWidget {
           PCard(
             child: ValueListenableBuilder<String>(
               valueListenable: prefs.bubbleStyle,
-              builder: (_, style, __) => SegmentedButton<String>(
-                segments: const [
-                  ButtonSegment(
-                      value: 'rounded',
-                      label: Text('Rounded'),
-                      icon: Icon(Icons.chat_bubble_outline_rounded, size: 18)),
-                  ButtonSegment(
-                      value: 'flat',
-                      label: Text('Flat'),
-                      icon: Icon(Icons.crop_square_rounded, size: 18)),
+              builder: (_, style, __) => Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  SegmentedButton<String>(
+                    segments: const [
+                      ButtonSegment(
+                          value: 'default',
+                          label: Text('Default'),
+                          icon: Icon(Icons.chat_outlined, size: 18)),
+                      ButtonSegment(
+                          value: 'bubbles',
+                          label: Text('Bubbles'),
+                          icon: Icon(Icons.chat_bubble_outline_rounded,
+                              size: 18)),
+                    ],
+                    selected: {style},
+                    onSelectionChanged: (s) => prefs.setBubbleStyle(s.first),
+                    showSelectedIcon: false,
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    style == 'bubbles'
+                        ? 'iOS-style bubbles on both sides.'
+                        : 'Assistant replies run edge to edge; your messages stay in bubbles.',
+                    style: PT.faint,
+                  ),
                 ],
-                selected: {style},
-                onSelectionChanged: (s) => prefs.setBubbleStyle(s.first),
-                showSelectedIcon: false,
               ),
             ),
           ),
