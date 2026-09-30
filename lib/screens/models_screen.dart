@@ -29,6 +29,11 @@ class _ModelsScreenState extends State<ModelsScreen> {
   /// user drags. Null = show the server value from the ConfigDoc.
   double? _compressionDraft;
 
+  /// In-flight values for the `[swarm]` knobs while a save is pending.
+  /// Null entries = show the server value from the ConfigDoc (or the
+  /// documented default when the section is absent).
+  final Map<String, dynamic> _swarmDraft = {};
+
   /// Aux slot labels for the known auxiliary kinds.
   static const _auxTitles = {
     'judge': 'Judge',
@@ -236,12 +241,120 @@ class _ModelsScreenState extends State<ModelsScreen> {
                     style: PT.meta.copyWith(color: P.inkFaint),
                   ),
                 ),
+                const Overline('Swarm'),
+                _swarmCard(snap.data!),
               ],
             ),
           );
         },
       ),
     );
+  }
+
+  /// The `[swarm]` coordination knobs: caps for subagent count, spawn
+  /// depth, and concurrency, plus whether agents may spawn children.
+  /// Saved on change via `PUT /api/config`; the section may be absent
+  /// (fresh config), in which case the documented defaults show.
+  Widget _swarmCard(ConfigDoc doc) {
+    final section = doc.values['swarm'];
+    final raw = section is Map ? section.cast<String, dynamic>() : {};
+    int intVal(String key, int fallback) {
+      if (_swarmDraft[key] is int) return _swarmDraft[key] as int;
+      final v = raw[key];
+      return v is num ? v.toInt() : fallback;
+    }
+
+    bool boolVal(String key, bool fallback) {
+      if (_swarmDraft[key] is bool) return _swarmDraft[key] as bool;
+      final v = raw[key];
+      return v is bool ? v : fallback;
+    }
+
+    Widget stepperRow(String key, String label, String caption, int value,
+        int min, int max) {
+      final busy = _busy.contains(key);
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 14),
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(label, style: PT.rowTitle),
+                  const SizedBox(height: 2),
+                  Text(caption,
+                      style: PT.meta.copyWith(color: P.inkFaint)),
+                ],
+              ),
+            ),
+            PStepper(
+              value: value,
+              min: min,
+              max: max,
+              onChanged: busy ? null : (v) => _saveSwarm(key, v),
+            ),
+          ],
+        ),
+      );
+    }
+
+    final spawnKey = 'swarm.allow_child_spawn';
+    final spawnBusy = _busy.contains(spawnKey);
+    final spawn = boolVal('allow_child_spawn', true);
+    return PCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          stepperRow('swarm.max_subagents', 'Max subagents',
+              'Hard cap on subagents in one swarm.', intVal('max_subagents', 4), 1, 16),
+          stepperRow('swarm.max_depth', 'Max depth',
+              'How deep subagents may nest.', intVal('max_depth', 2), 1, 5),
+          stepperRow('swarm.max_concurrent', 'Max concurrent',
+              'How many run at once.', intVal('max_concurrent', 4), 1, 16),
+          Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Allow child spawn', style: PT.rowTitle),
+                    const SizedBox(height: 2),
+                    Text('Subagents may spawn their own helpers.',
+                        style: PT.meta.copyWith(color: P.inkFaint)),
+                  ],
+                ),
+              ),
+              Switch(
+                value: spawn,
+                activeTrackColor: P.accent,
+                onChanged: spawnBusy ? null : (v) => _saveSwarm(spawnKey, v),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Save one `[swarm]` knob on change. The draft keeps the UI stable
+  /// while the save is in flight; it is cleared on failure so the row
+  /// snaps back to the server value.
+  Future<void> _saveSwarm(String key, dynamic value) async {
+    if (_busy.contains(key)) return;
+    final short = key.substring('swarm.'.length);
+    setState(() {
+      _busy.add(key);
+      _swarmDraft[short] = value;
+    });
+    try {
+      await widget.api.putConfig({key: value});
+    } catch (e) {
+      setState(() => _swarmDraft.remove(short));
+      if (mounted) toastError(context, e);
+    } finally {
+      if (mounted) setState(() => _busy.remove(key));
+    }
   }
 
   Widget _slotCard(ModelSlot s, ConfigDoc doc) {
