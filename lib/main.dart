@@ -23,6 +23,7 @@ import 'screens/schedule_screen.dart';
 import 'screens/settings_screen.dart';
 import 'screens/skills_screen.dart';
 import 'screens/stats_screen.dart';
+import 'screens/swarm_screen.dart';
 import 'screens/voice_settings_screen.dart';
 import 'services/app_preferences.dart';
 import 'services/pantheon_api.dart';
@@ -438,6 +439,14 @@ class MoreTab extends StatelessWidget {
             title: 'Nightly repair',
             subtitle: 'Repair loop status and toggle',
             onTap: () => _push(context, NightlyScreen(api: api)),
+          ),
+          const SizedBox(height: 12),
+          _hubCard(
+            context,
+            icon: Icons.alt_route_outlined,
+            title: 'Swarm',
+            subtitle: 'Split a task across subagents',
+            onTap: () => _push(context, SwarmScreen(api: api)),
           ),
           const SizedBox(height: 12),
           _hubCard(
