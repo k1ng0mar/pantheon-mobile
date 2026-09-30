@@ -240,6 +240,60 @@ Future<void> micDeniedSheet(BuildContext context, {required String what}) async 
   );
 }
 
+/// Numeric stepper: minus/plus round buttons around a centered value.
+/// Null [onChanged] disables both buttons.
+class PStepper extends StatelessWidget {
+  final int value;
+  final int min;
+  final int max;
+  final ValueChanged<int>? onChanged;
+
+  const PStepper({
+    super.key,
+    required this.value,
+    this.min = 1,
+    this.max = 8,
+    this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    Widget step(IconData icon, int next, bool atLimit) {
+      final disabled = onChanged == null || atLimit;
+      return GestureDetector(
+        onTap: disabled ? null : () => onChanged!(next),
+        child: Container(
+          width: 36,
+          height: 36,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: P.tonal,
+            border: Border.all(color: P.borderStrong),
+          ),
+          alignment: Alignment.center,
+          child: Icon(icon,
+              size: 18,
+              color: disabled ? P.inkFaint : P.ink,
+              weight: 2),
+        ),
+      );
+    }
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        step(Icons.remove_rounded, value - 1, value <= min),
+        SizedBox(
+          width: 44,
+          child: Text('$value',
+              textAlign: TextAlign.center, style: PT.rowTitle),
+        ),
+        step(Icons.add_rounded, value + 1, value >= max),
+      ],
+    );
+  }
+}
+
 /// Label/value row for detail sheets.
 class KvRow extends StatelessWidget {
   final String label;
