@@ -26,7 +26,6 @@ class _Palette {
   final Color inkSecondary;
   final Color inkMuted;
   final Color inkFaint;
-  final Color inkGhost;
 
   const _Palette({
     required this.bg,
@@ -40,7 +39,6 @@ class _Palette {
     required this.inkSecondary,
     required this.inkMuted,
     required this.inkFaint,
-    required this.inkGhost,
   });
 }
 
@@ -56,7 +54,6 @@ const _darkPalette = _Palette(
   inkSecondary: Color(0xFFC9BFF0),
   inkMuted: Color(0xFF9A8BD0),
   inkFaint: Color(0xFF6E5FA8),
-  inkGhost: Color(0xFF4E4180),
 );
 
 const _lightPalette = _Palette(
@@ -71,7 +68,6 @@ const _lightPalette = _Palette(
   inkSecondary: Color(0xFF3E3370),
   inkMuted: Color(0xFF5F5490),
   inkFaint: Color(0xFF8A7FB8),
-  inkGhost: Color(0xFFB3A9D8),
 );
 
 class P {
@@ -106,8 +102,6 @@ class P {
   static Color get accent => _accentOv ?? const Color(0xFF8B5CFF); // interactive/live only
   static Color get accentSoft => accent.withValues(alpha: 0.14); // 14% accent wash
   static const accentDeep = Color(0xFF7223FF);
-  static const accentDark = Color(0xFF4B00CD);
-  static const accentInk = Color(0xFF0C0046);
 
   // Dynamic surfaces
   static Color get bg => _bgOv ?? _current.bg; // page
@@ -125,7 +119,6 @@ class P {
   static Color get inkSecondary => _current.inkSecondary;
   static Color get inkMuted => _current.inkMuted;
   static Color get inkFaint => _current.inkFaint;
-  static Color get inkGhost => _current.inkGhost;
 
   // Status (identical in both modes)
   static const ok = Color(0xFF4ADE80);

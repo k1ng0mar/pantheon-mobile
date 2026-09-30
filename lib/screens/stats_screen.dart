@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../models/usage_stats.dart';
+import '../models/models.dart';
 import '../services/pantheon_api.dart';
 import '../theme.dart';
 import '../widgets/chips.dart';
@@ -181,7 +181,7 @@ class _StatsScreenState extends State<StatsScreen> {
                       padding: const EdgeInsets.symmetric(horizontal: 3),
                       child: _Bar(
                         frac: maxCost == 0 ? 0 : e.value.costUsd / maxCost,
-                        label: e.key.substring(5),
+                        label: e.key.length > 5 ? e.key.substring(5) : e.key,
                       ),
                     ),
                   ),
@@ -312,8 +312,8 @@ class _BarState extends State<_Bar> {
               heightFactor: _in ? widget.frac.clamp(0.02, 1.0) : 0.02,
               child: Container(
                 decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    colors: [Color(0xFF8B5CFF), Color(0xFF4B00CD)],
+                  gradient: LinearGradient(
+                    colors: [P.accent, P.accentDeep],
                     begin: Alignment.topCenter,
                     end: Alignment.bottomCenter,
                   ),

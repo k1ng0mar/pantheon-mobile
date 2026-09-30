@@ -10,7 +10,6 @@ class Overline extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = widget.color ?? P.live;
     return Padding(
       padding: const EdgeInsets.fromLTRB(4, 20, 4, 8),
       child: Text(text.toUpperCase(), style: PT.overline),
@@ -123,6 +122,7 @@ class _LiveDotState extends State<LiveDot> with SingleTickerProviderStateMixin {
 
   @override
   Widget build(BuildContext context) {
+    final color = widget.color ?? P.live;
     return AnimatedBuilder(
       animation: _c,
       builder: (_, __) => Container(
@@ -139,6 +139,44 @@ class _LiveDotState extends State<LiveDot> with SingleTickerProviderStateMixin {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// Segmented-control pill: the two-state tab used by screens with a
+/// top-level tab switch (Tasks, Configs). Selected = tonal fill + accent
+/// outline; unselected = 1dp outline. Animate the state change.
+class SegTab extends StatelessWidget {
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const SegTab({
+    super.key,
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(999),
+          color: selected ? P.accentSoft : Colors.transparent,
+          border: Border.all(
+              color: selected ? P.accent : P.borderStrong, width: 1),
+        ),
+        alignment: Alignment.center,
+        child: Text(label,
+            style: PT.label.copyWith(
+                fontSize: 13,
+                color: selected ? P.ink : P.inkSecondary)),
       ),
     );
   }

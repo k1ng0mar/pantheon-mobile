@@ -3,9 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import '../models/approval.dart';
-import '../models/pantheon_run.dart';
-import '../models/todo_item.dart';
+import '../models/models.dart';
 import '../services/app_preferences.dart';
 import '../services/pantheon_api.dart';
 import '../theme.dart';
@@ -15,6 +13,7 @@ import '../widgets/chips.dart';
 import '../widgets/export_sheet.dart';
 import '../widgets/forms.dart';
 import '../widgets/message_content.dart';
+import '../widgets/new_chat_sheet.dart';
 import '../widgets/states.dart';
 import '../widgets/todos_sheet.dart';
 import 'voice_screen.dart';
@@ -32,8 +31,15 @@ class SessionDetailScreen extends StatefulWidget {
   final PantheonApi api;
   final String runId;
 
+  /// Optional badge notifier for the Approvals tab. Refreshed after
+  /// inline grant/deny decisions made on this screen.
+  final ValueNotifier<int>? pendingApprovals;
+
   const SessionDetailScreen(
-      {super.key, required this.api, required this.runId});
+      {super.key,
+      required this.api,
+      required this.runId,
+      this.pendingApprovals});
 
   @override
   State<SessionDetailScreen> createState() => _SessionDetailScreenState();
@@ -185,11 +191,19 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
     } catch (_) {}
   }
 
+  /// Poll cadence while a turn is live.
+  static const _pollInterval = Duration(seconds: 3);
+
+  /// Start the periodic poller if it isn't already running.
+  void _ensurePolling() {
+    _poll ??= Timer.periodic(_pollInterval, (_) => _pollOnce());
+  }
+
   void _syncPolling(String status) {
     final live = _isLive(status);
-    if (live && _poll == null) {
-      _poll = Timer.periodic(const Duration(seconds: 3), (_) => _pollOnce());
-    } else if (!live) {
+    if (live) {
+      _ensurePolling();
+    } else {
       _poll?.cancel();
       _poll = null;
     }
@@ -237,9 +251,25 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
   /// Reconcile [_messages] with the server transcript: drop optimistic
   /// items the server has admitted, keep the rest on top. Returns true
   /// when the visible list grew (new server items arrived).
+  ///
+  /// Admission is counted per key, not just keyed: two identical rapid
+  /// messages share one [_msgKey], so each admitted occurrence retracts
+  /// exactly one pending bubble instead of all of them at once.
   bool _syncMessages(List<TranscriptItem> fresh) {
-    final keys = {for (final t in fresh) _msgKey(t)};
-    _pending.removeWhere((t) => keys.contains(_msgKey(t)));
+    final admitted = <String, int>{};
+    for (final t in fresh) {
+      final k = _msgKey(t);
+      admitted[k] = (admitted[k] ?? 0) + 1;
+    }
+    _pending.removeWhere((t) {
+      final k = _msgKey(t);
+      final n = admitted[k] ?? 0;
+      if (n > 0) {
+        admitted[k] = n - 1;
+        return true;
+      }
+      return false;
+    });
     final merged = [...fresh, ..._pending];
     final cur = _messages;
     final same = merged.length == cur.length &&
@@ -273,8 +303,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
       await widget.api.sendRunMessage(widget.runId, text);
       // Idempotent: the backend may already have consumed the slot.
       await widget.api.clearQueue(widget.runId);
-      _poll ??=
-          Timer.periodic(const Duration(seconds: 3), (_) => _pollOnce());
+      _ensurePolling();
       await _pollOnce();
     } on PantheonTurnInFlightException {
       // A new turn started before we drained; retry on the next settle.
@@ -283,14 +312,18 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
   }
 
   Future<void> _send() async {
-    final text = _composer.text.trim();
-    if (text.isEmpty || _sending) return;
+    final raw = _composer.text.trim();
+    if (raw.isEmpty || _sending) return;
     _haptic(HapticFeedback.mediumImpact);
-    if (text.startsWith('/')) {
+    // `//` escapes the slash-command prefix: `//deploy` sends a literal
+    // `/deploy` as chat text instead of running a command.
+    final escaped = raw.startsWith('//');
+    if (raw.startsWith('/') && !escaped) {
       _composer.clear();
-      await _runSlash(text);
+      await _runSlash(raw);
       return;
     }
+    final text = escaped ? raw.substring(1) : raw;
     final run = _run;
     if (run == null || !_canChat(run.status)) return;
     setState(() => _sending = true);
@@ -316,18 +349,12 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
       // Pull the authoritative transcript right away, and make sure the
       // poller is running: a settled session just reopened, so replies
       // stream in from here.
-      _poll ??=
-          Timer.periodic(const Duration(seconds: 3), (_) => _pollOnce());
+      _ensurePolling();
       await _pollOnce();
     } on PantheonTurnInFlightException {
       if (!mounted) return;
       _removeOptimistic(optimistic);
       await _turnBusySheet(text);
-    } on PantheonRunFinishedException {
-      if (!mounted) return;
-      _removeOptimistic(optimistic);
-      await _load();
-      toast(context, 'This session could not be reopened.');
     } catch (e) {
       if (!mounted) return;
       _removeOptimistic(optimistic);
@@ -392,8 +419,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
           result.steered
               ? 'Steering the running turn…'
               : 'Queued — sends when the turn settles.');
-      _poll ??=
-          Timer.periodic(const Duration(seconds: 3), (_) => _pollOnce());
+      _ensurePolling();
       await _pollOnce();
     } on PantheonTurnInFlightException {
       if (mounted) _removeOptimistic(optimistic);
@@ -418,8 +444,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
     _animateToBottom();
     try {
       await widget.api.answerInput(widget.runId, callId, answer);
-      _poll ??=
-          Timer.periodic(const Duration(seconds: 3), (_) => _pollOnce());
+      _ensurePolling();
       await _pollOnce();
     } catch (e) {
       if (!mounted) return;
@@ -433,10 +458,23 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
       await widget.api.decideApproval(a.id, grant);
       if (!mounted) return;
       toast(context, grant ? 'Granted — resuming.' : 'Denied.');
+      await _refreshApprovalsBadge();
       await _load();
     } catch (e) {
       if (mounted) toastError(context, e);
     }
+  }
+
+  /// Keep the Approvals tab badge honest after an inline decision: the
+  /// badge only refreshes on Home/Approvals screen loads otherwise.
+  Future<void> _refreshApprovalsBadge() async {
+    final notifier = widget.pendingApprovals;
+    if (notifier == null) return;
+    try {
+      final all = await widget.api.approvals();
+      if (!mounted) return;
+      notifier.value = all.length;
+    } catch (_) {}
   }
 
   Future<void> _stopTurn() async {
@@ -489,8 +527,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
       await widget.api.sendRunMessage(widget.runId, text);
       _queuedByMe = false;
       await widget.api.clearQueue(widget.runId);
-      _poll ??=
-          Timer.periodic(const Duration(seconds: 3), (_) => _pollOnce());
+      _ensurePolling();
       await _pollOnce();
     } on PantheonTurnInFlightException {
       if (mounted) toast(context, 'A turn started — still queued.');
@@ -557,98 +594,10 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
     }
   }
 
-  /// New chat sheet (same shape as the Sessions tab), then open it.
+  /// `/new`: open the shared new-chat sheet, which pushes the created
+  /// session's detail view itself.
   Future<void> _slashNew() async {
-    final messageCtrl = TextEditingController();
-    final titleCtrl = TextEditingController();
-    var busy = false;
-    try {
-      final created = await showPSheet<PantheonRun>(
-        context,
-        StatefulBuilder(
-          builder: (ctx, setSheet) {
-            return SafeArea(
-              child: Padding(
-                padding: EdgeInsets.fromLTRB(
-                    20, 8, 20, 24 + MediaQuery.of(ctx).viewInsets.bottom),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    const SheetHandle(),
-                    const SizedBox(height: 8),
-                     Text('New chat', style: PT.sectionTitle),
-                    const SizedBox(height: 16),
-                    TextField(
-                      controller: messageCtrl,
-                      autofocus: true,
-                      minLines: 2,
-                      maxLines: 5,
-                      style: PT.body,
-                      decoration: const InputDecoration(
-                        hintText: 'What should Pantheon do?',
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    TextField(
-                      controller: titleCtrl,
-                      style: PT.body,
-                      decoration: const InputDecoration(
-                        hintText: 'Title (optional)',
-                      ),
-                    ),
-                    const SizedBox(height: 20),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: TonalButton(
-                              label: 'Cancel',
-                              onTap: () => Navigator.pop(ctx)),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: GradientButton(
-                            label: busy ? 'Starting…' : 'Start',
-                            onTap: busy
-                                ? null
-                                : () async {
-                                    final msg = messageCtrl.text.trim();
-                                    if (msg.isEmpty) return;
-                                    setSheet(() => busy = true);
-                                    try {
-                                      final run =
-                                          await widget.api.createRun(
-                                        message: msg,
-                                        title: titleCtrl.text.trim().isEmpty
-                                            ? null
-                                            : titleCtrl.text.trim(),
-                                      );
-                                      if (ctx.mounted) {
-                                        Navigator.pop(ctx, run);
-                                      }
-                                    } catch (e) {
-                                      if (ctx.mounted) {
-                                        setSheet(() => busy = false);
-                                        toastError(ctx, e);
-                                      }
-                                    }
-                                  },
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            );
-          },
-        ),
-      );
-      if (created != null && mounted) _openRun(created.id);
-    } finally {
-      messageCtrl.dispose();
-      titleCtrl.dispose();
-    }
+    await showNewChatSheet(context, widget.api);
   }
 
   Future<void> _slashTitle(String arg) async {
@@ -885,6 +834,9 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
                     ],
                   ),
                 ),
+              const SizedBox(height: 2),
+              Text('Tip: start with // to send a literal leading slash.',
+                  style: PT.small.copyWith(color: P.inkMuted)),
             ],
           ),
         ),
@@ -900,23 +852,10 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
 
   void _openRun(String id) {
     Navigator.of(context).push(
-      PageRouteBuilder(
-        transitionDuration: const Duration(milliseconds: 280),
-        reverseTransitionDuration: const Duration(milliseconds: 220),
-        pageBuilder: (_, __, ___) =>
-            SessionDetailScreen(api: widget.api, runId: id),
-        transitionsBuilder: (_, anim, __, child) {
-          final slide = Tween<Offset>(
-                  begin: const Offset(0.08, 0), end: Offset.zero)
-              .animate(
-                  CurvedAnimation(parent: anim, curve: Curves.easeOutCubic));
-          final fade = Tween<double>(begin: 0, end: 1).animate(
-              CurvedAnimation(parent: anim, curve: Curves.easeOut));
-          return SlideTransition(
-              position: slide,
-              child: FadeTransition(opacity: fade, child: child));
-        },
-      ),
+      buildDetailRoute(SessionDetailScreen(
+          api: widget.api,
+          runId: id,
+          pendingApprovals: widget.pendingApprovals)),
     );
   }
 
@@ -1013,9 +952,9 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 20),
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
         gradient: LinearGradient(
-          colors: [Color(0xFF2A0A7A), Color(0xFF150548)],
+          colors: [P.accent, P.accentDeep],
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
         ),
@@ -1045,7 +984,8 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
           const SizedBox(height: 6),
           Text(
             '${timeAgo(run.createdMs)}${modelLine.isNotEmpty ? ' · $modelLine' : ''}',
-            style: PT.small.copyWith(color: const Color(0xFFB9AEE0)),
+            style: PT.small.copyWith(
+                color: Colors.white.withValues(alpha: 0.75)),
           ),
           const SizedBox(height: 10),
           Row(
@@ -1082,7 +1022,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
                 Text('${compactNum(ctx.total)} ctx',
                     style: PT.mono.copyWith(
                         fontSize: 11,
-                        color: const Color(0xFF8F82C4))),
+                        color: Colors.white.withValues(alpha: 0.6))),
             ],
           ),
           const SizedBox(height: 14),
@@ -1106,7 +1046,9 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
         children: [
           Text(value,
               style: PT.label.copyWith(color: Colors.white, fontSize: 16)),
-          Text(label, style: PT.faint.copyWith(color: const Color(0xFF8F82C4))),
+          Text(label,
+              style: PT.faint.copyWith(
+                  color: Colors.white.withValues(alpha: 0.6))),
         ],
       ),
     );

@@ -1,5 +1,8 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:path_provider/path_provider.dart';
 
 import '../services/app_preferences.dart';
 import '../theme.dart';
@@ -384,10 +387,17 @@ class _AgentProfileRowState extends State<_AgentProfileRow> {
     if (_picking) return;
     setState(() => _picking = true);
     try {
-      final file =
-          await ImagePicker().pickImage(source: ImageSource.gallery);
+      final file = await ImagePicker().pickImage(source: ImageSource.gallery);
       if (file != null) {
-        await AppPreferences.instance.setAgentAvatarPath(file.path);
+        // ImagePicker hands back a temp/cache path the OS can purge, so
+        // copy the image into our own documents directory and persist
+        // THAT path instead.
+        final dir = await getApplicationDocumentsDirectory();
+        final ext =
+            file.name.contains('.') ? '.${file.name.split('.').last}' : '';
+        final target = File('${dir.path}/avatar$ext');
+        await File(file.path).copy(target.path);
+        await AppPreferences.instance.setAgentAvatarPath(target.path);
       }
     } catch (e) {
       if (mounted) toastError(context, e);

@@ -90,8 +90,8 @@ class _PantheonAppState extends State<PantheonApp> {
 
   @override
   Widget build(BuildContext context) {
-    // Resolve the live brightness, build both theme variants, then select
-    // the palette the widget tree below should paint with.
+    // Resolve the live brightness, select the palette + custom colors,
+    // then build both theme variants so they read this frame's values.
     final themeMode = _prefs.themeMode.value;
     final platformBrightness =
         WidgetsBinding.instance.platformDispatcher.platformBrightness;
@@ -101,8 +101,6 @@ class _PantheonAppState extends State<PantheonApp> {
             ? Brightness.light
             : Brightness.dark);
     final compact = _prefs.compactDensity.value;
-    final lightTheme = pantheonTheme(Brightness.light, compact: compact);
-    final darkTheme = pantheonTheme(Brightness.dark, compact: compact);
     P.apply(brightness);
     P.setCustomColors(
       accent: _prefs.customAccent.value,
@@ -110,6 +108,10 @@ class _PantheonAppState extends State<PantheonApp> {
       surface: _prefs.customSurface.value,
       tonal: _prefs.customTonal.value,
     );
+    final lightTheme = pantheonTheme(Brightness.light, compact: compact);
+    final darkTheme = pantheonTheme(Brightness.dark, compact: compact);
+    // pantheonTheme() re-applies its own brightness; restore the live one.
+    P.apply(brightness);
     return MaterialApp(
       title: 'Pantheon',
       theme: lightTheme,
@@ -260,7 +262,7 @@ class _MainShellState extends State<MainShell> {
   Widget build(BuildContext context) {
     final pages = [
       HomeScreen(api: _api, pendingApprovals: _pendingApprovals),
-      SessionsScreen(api: _api),
+      SessionsScreen(api: _api, pendingApprovals: _pendingApprovals),
       ApprovalsScreen(api: _api, pendingApprovals: _pendingApprovals),
       StatsScreen(api: _api),
       MoreTab(

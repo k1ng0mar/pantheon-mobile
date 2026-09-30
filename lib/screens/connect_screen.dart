@@ -249,9 +249,9 @@ class _OrbPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final orbs = [
-      _OrbSpec(0.85, 0.12, 190, const Color(0xFF7223FF), 0.0),
-      _OrbSpec(0.12, 0.72, 230, const Color(0xFF4B00CD), 2.1),
-      _OrbSpec(0.75, 0.85, 150, const Color(0xFF8B5CFF), 4.2),
+      _OrbSpec(0.85, 0.12, 190, P.accentDeep, 0.0),
+      _OrbSpec(0.12, 0.72, 230, P.accentDeep, 2.1),
+      _OrbSpec(0.75, 0.85, 150, P.accent, 4.2),
     ];
     for (final o in orbs) {
       final dx = math.sin((t * math.pi * 2) + o.phase) * 34;

@@ -3,29 +3,7 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 
-import '../models/approval.dart';
-import '../models/config_doc.dart';
-import '../models/env_key.dart';
-import '../models/gateway_status.dart';
-import '../models/log_tail.dart';
-import '../models/mcp_server.dart';
-import '../models/memory_entry.dart';
-import '../models/overview.dart';
-import '../models/pantheon_run.dart';
-import '../models/plugin.dart';
-import '../models/scheduled_job.dart';
-import '../models/schedule_template.dart';
-import '../models/skill.dart';
-import '../models/todo_item.dart';
-import '../models/usage_stats.dart';
-
-/// Thrown when a message is sent to a run that already finished (HTTP 409
-/// with error code RUN_FINISHED).
-class PantheonRunFinishedException extends PantheonApiException {
-  PantheonRunFinishedException(String body) : super(409, body);
-  @override
-  String toString() => 'This session has finished; it can\'t take new messages.';
-}
+import '../models/models.dart';
 
 /// Thrown when a message is sent while a turn is already running
 /// (HTTP 409 with error code TURN_IN_FLIGHT). The caller can offer to
@@ -187,8 +165,6 @@ class PantheonApi {
       switch (_serverCode(res.body)) {
         case 'TURN_IN_FLIGHT':
           throw PantheonTurnInFlightException(msg);
-        case 'RUN_FINISHED':
-          throw PantheonRunFinishedException(msg);
         default:
           throw PantheonApiException(res.statusCode, msg);
       }
@@ -274,10 +250,20 @@ class PantheonApi {
   Future<List<ScheduledJob>> scheduleJobs() async {
     final j = await _get('/api/schedule/jobs');
     final list = (j['jobs'] as List?) ?? [];
-    return list
-        .whereType<Map>()
-        .map((e) => ScheduledJob.fromJson(e.cast<String, dynamic>()))
-        .toList();
+    return list.whereType<Map>().map((e) {
+      final envelope = e.cast<String, dynamic>();
+      final job = envelope['job'];
+      if (job is Map) {
+        // Envelope: {"job": {...}, "last_run": ms|null,
+        // "next_fire_ms": ms|null} (schedule.rs:68-84).
+        return ScheduledJob.fromJson(
+            Map<String, dynamic>.of(job.cast<String, dynamic>())
+              ..['last_run'] = envelope['last_run']
+              ..['next_fire_ms'] = envelope['next_fire_ms']);
+      }
+      // Flat job object (older backends).
+      return ScheduledJob.fromJson(envelope);
+    }).toList();
   }
 
   // ------------------------------------------------------------------
@@ -302,7 +288,6 @@ class PantheonApi {
   ///   running turn was redirected and the message queued behind it.
   /// - 409 TURN_IN_FLIGHT → [PantheonTurnInFlightException] when neither
   ///   `queue` nor `steer` was requested.
-  /// - 409 RUN_FINISHED → [PantheonRunFinishedException].
   Future<MessageSendResult> sendRunMessage(String runId, String message,
       {bool queue = false, bool steer = false}) async {
     final body = <String, dynamic>{'message': message};
@@ -350,16 +335,25 @@ class PantheonApi {
     return j['mode'] as String? ?? mode;
   }
 
-  /// Compress the session's context now. Returns the human summary.
+  /// Compress the session's context now. Returns a human summary built
+  /// from the backend's {"before","after","changed","unknown_window"}
+  /// report (runs.rs:737-743).
   Future<String> compressRun(String id) async {
     final j = await _post('/api/runs/${Uri.encodeComponent(id)}/compress');
-    final report = j['report'] as String?;
-    final summary = j['summary'] as String?;
-    return (report != null && report.isNotEmpty)
-        ? report
-        : (summary != null && summary.isNotEmpty)
-            ? summary
-            : 'Context compressed.';
+    final before = (j['before'] as num?)?.toInt();
+    final after = (j['after'] as num?)?.toInt();
+    if (before == null) return 'Context compressed.';
+    if (j['unknown_window'] == true) {
+      return 'Context compressed (model window unknown).';
+    }
+    if (j['changed'] != true) {
+      return 'Context already fits — no compression needed.';
+    }
+    if (after != null && before > 0 && after <= before) {
+      final pct = (100 * (before - after) / before).round();
+      return 'Context compressed: $before → $after tokens ($pct% smaller).';
+    }
+    return 'Context compressed.';
   }
 
   /// Fork the run at user turn [turn] (1-based; null = latest) into a
@@ -426,11 +420,13 @@ class PantheonApi {
     if (entry is Map) {
       return MemoryEntry.fromJson(entry.cast<String, dynamic>());
     }
+    if (j['key'] is String) {
+      // Backend returns the flat entry (201, memory.rs:171-184).
+      return MemoryEntry.fromJson(j);
+    }
     return MemoryEntry(
         key: text.length > 40 ? '${text.substring(0, 40)}…' : text,
-        value: text,
-        layer: 'agent',
-        namespace: '');
+        value: text);
   }
 
   // ------------------------------------------------------------------
@@ -457,9 +453,6 @@ class PantheonApi {
     final changed = (j['changed'] as List?) ?? [];
     return changed.map((e) => e.toString()).toList();
   }
-
-  /// Export the raw config.toml bytes.
-  Future<List<int>> exportConfig() => _getBytes('/api/config/export');
 
   Future<void> importConfig(String toml) async {
     await _post('/api/config/import', {'toml': toml, 'confirm': true});
@@ -552,9 +545,6 @@ class PantheonApi {
     return (groups: groups, pending: pending, note: j['note'] as String?);
   }
 
-  Future<Map<String, dynamic>> mcpHealth() async =>
-      await _get('/api/mcp/health');
-
   Future<void> addMcpServer(Map<String, dynamic> server) async {
     await _post('/api/mcp/servers', {...server, 'confirm': true});
   }
@@ -575,6 +565,11 @@ class PantheonApi {
 
   Future<void> reloadMcp() async {
     await _post('/api/mcp/reload');
+  }
+
+  /// Approve a server stuck in `pending_approval`.
+  Future<void> approveMcpServer(String name) async {
+    await _post('/api/mcp/servers/${Uri.encodeComponent(name)}/approve');
   }
 
   // ------------------------------------------------------------------

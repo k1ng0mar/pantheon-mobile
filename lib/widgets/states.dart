@@ -140,18 +140,23 @@ class _StaggerItemState extends State<StaggerItem> {
 
   @override
   Widget build(BuildContext context) {
-    // Reduce motion: no entrance animation, render the child directly.
-    if (AppPreferences.instance.reduceMotion.value) return widget.child;
-    return AnimatedOpacity(
-      duration: const Duration(milliseconds: 320),
-      curve: Curves.easeOut,
-      opacity: _visible ? 1 : 0,
-      child: AnimatedSlide(
-        duration: const Duration(milliseconds: 320),
-        curve: Curves.easeOutCubic,
-        offset: _visible ? Offset.zero : const Offset(0, 0.12),
-        child: widget.child,
-      ),
+    return ValueListenableBuilder<bool>(
+      valueListenable: AppPreferences.instance.reduceMotion,
+      builder: (_, reduceMotion, __) {
+        // Reduce motion: no entrance animation, render the child directly.
+        if (reduceMotion) return widget.child;
+        return AnimatedOpacity(
+          duration: const Duration(milliseconds: 320),
+          curve: Curves.easeOut,
+          opacity: _visible ? 1 : 0,
+          child: AnimatedSlide(
+            duration: const Duration(milliseconds: 320),
+            curve: Curves.easeOutCubic,
+            offset: _visible ? Offset.zero : const Offset(0, 0.12),
+            child: widget.child,
+          ),
+        );
+      },
     );
   }
 }

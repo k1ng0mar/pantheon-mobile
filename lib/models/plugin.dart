@@ -9,7 +9,6 @@ class Plugin {
   final bool enabled;
   final bool bundled;
   final bool approved;
-  final String? location;
 
   Plugin({
     required this.kind,
@@ -19,7 +18,6 @@ class Plugin {
     required this.enabled,
     required this.bundled,
     required this.approved,
-    this.location,
   });
 
   factory Plugin.fromJson(Map<String, dynamic> j) => Plugin(
@@ -30,6 +28,5 @@ class Plugin {
         enabled: j['enabled'] as bool? ?? true,
         bundled: j['bundled'] as bool? ?? false,
         approved: j['approved'] as bool? ?? false,
-        location: j['location'] as String?,
       );
 }

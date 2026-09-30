@@ -19,11 +19,16 @@ class TodoItem {
         if (activeForm != null) 'active_form': activeForm,
       };
 
-  TodoItem copyWith({String? content, String? status, String? activeForm}) =>
+  /// Sentinel so `copyWith` can explicitly clear `activeForm` to null.
+  static const _sentinel = Object();
+
+  TodoItem copyWith(
+          {String? content, String? status, Object? activeForm = _sentinel}) =>
       TodoItem(
         content: content ?? this.content,
         status: status ?? this.status,
-        activeForm: activeForm ?? this.activeForm,
+        activeForm:
+            identical(activeForm, _sentinel) ? this.activeForm : activeForm as String?,
       );
 
   /// Next status in the checkbox cycle.

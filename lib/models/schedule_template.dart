@@ -4,19 +4,13 @@ class TemplateVar {
   final String name;
   final String? question;
   final String? defaultValue;
-  final bool reserved;
 
-  TemplateVar(
-      {required this.name,
-      this.question,
-      this.defaultValue,
-      required this.reserved});
+  TemplateVar({required this.name, this.question, this.defaultValue});
 
   factory TemplateVar.fromJson(Map<String, dynamic> j) => TemplateVar(
         name: j['name'] as String? ?? '',
         question: j['question'] as String?,
         defaultValue: j['default']?.toString(),
-        reserved: j['reserved'] as bool? ?? false,
       );
 }
 

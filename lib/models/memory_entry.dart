@@ -5,8 +5,6 @@
 class MemoryEntry {
   final String key;
   final String value;
-  final String layer;
-  final String namespace;
   final int? recordedAtMs;
   final String? provenanceSource;
   final String? provenanceTrust;
@@ -14,8 +12,6 @@ class MemoryEntry {
   MemoryEntry({
     required this.key,
     required this.value,
-    required this.layer,
-    required this.namespace,
     this.recordedAtMs,
     this.provenanceSource,
     this.provenanceTrust,
@@ -28,8 +24,6 @@ class MemoryEntry {
     return MemoryEntry(
       key: j['key'] as String? ?? '',
       value: j['value'] as String? ?? '',
-      layer: j['layer'] as String? ?? 'agent',
-      namespace: j['namespace'] as String? ?? '',
       recordedAtMs: (j['recorded_at_ms'] as num?)?.toInt(),
       provenanceSource: prov?['source'] as String?,
       provenanceTrust: prov?['trust'] as String?,
