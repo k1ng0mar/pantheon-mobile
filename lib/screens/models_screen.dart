@@ -25,6 +25,10 @@ class _ModelsScreenState extends State<ModelsScreen> {
   Future<ConfigDoc>? _future;
   final Set<String> _busy = {};
 
+  /// In-flight slider position for `compression.target_percent` while the
+  /// user drags. Null = show the server value from the ConfigDoc.
+  double? _compressionDraft;
+
   /// Aux slot labels for the known auxiliary kinds.
   static const _auxTitles = {
     'judge': 'Judge',
@@ -221,10 +225,10 @@ class _ModelsScreenState extends State<ModelsScreen> {
               children: [
                 const Overline('Default'),
                 for (final s in slots.where((s) => s.section == 'model'))
-                  _slotCard(s),
+                  _slotCard(s, snap.data!),
                 const Overline('Auxiliary'),
                 for (final s in slots.where((s) => s.section != 'model'))
-                  _slotCard(s),
+                  _slotCard(s, snap.data!),
                 Padding(
                   padding: const EdgeInsets.fromLTRB(4, 16, 4, 0),
                   child: Text(
@@ -240,60 +244,133 @@ class _ModelsScreenState extends State<ModelsScreen> {
     );
   }
 
-  Widget _slotCard(ModelSlot s) {
+  Widget _slotCard(ModelSlot s, ConfigDoc doc) {
     final busy = _busy.contains(s.section);
+    // The compression card carries its own slider: the edit sheet opens
+    // from the header row only, so slider taps/drags never trigger it.
+    final isCompression = s.section == 'compression';
+    final header = Row(
+      children: [
+        Container(
+          width: 44,
+          height: 44,
+          decoration: BoxDecoration(
+            color: P.accentSoft,
+            borderRadius: BorderRadius.circular(P.r14),
+          ),
+          child: Icon(
+            s.section == 'model'
+                ? Icons.smart_toy_outlined
+                : Icons.psychology_outlined,
+            color: P.accent,
+            size: 22,
+            weight: 1.6,
+          ),
+        ),
+        const SizedBox(width: 14),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(s.title, style: PT.rowTitle),
+              const SizedBox(height: 3),
+              Text(
+                [
+                  if (s.provider != null) s.provider!,
+                  if (s.model != null) s.model!,
+                ].join(' · ').ifEmpty('inherits default'),
+                style: PT.monoSm,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              if (s.apiKeyEnv != null) ...[
+                const SizedBox(height: 2),
+                Text('key · ${s.apiKeyEnv}',
+                    style: PT.faint.copyWith(fontSize: 10)),
+              ],
+            ],
+          ),
+        ),
+         Icon(Icons.chevron_right_rounded,
+            color: P.inkFaint, size: 22),
+      ],
+    );
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
       child: PCard(
-        onTap: busy ? null : () => _edit(s),
-        child: Row(
+        onTap: (busy || isCompression) ? null : () => _edit(s),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Container(
-              width: 44,
-              height: 44,
-              decoration: BoxDecoration(
-                color: P.accentSoft,
-                borderRadius: BorderRadius.circular(P.r14),
-              ),
-              child: Icon(
-                s.section == 'model'
-                    ? Icons.smart_toy_outlined
-                    : Icons.psychology_outlined,
-                color: P.accent,
-                size: 22,
-                weight: 1.6,
-              ),
-            ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(s.title, style: PT.rowTitle),
-                  const SizedBox(height: 3),
-                  Text(
-                    [
-                      if (s.provider != null) s.provider!,
-                      if (s.model != null) s.model!,
-                    ].join(' · ').ifEmpty('inherits default'),
-                    style: PT.monoSm,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  if (s.apiKeyEnv != null) ...[
-                    const SizedBox(height: 2),
-                    Text('key · ${s.apiKeyEnv}',
-                        style: PT.faint.copyWith(fontSize: 10)),
-                  ],
-                ],
-              ),
-            ),
-             Icon(Icons.chevron_right_rounded,
-                color: P.inkFaint, size: 22),
+            if (isCompression)
+              Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  onTap: busy ? null : () => _edit(s),
+                  borderRadius: BorderRadius.circular(P.r12),
+                  splashColor: P.accentSoft,
+                  highlightColor: P.accentSoft,
+                  child: header,
+                ),
+              )
+            else
+              header,
+            if (isCompression) _compressionControl(doc),
           ],
         ),
       ),
     );
+  }
+
+  /// Percentage control for `compression.target_percent`: the summary
+  /// target size as a percentage of the absorbed transcript chars.
+  /// Higher keeps more detail; lower compresses harder.
+  Widget _compressionControl(ConfigDoc doc) {
+    final section = doc.values['compression'];
+    final raw = section is Map ? section['target_percent'] : null;
+    final current = raw is int ? raw.clamp(1, 100) : 12;
+    final pct = _compressionDraft ?? current.toDouble();
+    final busy = _busy.contains('compression.target_percent');
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SizedBox(height: 12),
+        Text('Summary size: ${pct.round()}% of compressed material',
+            style: PT.label),
+        Slider(
+          value: pct,
+          min: 1,
+          max: 100,
+          divisions: 99,
+          activeColor: P.accent,
+          inactiveColor: P.tonal,
+          label: '${pct.round()}%',
+          onChanged: busy ? null : (v) => setState(() => _compressionDraft = v),
+          onChangeEnd: (v) => _saveCompressionPct(v.round()),
+        ),
+        Text('Higher keeps more detail; lower compresses harder.',
+            style: PT.meta.copyWith(color: P.inkFaint)),
+      ],
+    );
+  }
+
+  Future<void> _saveCompressionPct(int pct) async {
+    const key = 'compression.target_percent';
+    if (_busy.contains(key)) return;
+    setState(() {
+      _busy.add(key);
+      // Snap back to the server value; _load() refreshes it on success.
+      _compressionDraft = null;
+    });
+    try {
+      await widget.api.putConfig({key: pct});
+      _load();
+    } catch (e) {
+      if (mounted) toastError(context, e);
+    } finally {
+      if (mounted) setState(() => _busy.remove(key));
+    }
   }
 
   Widget _skeleton() {
