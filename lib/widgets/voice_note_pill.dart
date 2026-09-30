@@ -19,7 +19,7 @@ import 'forms.dart';
 /// - Trash cancels the recording (file deleted) and calls [onDiscard].
 /// - Send stops the recorder and calls [onFinished] with the file path.
 /// - Recordings auto-stop at [maxSeconds]: WAV 16 kHz mono 16-bit is
-///   ~32 KB/s and the backend caps uploads at 1 MiB.
+///   ~32 KB/s and the backend caps uploads at 8 MiB.
 class VoiceNotePill extends StatefulWidget {
   const VoiceNotePill({
     super.key,
@@ -32,7 +32,7 @@ class VoiceNotePill extends StatefulWidget {
   final VoidCallback onDiscard;
   final ValueChanged<String> onFinished;
 
-  static const maxSeconds = 30;
+  static const maxSeconds = 180;
 
   @override
   State<VoiceNotePill> createState() => _VoiceNotePillState();
