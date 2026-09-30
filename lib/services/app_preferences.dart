@@ -21,7 +21,7 @@ class AppPreferences {
   static const _kCustomTonal = 'app.color.tonal';
 
   static const _kBodyFont = 'app.body_font'; // Inter|SpaceGrotesk|JetBrainsMono
-  static const _kBubbleStyle = 'app.bubble'; // rounded|flat
+  static const _kBubbleStyle = 'app.bubble'; // default|bubbles
   static const _kChatDensity = 'app.chat_density'; // comfortable|compact
   static const _kChatBg = 'app.chat_bg'; // default|tinted|dim
   static const _kLoadingStyle = 'app.loading'; // spinner|dots|pulse
@@ -59,7 +59,7 @@ class AppPreferences {
   final customTonal = ValueNotifier<Color?>(null);
 
   final bodyFont = ValueNotifier<String>('Inter');
-  final bubbleStyle = ValueNotifier<String>('rounded');
+  final bubbleStyle = ValueNotifier<String>('default');
   final chatDensity = ValueNotifier<String>('comfortable');
   final chatBg = ValueNotifier<String>('default');
   final loadingStyle = ValueNotifier<String>('spinner');
@@ -113,7 +113,12 @@ class AppPreferences {
     customTonal.value = _colorFrom(p.getInt(_kCustomTonal));
 
     bodyFont.value = p.getString(_kBodyFont) ?? 'Inter';
-    bubbleStyle.value = p.getString(_kBubbleStyle) ?? 'rounded';
+    bubbleStyle.value = switch (p.getString(_kBubbleStyle)) {
+      // Legacy corner-style values were bubble variants — both become the
+      // Bubbles layout. Fresh installs land on Default.
+      'rounded' || 'flat' || 'bubbles' => 'bubbles',
+      _ => 'default',
+    };
     chatDensity.value = p.getString(_kChatDensity) ?? 'comfortable';
     chatBg.value = p.getString(_kChatBg) ?? 'default';
     loadingStyle.value = p.getString(_kLoadingStyle) ?? 'spinner';

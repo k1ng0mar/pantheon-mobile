@@ -1911,7 +1911,9 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
 
   Widget _bubble(TranscriptItem t) {
     final prefs = AppPreferences.instance;
-    final flat = prefs.bubbleStyle.value == 'flat';
+    // Chat layout: 'default' = assistant runs full-bleed, user in bubbles;
+    // 'bubbles' = iOS-style bubbles on both sides.
+    final bubbles = prefs.bubbleStyle.value != 'default';
     final compactChat = prefs.chatDensity.value == 'compact';
     final vPad = compactChat ? 6.0 : 10.0;
     final hPad = compactChat ? 10.0 : 14.0;
@@ -1923,59 +1925,67 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
     } else {
       isUser = t.role == 'user';
       final isTool = t.role == 'tool';
-      core = Align(
-        alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
-        child: Container(
-          margin: EdgeInsets.only(bottom: vPad),
-          padding: EdgeInsets.symmetric(horizontal: hPad, vertical: vPad),
-          constraints:
-              BoxConstraints(maxWidth: MediaQuery.sizeOf(context).width * 0.85),
-          decoration: BoxDecoration(
-            gradient: isUser ? P.gradient : null,
-            color: isUser
-                ? null
-                : isTool
-                    ? P.tonal
-                    : P.surface,
-            borderRadius: flat
-                ? BorderRadius.circular(P.r4)
-                : BorderRadius.only(
-                    topLeft: Radius.circular(P.r18),
-                    topRight: Radius.circular(P.r18),
-                    bottomLeft: Radius.circular(isUser ? P.r18 : P.r4),
-                    bottomRight: Radius.circular(isUser ? P.r4 : P.r18),
-                  ),
-            border: isUser ? null : Border.all(color: P.border),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              if (!isUser)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 6),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const AgentAvatar(size: 22),
-                      const SizedBox(width: 8),
-                      Text((t.role ?? 'assistant').toUpperCase(),
-                          style: PT.monoEyebrow
-                              .copyWith(color: isTool ? P.info : P.accent)),
-                    ],
-                  ),
-                ),
-              MessageContent(
-                text: isUser
-                    ? t.content.replaceFirst(_attachmentBlock, '')
-                    : t.content,
-                textStyle: PT.body.copyWith(
-                    fontSize: 14, color: isUser ? Colors.white : P.ink),
-                onQuote: _quoteInReply,
-              ),
-            ],
-          ),
+      final msg = MessageContent(
+        text: isUser ? t.content.replaceFirst(_attachmentBlock, '') : t.content,
+        textStyle: PT.body
+            .copyWith(fontSize: 14, color: isUser ? Colors.white : P.ink),
+        onQuote: _quoteInReply,
+      );
+      final header = Padding(
+        padding: const EdgeInsets.only(bottom: 6),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const AgentAvatar(size: 22),
+            const SizedBox(width: 8),
+            Text((t.role ?? 'assistant').toUpperCase(),
+                style: PT.monoEyebrow
+                    .copyWith(color: isTool ? P.info : P.accent)),
+          ],
         ),
       );
+      if (!isUser && !bubbles) {
+        // Default layout: assistant/tool messages run edge to edge, no bubble.
+        core = Container(
+          margin: EdgeInsets.only(bottom: vPad),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [header, msg],
+          ),
+        );
+      } else {
+        core = Align(
+          alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
+          child: Container(
+            margin: EdgeInsets.only(bottom: vPad),
+            padding: EdgeInsets.symmetric(horizontal: hPad, vertical: vPad),
+            constraints: BoxConstraints(
+                maxWidth: MediaQuery.sizeOf(context).width * 0.85),
+            decoration: BoxDecoration(
+              gradient: isUser ? P.gradient : null,
+              color: isUser
+                  ? null
+                  : isTool
+                      ? P.tonal
+                      : P.surface,
+              borderRadius: BorderRadius.only(
+                topLeft: Radius.circular(P.r18),
+                topRight: Radius.circular(P.r18),
+                bottomLeft: Radius.circular(isUser ? P.r18 : P.r4),
+                bottomRight: Radius.circular(isUser ? P.r4 : P.r18),
+              ),
+              border: isUser ? null : Border.all(color: P.border),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (!isUser) header,
+                msg,
+              ],
+            ),
+          ),
+        );
+      }
     }
 
     // Optional per-message timestamp (only when the item carries one —
@@ -2621,13 +2631,10 @@ class _ThinkingBlockState extends State<_ThinkingBlock> {
 
   @override
   Widget build(BuildContext context) {
+    // Slim foldable row: icon + label + chevron, expanding to the content.
+    // Collapsed by default; far less visual weight than a card.
     return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      decoration: BoxDecoration(
-        color: P.surface,
-        borderRadius: BorderRadius.circular(P.r12),
-        border: Border.all(color: P.border),
-      ),
+      margin: const EdgeInsets.only(bottom: 8),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -2635,23 +2642,24 @@ class _ThinkingBlockState extends State<_ThinkingBlock> {
             color: Colors.transparent,
             child: InkWell(
               onTap: () => setState(() => _open = !_open),
-              borderRadius: BorderRadius.circular(P.r12),
+              borderRadius: BorderRadius.circular(P.r8),
               splashColor: P.accentSoft,
               highlightColor: P.accentSoft,
               child: Padding(
-                padding: const EdgeInsets.all(12),
+                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
                 child: Row(
                   children: [
                     const Icon(Icons.psychology_outlined,
-                        size: 16, color: P.inkFaint),
+                        size: 14, color: P.inkFaint),
                     const SizedBox(width: 8),
-                    Text('Thinking', style: PT.meta),
+                    Text('Thinking',
+                        style: PT.meta.copyWith(color: P.inkFaint)),
                     const Spacer(),
                     Icon(
                         _open
                             ? Icons.expand_less_rounded
                             : Icons.expand_more_rounded,
-                        size: 18,
+                        size: 16,
                         color: P.inkFaint),
                   ],
                 ),
@@ -2660,7 +2668,7 @@ class _ThinkingBlockState extends State<_ThinkingBlock> {
           ),
           if (_open)
             Padding(
-              padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+              padding: const EdgeInsets.fromLTRB(4, 2, 4, 8),
               child: MessageContent(
                 text: widget.content,
                 textStyle: PT.small.copyWith(
