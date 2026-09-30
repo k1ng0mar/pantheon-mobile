@@ -746,17 +746,38 @@ class PantheonApi {
   /// `POST /api/uploads` — `{name, mime, data: base64}` → the stored
   /// upload record. The returned id rides `sendRunMessage` as an
   /// attachment so the agent can read the file.
+  ///
+  /// Pass a dedicated [client] to make the upload abortable: closing it
+  /// fails the in-flight request with [http.ClientException].
   Future<UploadRecord> uploadAttachment({
     required String name,
     required String mime,
     required List<int> bytes,
+    http.Client? client,
   }) async {
-    final j = await _post('/api/uploads', {
+    final body = {
       'name': name,
       'mime': mime,
       'data': base64Encode(bytes),
-    });
-    return UploadRecord.fromJson(j);
+    };
+    if (client == null) {
+      return UploadRecord.fromJson(await _post('/api/uploads', body));
+    }
+    http.Response res;
+    try {
+      res = await client
+          .post(_uri('/api/uploads'),
+              headers: {..._headers, 'Content-Type': 'application/json'},
+              body: jsonEncode(body))
+          .timeout(_timeout);
+    } on TimeoutException {
+      throw PantheonUnreachableException('Timed out reaching $baseUrl.');
+    } on http.ClientException {
+      rethrow;
+    } catch (e) {
+      throw PantheonUnreachableException('Cannot reach $baseUrl ($e).');
+    }
+    return UploadRecord.fromJson(_decode(res, '/api/uploads'));
   }
 
   /// `GET /api/uploads/:id` — raw bytes of a stored upload, for
