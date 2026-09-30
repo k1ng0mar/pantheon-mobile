@@ -644,6 +644,24 @@ class PantheonApi {
       _getBytes('/api/uploads/${Uri.encodeComponent(id)}');
 
   // ------------------------------------------------------------------
+  // Link previews
+  // ------------------------------------------------------------------
+
+  /// `GET /api/link-preview?url=` — Open Graph / title / image metadata
+  /// for a URL (SSRF-guarded server-side). Returns null when the page
+  /// has nothing usable or the lookup fails; never throws, so chat
+  /// rendering stays robust.
+  Future<LinkPreview?> fetchLinkPreview(String url) async {
+    try {
+      final j = await _get('/api/link-preview', {'url': url});
+      final preview = LinkPreview.fromJson(j);
+      return preview.usable ? preview : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  // ------------------------------------------------------------------
   // Voice notes
   // ------------------------------------------------------------------
 

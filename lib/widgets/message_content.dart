@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../services/pantheon_api.dart';
 import 'code_block.dart';
+import 'link_preview_card.dart';
 
 /// Chat message text with fenced code blocks parsed out.
 ///
@@ -12,6 +14,9 @@ import 'code_block.dart';
 /// source), and Quote in reply (when [onQuote] is supplied). An
 /// unterminated fence is treated as plain text so nothing ever
 /// disappears.
+///
+/// When [api] is supplied, the first URL in the message (outside code
+/// blocks) gets a rich [LinkPreviewCard] rendered under the text.
 class MessageContent extends StatelessWidget {
   final String text;
   final TextStyle textStyle;
@@ -20,16 +25,49 @@ class MessageContent extends StatelessWidget {
   /// reply". Null = the menu omits the quote item.
   final ValueChanged<String>? onQuote;
 
+  /// Dashboard API used for link previews. Null = no preview cards.
+  final PantheonApi? api;
+
   const MessageContent(
       {super.key,
       required this.text,
       required this.textStyle,
-      this.onQuote});
+      this.onQuote,
+      this.api});
 
   static final _fence = RegExp(r'```(\w*)\s*\n([\s\S]*?)```');
 
+  /// First http(s) URL in [text], ignoring fenced code blocks.
+  /// Trailing sentence punctuation is trimmed.
+  static final _url = RegExp(r'https?://[^\s<>"\u201c\u201d]+');
+
+  static String? firstUrl(String text) {
+    final plain = text.replaceAll(_fence, ' ');
+    final m = _url.firstMatch(plain);
+    if (m == null) return null;
+    var url = m.group(0)!;
+    url = url.replaceAll(RegExp(r'[.,;:!?)\]}]+$'), '');
+    return url.isEmpty ? null : url;
+  }
+
   @override
   Widget build(BuildContext context) {
+    final content = _content();
+    final api = this.api;
+    if (api == null) return content;
+    final previewUrl = firstUrl(text);
+    if (previewUrl == null) return content;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        content,
+        LinkPreviewCard(url: previewUrl, api: api),
+      ],
+    );
+  }
+
+  Widget _content() {
     final matches = _fence.allMatches(text).toList();
     if (matches.isEmpty) {
       return _selectable(text);
