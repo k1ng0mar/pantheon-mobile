@@ -47,7 +47,7 @@ class _VoiceMsg {
   _VoiceMsg({required this.user, required this.text, this.approval = false});
 }
 
-class _VoiceScreenState extends State<VoiceScreen> {
+class _VoiceScreenState extends State<VoiceScreen> with WidgetsBindingObserver {
   LiveVoiceClient? _client;
   VoiceMic? _mic;
   final _speaker = VoiceSpeaker();
@@ -67,6 +67,7 @@ class _VoiceScreenState extends State<VoiceScreen> {
   DateTime? _lastSpeech;
   bool _ready = false;
   bool _busyFlash = false;
+  bool _backgrounded = false; // torn down because the app backgrounded
   final _replyPcm = BytesBuilder();
   final _scroll = ScrollController();
   String? _fatalError;
@@ -77,6 +78,7 @@ class _VoiceScreenState extends State<VoiceScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _boot();
   }
 
@@ -336,10 +338,68 @@ class _VoiceScreenState extends State<VoiceScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _teardown();
     _speaker.dispose();
     _scroll.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.inactive) {
+      _suspendForBackground();
+    } else if (state == AppLifecycleState.resumed && _backgrounded) {
+      // The session is already torn down to a clean idle state with a
+      // notice on screen. Never silently resume a stale socket — the
+      // user starts a fresh session explicitly.
+      _backgrounded = false;
+      if (mounted) setState(() {});
+    }
+  }
+
+  /// Tear the session down when the app backgrounds: the mic must never
+  /// stay hot and the socket must not linger while the phone is locked.
+  Future<void> _suspendForBackground() async {
+    if (_backgrounded ||
+        _status == _Status.ended ||
+        _status == _Status.error) {
+      return;
+    }
+    _backgrounded = true;
+    try {
+      _client?.sendStop();
+    } catch (_) {}
+    await _stopMic();
+    await _speaker.stop();
+    await _eventsSub?.cancel();
+    _eventsSub = null;
+    try {
+      await _client?.close();
+    } catch (_) {}
+    _client = null;
+    if (!mounted) return;
+    setState(() {
+      _status = _Status.ended;
+      _ready = false;
+      _listening = false;
+      _utteranceOpen = false;
+      _level = 0.0;
+    });
+    _addSystem(
+        'Session paused — the app went to the background, so the microphone was switched off and the connection closed. Tap "New session" to start again.');
+  }
+
+  Future<void> _reconnect() async {
+    if (_status == _Status.connecting) return;
+    setState(() {
+      _backgrounded = false;
+      _status = _Status.connecting;
+      _statusNote = null;
+      _fatalError = null;
+    });
+    await _boot();
   }
 
   @override
@@ -378,7 +438,8 @@ class _VoiceScreenState extends State<VoiceScreen> {
       _Status.thinking => ('Thinking…', P.info),
       _Status.speaking => ('Speaking', P.ok),
       _Status.error => ('Error', P.err),
-      _Status.ended => ('Ended', P.inkFaint),
+      _Status.ended =>
+        _backgrounded ? ('Paused', P.warn) : ('Ended', P.inkFaint),
     };
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
@@ -529,6 +590,33 @@ class _VoiceScreenState extends State<VoiceScreen> {
   }
 
   Widget _controls() {
+    if (_backgrounded) {
+      return Container(
+        padding: const EdgeInsets.fromLTRB(24, 12, 24, 24),
+        decoration: BoxDecoration(
+          border: Border(top: BorderSide(color: P.divider)),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+          children: [
+            _roundButton(
+              icon: Icons.refresh_rounded,
+              label: 'New session',
+              background: P.accent,
+              foreground: Colors.white,
+              onPressed: _reconnect,
+            ),
+            _roundButton(
+              icon: Icons.call_end_rounded,
+              label: 'Close',
+              background: P.tonal,
+              foreground: P.inkMuted,
+              onPressed: () => Navigator.of(context).pop(),
+            ),
+          ],
+        ),
+      );
+    }
     return Container(
       padding: const EdgeInsets.fromLTRB(24, 12, 24, 24),
       decoration: BoxDecoration(
