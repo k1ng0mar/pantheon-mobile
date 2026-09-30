@@ -19,7 +19,19 @@ import 'session_detail_screen.dart';
 Future<bool> useTeamAndOpenSession(
     BuildContext context, PantheonApi api, Team team) async {
   try {
-    final sessionId = await api.useTeam(team.id);
+    final res = await api.useTeamFull(team.id);
+    String? pick(List<String> keys) {
+      for (final k in keys) {
+        final v = res[k]?.toString();
+        if (v != null && v.isNotEmpty) return v;
+      }
+      return null;
+    }
+    // run_id is the lead's coordination run — the user-facing session.
+    final sessionId = pick(['run_id', 'swarm_id', 'session_id', 'id']);
+    if (sessionId == null) {
+      throw Exception('The /use endpoint returned no session id.');
+    }
     if (!context.mounted) return false;
     Navigator.of(context).push(
       buildDetailRoute(SessionDetailScreen(
@@ -27,6 +39,7 @@ Future<bool> useTeamAndOpenSession(
         runId: sessionId,
         attachedName: team.name,
         attachedIcon: Icons.groups_outlined,
+        swarmId: res['swarm_id']?.toString(),
       )),
     );
     return true;
@@ -190,6 +203,74 @@ class _ExpertDetailScreenState extends State<ExpertDetailScreen> {
             ],
           ),
         ),
+        if (team.topologyLabel.isNotEmpty || team.lead != null) ...[
+          const Overline('How it runs'),
+          PCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (team.topologyLabel.isNotEmpty)
+                  StatusChip(
+                      label: team.topologyLabel.toUpperCase(),
+                      color: P.accent),
+                if (team.lead != null) ...[
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      MemberAvatar(
+                          name: team.lead!.name,
+                          colorHex: team.lead!.color,
+                          size: 36),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Flexible(
+                                  child: Text(team.lead!.name,
+                                      style: PT.rowTitle
+                                          .copyWith(fontSize: 13.5)),
+                                ),
+                                const SizedBox(width: 6),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 7, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    borderRadius: BorderRadius.circular(999),
+                                    border: Border.all(
+                                        color: P.accent
+                                            .withValues(alpha: 0.5)),
+                                  ),
+                                  child: Text('LEAD',
+                                      style: PT.label.copyWith(
+                                        fontSize: 9.5,
+                                        fontWeight: FontWeight.w700,
+                                        color: P.accent,
+                                        letterSpacing: 0.8,
+                                      )),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 2),
+                            Text('Only the lead talks to you.',
+                                style: PT.meta),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
+        if (team.stages.isNotEmpty) ...[
+          const Overline('Stages'),
+          for (var i = 0; i < team.stages.length; i++)
+            StaggerItem(index: i, child: _stageCard(team, i)),
+        ],
         const Overline('Team roster'),
         for (var i = 0; i < team.members.length; i++)
           StaggerItem(index: i, child: _memberRow(team.members[i])),
@@ -210,6 +291,123 @@ class _ExpertDetailScreenState extends State<ExpertDetailScreen> {
     );
   }
 
+  Widget _stageCard(Team team, int i) {
+    final s = team.stages[i];
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: PCard(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(999),
+                color: P.tonal,
+                border: Border.all(color: P.border),
+              ),
+              child: Text(
+                'Stage ${i + 1} · ${s.name}',
+                style: PT.label.copyWith(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  color: P.inkSecondary,
+                ),
+              ),
+            ),
+            if (s.members.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: [
+                  for (final id in s.members)
+                    Builder(builder: (_) {
+                      final m = team.memberByExpertId(id);
+                      return Container(
+                        padding: const EdgeInsets.fromLTRB(3, 3, 10, 3),
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(999),
+                          border: Border.all(color: P.border),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            MemberAvatar(
+                              name: m?.name ?? id,
+                              colorHex: m?.color ?? '',
+                              size: 24,
+                            ),
+                            const SizedBox(width: 6),
+                            Text(
+                              m?.name ?? id,
+                              style: PT.label.copyWith(fontSize: 12),
+                            ),
+                            if (m != null && m.unresolved) ...[
+                              const SizedBox(width: 4),
+                              Icon(Icons.warning_amber_rounded,
+                                  size: 13, color: P.warn),
+                            ],
+                          ],
+                        ),
+                      );
+                    }),
+                ],
+              ),
+            ],
+            if (s.inputContract.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              _contractLine('in', s.inputContract),
+            ],
+            if (s.outputContract.isNotEmpty) ...[
+              const SizedBox(height: 2),
+              _contractLine('out', s.outputContract),
+            ],
+            if (s.loopBackTo != null && s.loopBackTo!.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Icon(Icons.loop_rounded, size: 14, color: P.inkMuted),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      'On verification failure loops back to ${s.loopBackTo}.',
+                      style: PT.meta,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _contractLine(String kind, String text) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          width: 30,
+          child: Text(kind.toUpperCase(),
+              style: PT.label.copyWith(
+                fontSize: 10,
+                fontWeight: FontWeight.w700,
+                color: P.inkMuted,
+                letterSpacing: 0.6,
+              )),
+        ),
+        Expanded(
+          child: Text(text,
+              style: PT.body.copyWith(
+                  fontSize: 12.5, height: 1.45, color: P.inkSecondary)),
+        ),
+      ],
+    );
+  }
+
   Widget _memberRow(TeamMember m) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
@@ -223,7 +421,11 @@ class _ExpertDetailScreenState extends State<ExpertDetailScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(m.name, style: PT.rowTitle),
-                  if (m.role.isNotEmpty) ...[
+                  if (m.unresolved) ...[
+                    const SizedBox(height: 2),
+                    Text('Expert deleted — unresolved.',
+                        style: PT.meta.copyWith(color: P.warn)),
+                  ] else if (m.role.isNotEmpty) ...[
                     const SizedBox(height: 2),
                     Text(m.role, style: PT.meta),
                   ],

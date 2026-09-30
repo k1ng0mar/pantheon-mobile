@@ -1010,6 +1010,13 @@ class PantheonApi {
         '/api/swarm/transcript', {'swarm': id, 'agent': agent});
   }
 
+  /// `GET /api/swarm/transcript?swarm=<id>` (no agent) → the combined
+  /// transcript: every agent's output headed by name, run id, status,
+  /// and role, plus the staged execution log for team runs.
+  Future<Map<String, dynamic>> swarmCombinedTranscript(String id) async {
+    return await _get('/api/swarm/transcript', {'swarm': id});
+  }
+
   /// `POST /api/swarm/<id>/retry` → 200 `{"swarm_id","round"}`.
   /// No feedback → the backend defaults to the judge's notes.
   /// 400 when the max round is reached or there is nothing to retry.
@@ -1048,11 +1055,16 @@ class PantheonApi {
   /// `{"ok": true, "swarm_id": ...}`. Spawns the swarm session and
   /// returns its id.
   Future<String> useTeam(String id, {String? task}) async {
+    final j = await useTeamFull(id, task: task);
+    return _sessionIdOf(j);
+  }
+
+  /// Full `POST /api/teams/:id/use` response: `swarm_id` plus `run_id`
+  /// (the lead's coordination run — the single user-facing run).
+  Future<Map<String, dynamic>> useTeamFull(String id, {String? task}) async {
     final body = <String, dynamic>{};
     if (task != null && task.isNotEmpty) body['task'] = task;
-    final j =
-        await _post('/api/teams/${Uri.encodeComponent(id)}/use', body);
-    return _sessionIdOf(j);
+    return await _post('/api/teams/${Uri.encodeComponent(id)}/use', body);
   }
 
   /// `GET /api/experts` → `{"experts": [...]}` (a bare list accepted too).
