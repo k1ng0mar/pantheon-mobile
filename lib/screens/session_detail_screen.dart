@@ -73,6 +73,11 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
   bool _sending = false;
   bool _atBottom = true;
 
+  /// True while a manual `/compress` round-trip is in flight. Drives the
+  /// "Compressing context…" status row above the composer and guards
+  /// against double-taps (compression is a slow LLM call).
+  bool _compressing = false;
+
   /// Guard against double-tapping the clarify-card send button: the
   /// answer POST must fire at most once per question.
   bool _answering = false;
@@ -1047,6 +1052,8 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
   }
 
   Future<void> _slashCompress() async {
+    if (_compressing) return;
+    setState(() => _compressing = true);
     try {
       final summary = await widget.api.compressRun(widget.runId);
       if (!mounted) return;
@@ -1055,6 +1062,8 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
       await _load();
     } catch (e) {
       if (mounted) toastError(context, e);
+    } finally {
+      if (mounted) setState(() => _compressing = false);
     }
   }
 
@@ -1700,6 +1709,10 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+              if (_compressing) ...[
+                _compressingRow(),
+                const SizedBox(height: 8),
+              ],
               if (_attachments.isNotEmpty) ...[
                 _attachmentChips(),
                 const SizedBox(height: 8),
@@ -1913,6 +1926,31 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
           ),
           const SizedBox(width: 12),
           Text('Transcribing voice note…', style: PT.meta),
+        ],
+      ),
+    );
+  }
+
+  /// Slim status row shown above the composer while `/compress` runs.
+  /// Compression is a slow LLM round-trip with no progress events, so
+  /// this is the only in-flight signal the user gets.
+  Widget _compressingRow() {
+    return Container(
+      decoration: BoxDecoration(
+        color: P.surface,
+        borderRadius: BorderRadius.circular(28),
+        border: Border.all(color: P.border),
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      child: Row(
+        children: [
+          const SizedBox(
+            width: 18,
+            height: 18,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+          const SizedBox(width: 12),
+          Text('Compressing context…', style: PT.meta),
         ],
       ),
     );
