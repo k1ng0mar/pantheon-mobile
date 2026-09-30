@@ -740,6 +740,36 @@ class PantheonApi {
           '/api/nightly/enabled', {'enabled': enabled, 'confirm': true}));
 
   // ------------------------------------------------------------------
+  // Ideas (proposed by the nightly pass)
+  // ------------------------------------------------------------------
+
+  /// `GET /api/ideas` → the idea list.
+  Future<List<Idea>> ideas() async {
+    final j = await _get('/api/ideas');
+    final list = (j['ideas'] as List?) ?? [];
+    return list
+        .whereType<Map>()
+        .map((e) => Idea.fromJson(e.cast<String, dynamic>()))
+        .toList();
+  }
+
+  /// `POST /api/ideas/:id/accept` — the user wants this done.
+  Future<void> acceptIdea(String id) async {
+    await _post('/api/ideas/${Uri.encodeComponent(id)}/accept');
+  }
+
+  /// `POST /api/ideas/:id/dismiss` — the user isn't interested.
+  Future<void> dismissIdea(String id) async {
+    await _post('/api/ideas/${Uri.encodeComponent(id)}/dismiss');
+  }
+
+  /// `POST /api/ideas/:id/feedback` — `{"signal":"more"|"less"}`.
+  Future<void> feedbackIdea(String id, String signal) async {
+    await _post('/api/ideas/${Uri.encodeComponent(id)}/feedback',
+        {'signal': signal});
+  }
+
+  // ------------------------------------------------------------------
   // Uploads (chat attachments)
   // ------------------------------------------------------------------
 

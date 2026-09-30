@@ -79,6 +79,11 @@ class PantheonRun {
   final String mode; // plan | build
   final ContextTokens contextTokens;
 
+  /// The backend's permanent home session: carried on `is_home` (or a
+  /// `pinned` flag). Falls back to matching id == 'home' when neither
+  /// flag is present. The sessions list renders these above all others.
+  final bool pinned;
+
   PantheonRun({
     required this.id,
     required this.status,
@@ -100,6 +105,7 @@ class PantheonRun {
     this.queuedMessages = const [],
     this.mode = 'build',
     this.contextTokens = const ContextTokens(),
+    this.pinned = false,
   });
 
   factory PantheonRun.fromJson(Map<String, dynamic> j) {
@@ -152,6 +158,9 @@ class PantheonRun {
       pendingInput: pendingInput,
       queuedMessages: queuedMessages,
       mode: j['mode'] as String? ?? 'build',
+      pinned: j['is_home'] == true ||
+          j['pinned'] == true ||
+          (j['id'] as String?) == 'home',
       contextTokens: ctx is Map
           ? ContextTokens.fromJson(ctx.cast<String, dynamic>())
           : const ContextTokens(),

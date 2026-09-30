@@ -7,6 +7,7 @@ import 'screens/config_screen.dart';
 import 'screens/connect_screen.dart';
 import 'screens/gateway_screen.dart';
 import 'screens/home_screen.dart';
+import 'screens/ideas_screen.dart';
 import 'screens/keys_screen.dart';
 import 'screens/logins_screen.dart';
 import 'screens/logs_screen.dart';
@@ -437,6 +438,14 @@ class MoreTab extends StatelessWidget {
             title: 'Nightly repair',
             subtitle: 'Repair loop status and toggle',
             onTap: () => _push(context, NightlyScreen(api: api)),
+          ),
+          const SizedBox(height: 12),
+          _hubCard(
+            context,
+            icon: Icons.lightbulb_outlined,
+            title: 'Ideas',
+            subtitle: 'Nightly-generated suggestions',
+            onTap: () => _push(context, IdeasScreen(api: api)),
           ),
           const _HubSection('Runtime'),
           _hubCard(
