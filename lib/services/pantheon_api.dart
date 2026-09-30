@@ -224,6 +224,7 @@ class PantheonApi {
         path.contains('/api/browser/') ||
         path.contains('/api/logins') ||
         path.contains('/retry') ||
+        path.contains('/kill') ||
         RegExp(r'/api/runs/[^/]+/queue/\d+').hasMatch(path);
   }
 
@@ -359,6 +360,13 @@ class PantheonApi {
   /// Cooperatively interrupt the running turn, if any.
   Future<void> cancelRun(String id) async {
     await _post('/api/runs/${Uri.encodeComponent(id)}/cancel');
+  }
+
+  /// Hard-stop the running turn: force-terminates the turn process
+  /// (TERM, a short grace, then KILL). Unlike [cancelRun], the turn
+  /// does not wind down cooperatively. 409 when no turn is in flight.
+  Future<void> killRun(String id) async {
+    await _post('/api/runs/${Uri.encodeComponent(id)}/kill');
   }
 
   /// Drop the queued follow-up message, if any.

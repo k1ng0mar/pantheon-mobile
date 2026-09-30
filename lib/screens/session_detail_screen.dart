@@ -442,6 +442,12 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
         : text;
     final run = _run;
     if (run == null || !_canChat(run.status)) return;
+    if (_isLive(run.status)) {
+      // Smart send/stop: a turn is already in flight, so the composer
+      // button is a stop button — offer stop / interrupt / queue / steer.
+      await _stopSheet();
+      return;
+    }
     setState(() => _sending = true);
     // The composer keeps its draft until the send succeeds: on failure
     // the user gets their text back instead of losing it.
@@ -480,9 +486,11 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
       _ensurePolling();
       await _pollOnce();
     } on PantheonTurnInFlightException {
+      // Lost the idle→busy race between the check above and the send:
+      // the run really is busy, so offer the same stop sheet.
       if (!mounted) return;
       _removeOptimistic(optimistic);
-      await _turnBusySheet(messageText, attachments: ids);
+      await _stopSheet();
     } catch (e) {
       if (!mounted) return;
       _removeOptimistic(optimistic);
@@ -493,9 +501,26 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
     }
   }
 
-  /// A turn is already running: offer queue / steer / dismiss.
-  Future<void> _turnBusySheet(String text,
-      {List<String> attachments = const []}) async {
+  /// Smart send/stop: the composer button is a stop button while a turn
+  /// is in flight. Offers hard stop, cooperative interrupt, and
+  /// queue/steer of the composer's draft. Queue/steer are only tappable
+  /// when the composer holds a draft and the run is actually running
+  /// (a parked run 409s message sends until its approval is decided).
+  Future<void> _stopSheet() async {
+    final raw = _composer.text.trim();
+    final ids = _attachments
+        .where((a) => a.record != null)
+        .map((a) => a.record!.id)
+        .toList();
+    final hasDraft = raw.isNotEmpty || ids.isNotEmpty;
+    final canQueue = hasDraft && _run?.status == 'running';
+    // Same draft normalization as [_send]: `//` unescapes, and an
+    // attachments-only draft gets a placeholder line.
+    final escaped = raw.startsWith('//');
+    final text = escaped ? raw.substring(1) : raw;
+    final messageText = text.isEmpty
+        ? '(shared ${ids.length} attachment${ids.length == 1 ? '' : 's'})'
+        : text;
     final choice = await showPSheet<String>(
       context,
       SafeArea(
@@ -507,21 +532,40 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
             children: [
               const SheetHandle(),
               const SizedBox(height: 8),
-               Text('A turn is already running',
-                  style: PT.sectionTitle),
+              Text('Turn in flight', style: PT.sectionTitle),
               const SizedBox(height: 8),
-               Text(
-                  'Queue your message behind it, or steer the running turn toward it.',
-                  style: PT.small),
+              Text(
+                'Stop the model, interrupt it, or park this message behind it.',
+                style: PT.small),
               const SizedBox(height: 20),
-              GradientButton(
-                label: 'Queue message',
-                onTap: () => Navigator.pop(context, 'queue'),
+              _DangerSheetButton(
+                label: 'Stop the model',
+                onTap: () => Navigator.pop(context, 'kill'),
               ),
               const SizedBox(height: 12),
               TonalButton(
-                label: 'Steer turn',
-                onTap: () => Navigator.pop(context, 'steer'),
+                label: 'Interrupt',
+                onTap: () => Navigator.pop(context, 'interrupt'),
+              ),
+              const SizedBox(height: 12),
+              Opacity(
+                opacity: canQueue ? 1 : 0.4,
+                child: TonalButton(
+                  label: 'Queue the message',
+                  onTap: canQueue
+                      ? () => Navigator.pop(context, 'queue')
+                      : null,
+                ),
+              ),
+              const SizedBox(height: 12),
+              Opacity(
+                opacity: canQueue ? 1 : 0.4,
+                child: TonalButton(
+                  label: 'Steer the message',
+                  onTap: canQueue
+                      ? () => Navigator.pop(context, 'steer')
+                      : null,
+                ),
               ),
               const SizedBox(height: 12),
               TonalButton(
@@ -533,11 +577,40 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
         ),
       ),
     );
-    if (choice == null) {
-      // Dismissed: hand the draft back to the composer.
-      if (mounted) setState(() => _composer.text = text);
+    if (choice == null || !mounted) return;
+    switch (choice) {
+      case 'kill':
+        await _hardStopTurn();
+      case 'interrupt':
+        await _stopTurn();
+      case 'queue':
+      case 'steer':
+        await _queueOrSteer(choice == 'steer', messageText, ids);
+    }
+  }
+
+  /// Hard stop: force-terminates the in-flight turn process. Unlike
+  /// [_stopTurn] (cooperative), this does not wait for a checkpoint.
+  /// The button state comes back from the server afterwards — never
+  /// assumed.
+  Future<void> _hardStopTurn() async {
+    _haptic(HapticFeedback.heavyImpact);
+    try {
+      await widget.api.killRun(widget.runId);
+    } catch (e) {
+      if (!mounted) return;
+      toastError(context, e);
       return;
     }
+    if (!mounted) return;
+    toast(context, 'Stopped.');
+    _ensurePolling();
+    await _pollOnce();
+  }
+
+  /// Queue or steer the composer's draft behind/into the running turn.
+  Future<void> _queueOrSteer(
+      bool steer, String text, List<String> attachments) async {
     if (!mounted) return;
     setState(() => _sending = true);
     final optimistic =
@@ -545,7 +618,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
     _addOptimistic(optimistic);
     try {
       final result = await widget.api.sendRunMessage(widget.runId, text,
-          queue: true, steer: choice == 'steer', attachments: attachments);
+          queue: true, steer: steer, attachments: attachments);
       // Steer wipes the server queue and parks just this message; a
       // plain queue appends behind what's already waiting.
       _queuedByMe = result.steered ? 1 : _queuedByMe + 1;
@@ -1732,6 +1805,9 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
   Widget _composerRow() {
     final returnSends = AppPreferences.instance.returnSends.value;
     final reduceMotion = AppPreferences.instance.reduceMotion.value;
+    // Smart send/stop: while a turn is in flight (and we're not mid-send
+    // ourselves) the button is a stop button in the Nyx danger wash.
+    final stopLive = !_sending && _isLive(_run?.status ?? '');
     return Row(
       crossAxisAlignment: CrossAxisAlignment.end,
       children: [
@@ -1762,7 +1838,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
             Icons.mic_rounded, 'Record voice note', _startVoiceNote),
         const SizedBox(width: 8),
         GestureDetector(
-          onTap: _send,
+          onTap: stopLive ? _stopSheet : _send,
           child: AnimatedOpacity(
             duration: Duration(
                 milliseconds: reduceMotion ? 0 : 150),
@@ -1770,10 +1846,17 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
             child: Container(
               width: 48,
               height: 48,
-              decoration: const BoxDecoration(
-                gradient: P.gradient,
-                shape: BoxShape.circle,
-              ),
+              decoration: stopLive
+                  ? BoxDecoration(
+                      color: P.err.withValues(alpha: 0.14),
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                          color: P.err.withValues(alpha: 0.5), width: 1.5),
+                    )
+                  : const BoxDecoration(
+                      gradient: P.gradient,
+                      shape: BoxShape.circle,
+                    ),
               alignment: Alignment.center,
               child: _sending
                   ? const SizedBox(
@@ -1781,8 +1864,11 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
                       height: 20,
                       child: _SendGlyph(),
                     )
-                  : const Icon(Icons.arrow_upward_rounded,
-                      color: Colors.white, size: 22),
+                  : stopLive
+                      ? const Icon(Icons.stop_rounded,
+                          color: P.err, size: 22)
+                      : const Icon(Icons.arrow_upward_rounded,
+                          color: Colors.white, size: 22),
             ),
           ),
         ),
@@ -3418,6 +3504,34 @@ class _SendGlyph extends StatelessWidget {
         return const CircularProgressIndicator(
             strokeWidth: 2.5, color: Colors.white);
     }
+  }
+}
+
+/// Red Nyx sheet button for the hard "Stop the model" action. Mirrors
+/// the private `_DangerButton` in widgets/forms.dart (danger wash fill,
+/// 52dp tall, 20dp radius).
+class _DangerSheetButton extends StatelessWidget {
+  final String label;
+  final VoidCallback onTap;
+
+  const _DangerSheetButton({required this.label, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        height: 52,
+        decoration: BoxDecoration(
+          color: P.err.withValues(alpha: 0.14),
+          borderRadius: BorderRadius.circular(P.r20),
+          border: Border.all(color: P.err.withValues(alpha: 0.5)),
+        ),
+        alignment: Alignment.center,
+        child: Text(label,
+            style: PT.label.copyWith(color: P.err, fontSize: 15)),
+      ),
+    );
   }
 }
 
