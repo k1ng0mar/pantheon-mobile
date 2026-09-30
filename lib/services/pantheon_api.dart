@@ -83,6 +83,15 @@ class PantheonApi {
   final String baseUrl;
   final String token;
 
+  /// Fired after every successful `PUT /api/config`, so widgets showing
+  /// profile-dependent state (avatars, active names) can re-resolve
+  /// without a restart. Static so a PUT through one api instance
+  /// notifies listeners holding any other instance.
+  static final _configChanged = StreamController<void>.broadcast();
+
+  /// Stream of config-change notifications (see [_configChanged]).
+  static Stream<void> get configChanged => _configChanged.stream;
+
   static const _timeout = Duration(seconds: 15);
 
   Map<String, String> get _headers => {'x-pantheon-token': token};
@@ -530,6 +539,7 @@ class PantheonApi {
     final j =
         await _put('/api/config', {'changes': changes, 'confirm': true});
     final changed = (j['changed'] as List?) ?? [];
+    _configChanged.add(null);
     return changed.map((e) => e.toString()).toList();
   }
 
@@ -552,6 +562,12 @@ class PantheonApi {
       String name, String file, String content) async {
     await _put('/api/profiles/${Uri.encodeComponent(name)}/files',
         {'file': file, 'content': content});
+  }
+
+  /// Delete an agent profile and its settings. The backend answers 409
+  /// when the profile is currently active.
+  Future<void> deleteProfile(String name) async {
+    await _delete('/api/profiles/${Uri.encodeComponent(name)}');
   }
 
   // ------------------------------------------------------------------
