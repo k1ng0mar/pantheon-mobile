@@ -1,10 +1,13 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:open_filex/open_filex.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:record/record.dart';
 
 import '../models/models.dart';
@@ -86,6 +89,10 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
   /// `POST /api/uploads`, then sent with the message as attachment ids.
   final List<_PendingAttachment> _attachments = [];
 
+  /// Memoized thumbnail futures for sent image attachments, keyed by
+  /// upload id — `GET /api/uploads/:id` bytes cached per session.
+  final Map<String, Future<Uint8List>> _thumbFutures = {};
+
   /// Voice-note recording state. The composer mic starts a recording
   /// (the pill); the AppBar mic still opens the live voice screen.
   bool _recordingVoiceNote = false;
@@ -105,8 +112,36 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
 
   /// The `[attachments]` block the server appends to a user message when
   /// files were attached — stripped before rendering the bubble so the
-  /// raw file list never shows in chat.
+  /// raw file list never shows in chat. The parsed form renders as the
+  /// attachment grid instead.
   static final _attachmentBlock = RegExp(r'\n*\[attachments\][\s\S]*$');
+
+  /// One line of the block: `- name (mime, size[, id: upl_xxx]): /path`.
+  /// The `id:` part is new; old lines without it still parse (id null).
+  static final _attachmentLine = RegExp(
+      r'^- (.*) \(([^,()]*), ([^,()]*)(?:, id: ([^()]*))?\): ');
+
+  /// Parse the `[attachments]` block into (name, mime, id) records.
+  /// Never throws — unparseable lines are skipped.
+  static List<_SentAttachment> _parseSentAttachments(String content) {
+    final out = <_SentAttachment>[];
+    for (final raw in content.split('\n')) {
+      final line = raw.trimRight();
+      if (!line.startsWith('- ')) continue;
+      final m = _attachmentLine.firstMatch(line);
+      if (m == null) continue;
+      final name = m.group(1)!.trim();
+      final mime = m.group(2)!.trim();
+      final id = m.group(4)?.trim();
+      if (name.isEmpty) continue;
+      out.add(_SentAttachment(
+        name: name,
+        mime: mime.isEmpty ? 'application/octet-stream' : mime,
+        id: (id == null || id.isEmpty) ? null : id,
+      ));
+    }
+    return out;
+  }
 
   /// The composer stays enabled for settled sessions: completed/failed/
   /// canceled mark the end of a turn, not the death of the session — the
@@ -1732,7 +1767,9 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
     try {
       final picker = ImagePicker();
       if (source == ImageSource.gallery) {
-        final files = await picker.pickMultiImage(imageQuality: 85);
+        // Multiple media: images and videos in one pick, like the
+        // reference app's multi-file handling.
+        final files = await picker.pickMultipleMedia(imageQuality: 85);
         for (final f in files) {
           await _stageUpload(f.path, await f.readAsBytes());
         }
@@ -1806,90 +1843,272 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
   }
 
   Widget _attachmentChips() {
-    return Wrap(
-      spacing: 8,
-      runSpacing: 8,
-      children: _attachments.map(_attachmentChip).toList(),
+    // Horizontal scrollable card strip (reference-app style): thumbnails
+    // for media, extension tiles for documents, X on each card.
+    if (_attachments.isEmpty) return const SizedBox.shrink();
+    return SizedBox(
+      height: 108,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        itemCount: _attachments.length,
+        separatorBuilder: (_, __) => const SizedBox(width: 8),
+        itemBuilder: (_, i) => _attachmentCard(_attachments[i]),
+      ),
     );
   }
 
-  Widget _attachmentChip(_PendingAttachment a) {
-    return Container(
-      padding:
-          const EdgeInsets.only(left: 6, top: 6, bottom: 6, right: 2),
-      decoration: BoxDecoration(
-        color: P.surface,
-        borderRadius: BorderRadius.circular(P.r12),
-        border: Border.all(color: P.border),
-      ),
-      child: Row(
+  Widget _attachmentCard(_PendingAttachment a) {
+    return SizedBox(
+      width: 76,
+      child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          if (a.isImage && a.localPath != null)
-            ClipRRect(
-              borderRadius: BorderRadius.circular(8),
-              child: Image.file(
-                File(a.localPath!),
-                width: 36,
-                height: 36,
-                fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) => _fileGlyph(a),
+          Stack(
+            children: [
+              _pendingTile(a),
+              Positioned(
+                top: 2,
+                right: 2,
+                child: GestureDetector(
+                  onTap: () => setState(() => _attachments.remove(a)),
+                  child: Container(
+                    padding: const EdgeInsets.all(4),
+                    decoration: const BoxDecoration(
+                      color: Colors.black54,
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(Icons.close_rounded,
+                        size: 12, color: Colors.white),
+                  ),
+                ),
               ),
-            )
-          else
-            _fileGlyph(a),
-          const SizedBox(width: 8),
-          ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 140),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(a.name,
-                    style: PT.small, overflow: TextOverflow.ellipsis),
-                if (a.uploading)
-                  Text('uploading…', style: PT.faint)
-                else if (a.error != null)
-                  Text('failed — tap ✕ to remove',
-                      style: PT.faint.copyWith(color: P.err))
-                else
-                  Text(a.record!.sizeLabel, style: PT.faint),
-              ],
-            ),
+              if (a.uploading)
+                Positioned.fill(
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: Colors.black45,
+                      borderRadius: BorderRadius.circular(P.r12),
+                    ),
+                    alignment: Alignment.center,
+                    child: const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(
+                          strokeWidth: 2, color: Colors.white),
+                    ),
+                  ),
+                ),
+            ],
           ),
-          const SizedBox(width: 2),
-          GestureDetector(
-            onTap: () => setState(() => _attachments.remove(a)),
-            child: Padding(
-              padding: const EdgeInsets.all(8),
-              child:
-                  Icon(Icons.close_rounded, size: 16, color: P.inkFaint),
-            ),
+          const SizedBox(height: 4),
+          Text(
+            a.error != null ? 'failed' : a.name,
+            style: PT.faint.copyWith(
+                color: a.error != null ? P.err : P.inkFaint),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.center,
           ),
         ],
       ),
     );
   }
 
-  Widget _fileGlyph(_PendingAttachment a) {
+  /// The 72px tile for a pending attachment: local image thumbnail,
+  /// play tile for video, extension tile for documents.
+  Widget _pendingTile(_PendingAttachment a) {
+    final hasError = a.error != null;
     return Container(
-      width: 36,
-      height: 36,
+      width: 72,
+      height: 72,
       decoration: BoxDecoration(
-        color: P.accentSoft,
-        borderRadius: BorderRadius.circular(8),
+        color: P.surface,
+        borderRadius: BorderRadius.circular(P.r12),
+        border: Border.all(color: hasError ? P.err : P.border),
       ),
-      alignment: Alignment.center,
-      child: a.uploading
-          ? SizedBox(
-              width: 16,
-              height: 16,
-              child: CircularProgressIndicator(
-                  strokeWidth: 2, color: P.accent),
-            )
-          : Icon(Icons.attach_file_rounded,
-              size: 18, color: P.accent, weight: 1.6),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(P.r12 - 1),
+        child: _pendingTileBody(a),
+      ),
     );
+  }
+
+  Widget _pendingTileBody(_PendingAttachment a) {
+    if (a.isImage && a.localPath != null) {
+      return Image.file(
+        File(a.localPath!),
+        width: 72,
+        height: 72,
+        fit: BoxFit.cover,
+        errorBuilder: (_, __, ___) => _extTile(a),
+      );
+    }
+    if (a.isVideo) {
+      return Container(
+        color: P.ink,
+        alignment: Alignment.center,
+        child: const Icon(Icons.play_arrow_rounded,
+            size: 28, color: Colors.white),
+      );
+    }
+    return _extTile(a);
+  }
+
+  /// Document tile: extension label (ZIP, PDF, …) like the reference.
+  Widget _extTile(_PendingAttachment a) {
+    final ext = _extLabel(a.name);
+    return Container(
+      color: P.accentSoft,
+      alignment: Alignment.center,
+      child: Text(
+        ext,
+        style: PT.monoSm.copyWith(
+            color: P.accent, fontWeight: FontWeight.w700),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      ),
+    );
+  }
+
+  /// Uppercase extension label for a document tile, e.g. "ZIP".
+  static String _extLabel(String name) {
+    final parts = name.split('.');
+    if (parts.length < 2) return 'FILE';
+    final ext = parts.last.toUpperCase();
+    return ext.length > 4 ? ext.substring(0, 4) : ext;
+  }
+
+  /// 2-column thumbnail grid under a sent user message (reference-app
+  /// style). More than 4 attachments collapses the 4th tile into a "+N"
+  /// overflow tile.
+  Widget _sentAttachmentGrid(List<_SentAttachment> atts) {
+    final shown = atts.take(4).toList();
+    final overflow = atts.length - shown.length;
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: GridView.builder(
+        shrinkWrap: true,
+        physics: const NeverScrollableScrollPhysics(),
+        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: 2,
+          mainAxisSpacing: 8,
+          crossAxisSpacing: 8,
+        ),
+        itemCount: shown.length,
+        itemBuilder: (_, i) {
+          final a = shown[i];
+          final extra =
+              (i == shown.length - 1 && overflow > 0) ? overflow : 0;
+          return _sentTile(a, overflowCount: extra);
+        },
+      ),
+    );
+  }
+
+  Widget _sentTile(_SentAttachment a, {int overflowCount = 0}) {
+    final Widget body;
+    if (a.isImage && a.openable) {
+      body = _SentThumb(future: _thumbFuture(a.id!), name: a.name);
+    } else if (a.isVideo) {
+      body = _sentDocTile(a, Icons.play_arrow_rounded);
+    } else {
+      body = _sentDocTile(a, null);
+    }
+    final tile = ClipRRect(
+      borderRadius: BorderRadius.circular(P.r12),
+      child: Container(
+        color: P.surface,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            body,
+            if (overflowCount > 0)
+              Container(
+                color: Colors.black54,
+                alignment: Alignment.center,
+                child: Text('+$overflowCount',
+                    style: PT.body.copyWith(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w700)),
+              ),
+          ],
+        ),
+      ),
+    );
+    // The +N overflow tile is a count indicator, not a file; attachments
+    // from old messages (no id) have nothing to open.
+    if (!a.openable || overflowCount > 0) return tile;
+    return GestureDetector(
+      onTap: () => _openSentAttachment(a),
+      child: tile,
+    );
+  }
+
+  /// Document/video tile: extension label or play glyph plus filename.
+  Widget _sentDocTile(_SentAttachment a, IconData? icon) {
+    return Container(
+      color: P.accentSoft,
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          if (icon != null)
+            Icon(icon, size: 32, color: P.accent, weight: 1.6)
+          else
+            Text(_extLabel(a.name),
+                style: PT.monoSm.copyWith(
+                    color: P.accent, fontWeight: FontWeight.w700)),
+          const SizedBox(height: 6),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            child: Text(a.name,
+                style: PT.faint,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Memoized thumbnail bytes for a sent image, `GET /api/uploads/:id`.
+  Future<Uint8List> _thumbFuture(String id) =>
+      _thumbFutures.putIfAbsent(id,
+          () => widget.api.downloadUpload(id).then(Uint8List.fromList));
+
+  /// Open a sent attachment: images in the in-app full-screen viewer,
+  /// video and documents via the system app (downloaded to temp first).
+  Future<void> _openSentAttachment(_SentAttachment a) async {
+    if (!a.openable) return;
+    _haptic(HapticFeedback.lightImpact);
+    if (a.isImage) {
+      Uint8List bytes;
+      try {
+        bytes = await _thumbFuture(a.id!);
+      } catch (e) {
+        if (mounted) toastError(context, e);
+        return;
+      }
+      if (!mounted) return;
+      await showDialog(
+        context: context,
+        builder: (_) => _ImageViewerDialog(bytes: bytes, name: a.name),
+      );
+      return;
+    }
+    try {
+      final bytes = await widget.api.downloadUpload(a.id!);
+      final dir = await getTemporaryDirectory();
+      final safe = a.name.replaceAll(RegExp(r'[^\w\-. ]'), '_');
+      final file = File('${dir.path}/pantheon_$safe');
+      await file.writeAsBytes(bytes, flush: true);
+      final res = await OpenFilex.open(file.path);
+      if (res.type != ResultType.done && mounted) {
+        toast(context, 'Could not open ${a.name}.');
+      }
+    } catch (e) {
+      if (mounted) toastError(context, e);
+    }
   }
 
   /// Insert a `> quoted` block at the end of the composer (long-press →
@@ -1925,12 +2144,19 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
     } else {
       isUser = t.role == 'user';
       final isTool = t.role == 'tool';
+      // Sent attachments: parsed from the raw block, rendered as the
+      // thumbnail grid below the text (the block itself is stripped).
+      final sentAtts = isUser
+          ? _parseSentAttachments(t.content)
+          : const <_SentAttachment>[];
       final msg = MessageContent(
         text: isUser ? t.content.replaceFirst(_attachmentBlock, '') : t.content,
         textStyle: PT.body
             .copyWith(fontSize: 14, color: isUser ? Colors.white : P.ink),
         onQuote: _quoteInReply,
       );
+      final body = <Widget>[msg];
+      if (sentAtts.isNotEmpty) body.add(_sentAttachmentGrid(sentAtts));
       final header = Padding(
         padding: const EdgeInsets.only(bottom: 6),
         child: Row(
@@ -1950,7 +2176,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
           margin: EdgeInsets.only(bottom: vPad),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
-            children: [header, msg],
+            children: [header, ...body],
           ),
         );
       } else {
@@ -1980,7 +2206,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 if (!isUser) header,
-                msg,
+                ...body,
               ],
             ),
           ),
@@ -2714,6 +2940,9 @@ class _PendingAttachment {
   bool get isImage =>
       (record?.isImage ?? false) ||
       _imageExts.any((e) => name.toLowerCase().endsWith(e));
+  bool get isVideo =>
+      (record?.mime.startsWith('video/') ?? false) ||
+      _videoExts.any((e) => name.toLowerCase().endsWith(e));
 
   static const _imageExts = [
     '.jpg',
@@ -2723,4 +2952,117 @@ class _PendingAttachment {
     '.webp',
     '.heic'
   ];
+  static const _videoExts = ['.mp4', '.mov', '.m4v'];
+}
+
+/// One attachment parsed out of a sent message's `[attachments]` block.
+class _SentAttachment {
+  final String name;
+  final String mime;
+  final String? id;
+
+  _SentAttachment({required this.name, required this.mime, this.id});
+
+  bool get isImage => mime.startsWith('image/');
+  bool get isVideo => mime.startsWith('video/');
+  bool get openable => id != null && id!.isNotEmpty;
+}
+
+/// Thumbnail for a sent image attachment: spinner while loading, glyph
+/// on failure, cover-fit image once the bytes arrive.
+class _SentThumb extends StatelessWidget {
+  final Future<Uint8List> future;
+  final String name;
+
+  const _SentThumb({required this.future, required this.name});
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<Uint8List>(
+      future: future,
+      builder: (_, snap) {
+        if (snap.hasData) {
+          return Image.memory(
+            snap.data!,
+            fit: BoxFit.cover,
+            errorBuilder: (_, __, ___) => const _ThumbError(),
+          );
+        }
+        if (snap.hasError) return const _ThumbError();
+        return Container(
+          color: P.surface,
+          alignment: Alignment.center,
+          child: const SizedBox(
+            width: 20,
+            height: 20,
+            child: CircularProgressIndicator(
+                strokeWidth: 2, color: P.accent),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _ThumbError extends StatelessWidget {
+  const _ThumbError();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      color: P.surface,
+      alignment: Alignment.center,
+      child: const Icon(Icons.broken_image_outlined,
+          size: 28, color: P.inkFaint),
+    );
+  }
+}
+
+/// Full-screen image viewer for a sent attachment: pinch-to-zoom via
+/// InteractiveViewer, close button, filename caption. No plugin needed.
+class _ImageViewerDialog extends StatelessWidget {
+  final Uint8List bytes;
+  final String name;
+
+  const _ImageViewerDialog({required this.bytes, required this.name});
+
+  @override
+  Widget build(BuildContext context) {
+    final pad = MediaQuery.paddingOf(context);
+    return Dialog(
+      backgroundColor: Colors.black,
+      insetPadding: EdgeInsets.zero,
+      child: Stack(
+        children: [
+          Center(
+            child: InteractiveViewer(
+              minScale: 0.5,
+              maxScale: 4,
+              child: Image.memory(bytes),
+            ),
+          ),
+          Positioned(
+            top: pad.top + 8,
+            left: 8,
+            child: IconButton(
+              onPressed: () => Navigator.pop(context),
+              icon: const Icon(Icons.close_rounded, color: Colors.white),
+              style:
+                  IconButton.styleFrom(backgroundColor: Colors.black54),
+            ),
+          ),
+          Positioned(
+            bottom: pad.bottom + 16,
+            left: 16,
+            right: 16,
+            child: Text(name,
+                style: PT.small.copyWith(color: Colors.white70),
+                textAlign: TextAlign.center,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis),
+          ),
+        ],
+      ),
+    );
+  }
 }

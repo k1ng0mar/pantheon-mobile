@@ -638,6 +638,11 @@ class PantheonApi {
     return UploadRecord.fromJson(j);
   }
 
+  /// `GET /api/uploads/:id` — raw bytes of a stored upload, for
+  /// attachment thumbnails and opening sent files.
+  Future<List<int>> downloadUpload(String id) =>
+      _getBytes('/api/uploads/${Uri.encodeComponent(id)}');
+
   // ------------------------------------------------------------------
   // Voice notes
   // ------------------------------------------------------------------
