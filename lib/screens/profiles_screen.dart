@@ -473,6 +473,40 @@ class _ProfileDetailSheetState extends State<_ProfileDetailSheet> {
               label: _busy ? 'Working…' : 'Change picture',
               onTap: _busy ? null : _changePicture,
             ),
+            const SizedBox(height: 16),
+            Text('Persona files', style: PT.meta),
+            const SizedBox(height: 4),
+            Text(
+              'Injected into the agent\'s prompt every turn. Edit with care.',
+              style: PT.meta.copyWith(color: P.inkFaint, fontSize: 11),
+            ),
+            const SizedBox(height: 8),
+            _PersonaFileCard(
+              api: widget.api,
+              profileName: widget.name,
+              file: 'soul',
+              title: 'SOUL',
+              subtitle: 'Persona — who this agent is',
+              onSaved: widget.onChanged,
+            ),
+            const SizedBox(height: 8),
+            _PersonaFileCard(
+              api: widget.api,
+              profileName: widget.name,
+              file: 'user',
+              title: 'USER',
+              subtitle: 'User context — who it serves',
+              onSaved: widget.onChanged,
+            ),
+            const SizedBox(height: 8),
+            _PersonaFileCard(
+              api: widget.api,
+              profileName: widget.name,
+              file: 'agents',
+              title: 'AGENTS',
+              subtitle: 'Instructions — how it works',
+              onSaved: widget.onChanged,
+            ),
             const SizedBox(height: 12),
             if (!widget.active) ...[
               GradientButton(
@@ -835,6 +869,283 @@ class _CreateProfileSheetState extends State<_CreateProfileSheet> {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// One persona-file card (SOUL / USER / AGENTS) in the profile detail
+/// sheet: 2-line content preview + chevron, tap to open the full editor.
+class _PersonaFileCard extends StatefulWidget {
+  final PantheonApi api;
+  final String profileName;
+  final String file;
+  final String title;
+  final String subtitle;
+  final VoidCallback onSaved;
+
+  const _PersonaFileCard({
+    required this.api,
+    required this.profileName,
+    required this.file,
+    required this.title,
+    required this.subtitle,
+    required this.onSaved,
+  });
+
+  @override
+  State<_PersonaFileCard> createState() => _PersonaFileCardState();
+}
+
+class _PersonaFileCardState extends State<_PersonaFileCard> {
+  String? _preview;
+  bool _failed = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    try {
+      final files = await widget.api.profileFiles(widget.profileName);
+      final entry = files[widget.file] as Map?;
+      final content = entry?['content']?.toString() ?? '';
+      if (mounted) {
+        setState(() {
+          _preview = content;
+          _failed = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _failed = true);
+    }
+  }
+
+  Future<void> _open() async {
+    final saved = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => _PersonaFileEditor(
+          api: widget.api,
+          profileName: widget.profileName,
+          file: widget.file,
+          title: widget.title,
+        ),
+      ),
+    );
+    if (saved == true) {
+      widget.onSaved();
+      _load();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final preview = _preview;
+    return PCard(
+      onTap: _open,
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(widget.title, style: PT.rowTitle),
+                const SizedBox(height: 2),
+                Text(widget.subtitle,
+                    style: PT.meta.copyWith(color: P.inkFaint, fontSize: 11)),
+                const SizedBox(height: 6),
+                Text(
+                  _failed
+                      ? 'Could not load'
+                      : preview == null
+                          ? 'Loading…'
+                          : preview.isEmpty
+                              ? 'Empty — tap to write'
+                              : preview.split('\n').take(2).join('\n'),
+                  style: PT.monoSm.copyWith(
+                    fontSize: 11,
+                    color: preview?.isEmpty != false
+                        ? P.inkFaint
+                        : P.inkSecondary,
+                  ),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          Icon(Icons.chevron_right_rounded,
+              color: P.inkFaint, weight: 1.6),
+        ],
+      ),
+    );
+  }
+}
+
+/// Full-screen monospace editor for one persona file, with Save/Discard.
+class _PersonaFileEditor extends StatefulWidget {
+  final PantheonApi api;
+  final String profileName;
+  final String file;
+  final String title;
+
+  const _PersonaFileEditor({
+    required this.api,
+    required this.profileName,
+    required this.file,
+    required this.title,
+  });
+
+  @override
+  State<_PersonaFileEditor> createState() => _PersonaFileEditorState();
+}
+
+class _PersonaFileEditorState extends State<_PersonaFileEditor> {
+  late final TextEditingController _controller;
+  String _original = '';
+  bool _loading = true;
+  bool _saving = false;
+  String? _path;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController();
+    _load();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  Future<void> _load() async {
+    try {
+      final files = await widget.api.profileFiles(widget.profileName);
+      final entry = files[widget.file] as Map?;
+      final content = entry?['content']?.toString() ?? '';
+      if (!mounted) return;
+      setState(() {
+        _original = content;
+        _controller.text = content;
+        _path = entry?['path']?.toString();
+        _loading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _loading = false);
+      toastError(context, e);
+    }
+  }
+
+  bool get _dirty => _controller.text != _original;
+
+  Future<void> _save() async {
+    setState(() => _saving = true);
+    try {
+      await widget.api.saveProfileFile(
+          widget.profileName, widget.file, _controller.text);
+      if (!mounted) return;
+      toast(context, '${widget.title} saved');
+      Navigator.pop(context, true);
+    } catch (e) {
+      if (mounted) {
+        toastError(context, e);
+        setState(() => _saving = false);
+      }
+    }
+  }
+
+  Future<bool> _confirmDiscard() async {
+    if (!_dirty) return true;
+    final discard = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: P.surface,
+        title: Text('Discard changes?', style: PT.sectionTitle),
+        content: Text(
+          'You have unsaved changes to ${widget.title}.',
+          style: PT.body,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text('Keep editing', style: TextStyle(color: P.accent)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text('Discard', style: TextStyle(color: Colors.red.shade300)),
+          ),
+        ],
+      ),
+    );
+    return discard == true;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) async {
+        if (didPop) return;
+        if (await _confirmDiscard() && context.mounted) {
+          Navigator.pop(context, false);
+        }
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          title: Text(widget.title),
+          actions: [
+            TextButton(
+              onPressed: _saving || _loading || !_dirty ? null : _save,
+              child: Text(
+                _saving ? 'Saving…' : 'Save',
+                style: TextStyle(
+                  color: _dirty && !_saving ? P.accent : P.inkFaint,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ],
+        ),
+        body: _loading
+            ? const Center(child: CircularProgressIndicator())
+            : Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (_path != null) ...[
+                      Text(
+                        _path!,
+                        style: PT.monoSm.copyWith(
+                            fontSize: 10, color: P.inkFaint),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 8),
+                    ],
+                    Expanded(
+                      child: TextField(
+                        controller: _controller,
+                        maxLines: null,
+                        expands: true,
+                        textAlignVertical: TextAlignVertical.top,
+                        style: PT.monoSm.copyWith(fontSize: 13, height: 1.6),
+                        decoration: const InputDecoration(
+                          hintText: 'Write the file contents…',
+                          contentPadding: EdgeInsets.all(14),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
       ),
     );
   }

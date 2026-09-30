@@ -537,6 +537,23 @@ class PantheonApi {
     await _post('/api/config/import', {'toml': toml, 'confirm': true});
   }
 
+  /// Persona files for an agent profile: SOUL.md / USER.md / AGENTS.md
+  /// contents. Returns `{soul: {path, content}, user: {...}, agents: {...}}`;
+  /// a missing file reports `{path: null, content: ""}`.
+  Future<Map<String, dynamic>> profileFiles(String name) async {
+    final j = await _get('/api/profiles/${Uri.encodeComponent(name)}/files');
+    return j.cast<String, dynamic>();
+  }
+
+  /// Write one persona file for an agent profile. `file` is one of
+  /// `soul`, `user`, `agents`. Creates the file under the profile's
+  /// directory when the profile declares no path for it.
+  Future<void> saveProfileFile(
+      String name, String file, String content) async {
+    await _put('/api/profiles/${Uri.encodeComponent(name)}/files',
+        {'file': file, 'content': content});
+  }
+
   // ------------------------------------------------------------------
   // Env / keys
   // ------------------------------------------------------------------
