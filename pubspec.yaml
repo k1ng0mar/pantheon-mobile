@@ -35,6 +35,7 @@ flutter:
     - assets/fonts/OFL-inter.txt
     - assets/fonts/OFL-jetbrainsmono.txt
     - assets/themes/
+    - assets/avatars/
 
   fonts:
     - family: SpaceGrotesk
