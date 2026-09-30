@@ -2,6 +2,8 @@
     <!-- The app's entire job is HTTP(S) to the Pantheon dashboard, typically
          on the LAN over plain HTTP. -->
     <uses-permission android:name="android.permission.INTERNET"/>
+    <!-- Live voice mode: microphone capture for the voice session. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO"/>
     <application
         android:label="Pantheon"
         android:name="${applicationName}"

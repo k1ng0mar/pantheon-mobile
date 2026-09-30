@@ -17,6 +17,7 @@ import '../widgets/forms.dart';
 import '../widgets/message_content.dart';
 import '../widgets/states.dart';
 import '../widgets/todos_sheet.dart';
+import 'voice_screen.dart';
 
 /// A session as a real chat: transcript bubbles, live polling while the
 /// run is active, and a composer that sends into the run via
@@ -940,6 +941,17 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
         ),
         title: Text(title),
         actions: [
+          IconButton(
+            icon: Icon(Icons.mic_rounded, color: P.ink, weight: 1.6),
+            tooltip: 'Live voice',
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => VoiceScreen(api: widget.api),
+                ),
+              );
+            },
+          ),
           if (running)
             IconButton(
               icon: const Icon(Icons.stop_rounded,
