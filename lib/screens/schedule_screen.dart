@@ -162,6 +162,17 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
               ],
             ),
           ),
+          if (_tab == 0)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 2, 16, 2),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  'Schedules run in the dashboard server\'s local timezone.',
+                  style: PT.meta,
+                ),
+              ),
+            ),
           Expanded(
             child: _tab == 0 ? _jobsList() : _templatesList(),
           ),
@@ -218,7 +229,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
       if (j.model != null) '${j.model}',
       if (j.lastRunMs != null) 'last run ${timeAgo(j.lastRunMs!)}',
       if (j.nextFireMs != null && !j.paused)
-        'next ${timeAgo(j.nextFireMs!, future: true)}',
+        'next ${timeAgo(j.nextFireMs!, future: true)}${j.kind.type == 'cron' ? ' (server time)' : ''}',
     ];
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
@@ -366,6 +377,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                       decoration: const InputDecoration(
                         labelText: 'Cron expression',
                         hintText: 'e.g. 0 9 * * *',
+                        helperText: 'Server time',
                       ),
                     ),
                   if (kind == 'once')
@@ -564,7 +576,9 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                       style: PT.mono.copyWith(color: P.ink, fontSize: 13)),
                 ),
                 PillChip(
-                    label: '${t.scheduleType} · ${t.scheduleDetail}',
+                    label: t.scheduleType == 'cron'
+                        ? '${t.scheduleType} · ${t.scheduleDetail} · server time'
+                        : '${t.scheduleType} · ${t.scheduleDetail}',
                     selected: false),
               ],
             ),
@@ -684,6 +698,8 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                       hintText: schedKind == 'every'
                           ? 'e.g. 30m, 2h, 1d'
                           : 'e.g. 0 9 * * *',
+                      helperText:
+                          schedKind == 'cron' ? 'Server time' : null,
                     ),
                   ),
                   const SizedBox(height: 20),

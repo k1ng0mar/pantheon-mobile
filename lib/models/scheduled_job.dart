@@ -35,7 +35,9 @@ class JobKind {
   String get display {
     switch (type) {
       case 'cron':
-        return expr ?? 'cron';
+        // Cron has no timezone support: it fires in the dashboard
+        // server's local time. Say so wherever the schedule is shown.
+        return '${expr ?? 'cron'} · server time';
       case 'every':
         return everyMs != null ? _fmtDuration(everyMs!) : 'every';
       case 'oneshot':
