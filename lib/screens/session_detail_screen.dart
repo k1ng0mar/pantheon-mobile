@@ -5,6 +5,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:record/record.dart';
 
 import '../models/models.dart';
 import '../services/app_preferences.dart';
@@ -19,6 +20,7 @@ import '../widgets/message_content.dart';
 import '../widgets/new_chat_sheet.dart';
 import '../widgets/states.dart';
 import '../widgets/todos_sheet.dart';
+import '../widgets/voice_note_pill.dart';
 import 'voice_screen.dart';
 
 /// A session as a real chat: transcript bubbles, live polling while the
@@ -84,6 +86,17 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
   /// `POST /api/uploads`, then sent with the message as attachment ids.
   final List<_PendingAttachment> _attachments = [];
 
+  /// Voice-note recording state. The composer mic starts a recording
+  /// (the pill); the AppBar mic still opens the live voice screen.
+  bool _recordingVoiceNote = false;
+
+  /// True while a finished voice note is being transcribed.
+  bool _transcribing = false;
+
+  /// Recorder for the in-flight voice note; the pill drives it and the
+  /// parent disposes it once the pill reports back.
+  AudioRecorder? _voiceRecorder;
+
   /// Timeline rows the user expanded, by item seq.
   final Set<int> _expandedTl = {};
 
@@ -114,6 +127,21 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
   @override
   void dispose() {
     _poll?.cancel();
+    // Best-effort: abandon any in-flight voice-note recording. The pill
+    // is gone with the widget tree, so cancel here instead of the
+    // normal discard path (no setState in dispose).
+    final vr = _voiceRecorder;
+    _voiceRecorder = null;
+    if (vr != null) {
+      () async {
+        try {
+          await vr.cancel();
+        } catch (_) {}
+        try {
+          await vr.dispose();
+        } catch (_) {}
+      }();
+    }
     _composer.dispose();
     _composerFocus.dispose();
     _answerCtrl.dispose();
@@ -918,13 +946,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
           IconButton(
             icon: Icon(Icons.mic_rounded, color: P.ink, weight: 1.6),
             tooltip: 'Live voice',
-            onPressed: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (_) => VoiceScreen(api: widget.api),
-                ),
-              );
-            },
+            onPressed: _openVoice,
           ),
           if (running)
             IconButton(
@@ -1388,7 +1410,11 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
                 _attachmentChips(),
                 const SizedBox(height: 8),
               ],
-              _composerRow(),
+              _transcribing
+                  ? _transcribingRow()
+                  : _recordingVoiceNote
+                      ? _voiceNotePill()
+                      : _composerRow(),
             ],
           ),
         ),
@@ -1426,7 +1452,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
         ),
         const SizedBox(width: 4),
         _composerIconButton(
-            Icons.mic_rounded, 'Live voice', _openVoice),
+            Icons.mic_rounded, 'Record voice note', _startVoiceNote),
         const SizedBox(width: 8),
         GestureDetector(
           onTap: _send,
@@ -1484,6 +1510,115 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => VoiceScreen(api: widget.api),
+      ),
+    );
+  }
+
+  // ------------------------------------------------------ voice notes --
+
+  /// Composer mic: start a voice-note recording. Permission is checked
+  /// up front (the `record` plugin requests it); the pill itself starts
+  /// the recorder once it mounts.
+  Future<void> _startVoiceNote() async {
+    if (_recordingVoiceNote || _transcribing || _sending) return;
+    final recorder = AudioRecorder();
+    if (!await recorder.hasPermission()) {
+      await recorder.dispose();
+      if (!mounted) return;
+      toast(context,
+          'Microphone permission denied. Allow it in Settings to record voice notes.');
+      return;
+    }
+    if (!mounted) {
+      await recorder.dispose();
+      return;
+    }
+    _haptic(HapticFeedback.mediumImpact);
+    setState(() {
+      _voiceRecorder = recorder;
+      _recordingVoiceNote = true;
+    });
+  }
+
+  Widget _voiceNotePill() {
+    final recorder = _voiceRecorder;
+    if (recorder == null) return _composerRow();
+    return VoiceNotePill(
+      recorder: recorder,
+      onDiscard: _discardVoiceNote,
+      onFinished: _finishVoiceNote,
+    );
+  }
+
+  /// The pill cancelled the recording; just flip state and clean up.
+  Future<void> _discardVoiceNote() async {
+    final recorder = _voiceRecorder;
+    _voiceRecorder = null;
+    if (mounted) setState(() => _recordingVoiceNote = false);
+    try {
+      await recorder?.dispose();
+    } catch (_) {}
+    _haptic(HapticFeedback.lightImpact);
+  }
+
+  /// The pill stopped the recorder and handed over the file: transcribe
+  /// it and drop the text into the composer for editing. Never
+  /// auto-sends — transcription errors are common.
+  Future<void> _finishVoiceNote(String path) async {
+    final recorder = _voiceRecorder;
+    _voiceRecorder = null;
+    if (mounted) {
+      setState(() {
+        _recordingVoiceNote = false;
+        _transcribing = true;
+      });
+    }
+    _haptic(HapticFeedback.mediumImpact);
+    try {
+      final bytes = await File(path).readAsBytes();
+      await File(path).delete();
+      if (bytes.isEmpty) {
+        if (mounted) toast(context, 'That recording was empty.');
+        return;
+      }
+      final transcript = await widget.api.transcribeAudio(bytes);
+      if (!mounted) return;
+      final cur = _composer.text.trim();
+      _composer.text = cur.isEmpty ? transcript : '$cur $transcript';
+      _composer.selection = TextSelection.fromPosition(
+          TextPosition(offset: _composer.text.length));
+      _composerFocus.requestFocus();
+      toast(context, 'Transcribed — review before sending.');
+    } on PantheonApiException catch (e) {
+      if (mounted) toast(context, 'Transcription failed: ${e.body}');
+    } catch (_) {
+      if (mounted) toast(context, 'Transcription failed.');
+    } finally {
+      if (mounted) setState(() => _transcribing = false);
+      try {
+        await recorder?.dispose();
+      } catch (_) {}
+    }
+  }
+
+  Widget _transcribingRow() {
+    return Container(
+      decoration: BoxDecoration(
+        color: P.surface,
+        borderRadius: BorderRadius.circular(28),
+        border: Border.all(color: P.border),
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      child: Row(
+        children: [
+          const SizedBox(
+            width: 18,
+            height: 18,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+          const SizedBox(width: 12),
+          Text('Transcribing voice note…', style: PT.meta),
+        ],
       ),
     );
   }

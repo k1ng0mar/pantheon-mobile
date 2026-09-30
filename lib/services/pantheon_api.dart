@@ -639,6 +639,24 @@ class PantheonApi {
   }
 
   // ------------------------------------------------------------------
+  // Voice notes
+  // ------------------------------------------------------------------
+
+  /// `POST /agui/voice/transcribe` — base64 audio → transcript text.
+  /// Throws [PantheonApiException] carrying the server's message on
+  /// failure (unconfigured STT, backend error, audio too large).
+  Future<String> transcribeAudio(List<int> bytes) async {
+    final j = await _post('/agui/voice/transcribe', {
+      'audio': base64Encode(bytes),
+    });
+    final t = j['transcript'];
+    if (t is! String || t.trim().isEmpty) {
+      throw PantheonApiException(502, 'Transcription came back empty.');
+    }
+    return t;
+  }
+
+  // ------------------------------------------------------------------
   // Schedule: full CRUD + trigger + templates
   // ------------------------------------------------------------------
 
