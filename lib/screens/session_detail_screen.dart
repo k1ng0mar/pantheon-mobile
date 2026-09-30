@@ -5,6 +5,7 @@ import 'dart:typed_data';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
 import 'package:open_filex/open_filex.dart';
 import 'package:path_provider/path_provider.dart';
@@ -71,6 +72,10 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
   Timer? _poll;
   bool _sending = false;
   bool _atBottom = true;
+
+  /// Guard against double-tapping the clarify-card send button: the
+  /// answer POST must fire at most once per question.
+  bool _answering = false;
 
   /// Approvals parked on this run (inline banner).
   List<Approval> _runApprovals = [];
@@ -569,8 +574,10 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
 
   /// Answer a parked `ask_user` question and resume the turn.
   Future<void> _answerInput(String callId) async {
+    if (_answering) return;
     final answer = _answerCtrl.text.trim();
     if (answer.isEmpty) return;
+    _answering = true;
     _answerCtrl.clear();
     final optimistic =
         TranscriptItem(type: 'message', role: 'user', content: answer);
@@ -584,6 +591,8 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
       if (!mounted) return;
       _removeOptimistic(optimistic);
       toastError(context, e);
+    } finally {
+      _answering = false;
     }
   }
 
@@ -1873,10 +1882,12 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
           TextPosition(offset: _composer.text.length));
       _composerFocus.requestFocus();
       toast(context, 'Transcribed — review before sending.');
-    } on PantheonApiException catch (e) {
-      if (mounted) toast(context, 'Transcription failed: ${e.body}');
+    } on PantheonApiException {
+      // Keep the raw server body out of the toast: it can carry config
+      // hints and provider errors the user can't act on from here.
+      if (mounted) toast(context, "Couldn't transcribe the voice note.");
     } catch (_) {
-      if (mounted) toast(context, 'Transcription failed.');
+      if (mounted) toast(context, "Couldn't transcribe the voice note.");
     } finally {
       if (mounted) setState(() => _transcribing = false);
       try {
@@ -2082,19 +2093,43 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
       pending.error = null;
       pending.record = null;
     });
+    // A dedicated client per upload: removing the chip closes it and
+    // aborts the in-flight request instead of letting the bytes land on
+    // the server anyway.
+    final client = http.Client();
+    pending.uploadClient = client;
     try {
       final record = await widget.api.uploadAttachment(
         name: name.isEmpty ? 'file' : name,
         mime: _mimeFor(name),
         bytes: bytes,
+        client: client,
       );
       if (!mounted) return;
+      // The chip was removed mid-flight: the upload was aborted, and
+      // the late response must not resurrect it or fire a toast.
+      if (pending.cancelled || !_attachments.contains(pending)) return;
       setState(() => pending.record = record);
     } catch (e) {
       if (!mounted) return;
+      if (pending.cancelled || !_attachments.contains(pending)) return;
       setState(() => pending.error = e.toString());
       toastError(context, e);
+    } finally {
+      pending.uploadClient = null;
+      client.close();
     }
+  }
+
+  /// Remove a staged attachment. If its upload is still in flight the
+  /// request is aborted first, so the file never lands on the server
+  /// after the user removed it.
+  void _removeAttachment(_PendingAttachment a) {
+    a.cancelled = true;
+    try {
+      a.uploadClient?.close();
+    } catch (_) {}
+    setState(() => _attachments.remove(a));
   }
 
   String _mimeFor(String name) {
@@ -2147,7 +2182,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
                 top: 2,
                 right: 2,
                 child: GestureDetector(
-                  onTap: () => setState(() => _attachments.remove(a)),
+                  onTap: () => _removeAttachment(a),
                   child: Container(
                     padding: const EdgeInsets.all(4),
                     decoration: const BoxDecoration(
@@ -3355,6 +3390,14 @@ class _PendingAttachment {
   final String? localPath;
   UploadRecord? record;
   String? error;
+
+  /// Set when the user removed the chip while its upload was in flight.
+  /// The late response must not resurrect the chip or toast about it.
+  bool cancelled = false;
+
+  /// The dedicated HTTP client for the in-flight upload; closing it
+  /// aborts the request so removed files never land on the server.
+  http.Client? uploadClient;
 
   _PendingAttachment({required this.name, this.localPath});
 

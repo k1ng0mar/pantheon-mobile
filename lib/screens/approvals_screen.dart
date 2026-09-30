@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../models/models.dart';
@@ -23,10 +25,23 @@ class _ApprovalsScreenState extends State<ApprovalsScreen> {
   final Set<String> _busy = {};
   final Set<String> _leaving = {};
 
+  /// Approvals can arrive from the dashboard, the TUI, or another
+  /// device while this screen sits open: re-fetch periodically so a
+  /// decision can't be made against a stale list.
+  Timer? _pollTimer;
+
   @override
   void initState() {
     super.initState();
     _load();
+    _pollTimer =
+        Timer.periodic(const Duration(seconds: 10), (_) => _quietRefresh());
+  }
+
+  @override
+  void dispose() {
+    _pollTimer?.cancel();
+    super.dispose();
   }
 
   void _load() {
@@ -37,6 +52,20 @@ class _ApprovalsScreenState extends State<ApprovalsScreen> {
         return list;
       });
     });
+  }
+
+  /// Refresh the list without the loading skeleton: fetch first, then
+  /// swap in an already-completed future. Skipped while a decision is
+  /// in flight (its completion refreshes anyway) and silent on failure
+  /// — the next tick retries and the manual refresh button stays.
+  Future<void> _quietRefresh() async {
+    if (!mounted || _busy.isNotEmpty) return;
+    try {
+      final list = await widget.api.approvals();
+      if (!mounted) return;
+      widget.pendingApprovals.value = list.length;
+      setState(() => _future = Future.value(list));
+    } catch (_) {}
   }
 
   Future<void> _decide(Approval a, bool grant) async {

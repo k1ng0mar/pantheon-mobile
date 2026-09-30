@@ -354,6 +354,11 @@ class _BrowserScreenState extends State<BrowserScreen> {
     final frame = _frame;
     final connecting =
         _streamState == BrowserStreamState.connecting;
+    // On stream error the last frame lingers: dim it and mark it stale
+    // so it can't be mistaken for a live view.
+    final stale = frame != null &&
+        (_streamState == BrowserStreamState.error ||
+            _streamState == BrowserStreamState.disconnected);
     return PCard(
       padding: EdgeInsets.zero,
       child: ClipRRect(
@@ -381,6 +386,33 @@ class _BrowserScreenState extends State<BrowserScreen> {
                     child: connecting
                         ? CircularProgressIndicator(color: P.accent)
                         : Text('Waiting for frames…', style: PT.meta),
+                  ),
+                ),
+              if (stale)
+                Positioned.fill(
+                  child: Container(
+                    color: Colors.black54,
+                    alignment: Alignment.center,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 14, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: Colors.black87,
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(
+                            color: P.warn.withValues(alpha: 0.6)),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.warning_amber_rounded,
+                              size: 16, color: P.warn),
+                          const SizedBox(width: 8),
+                          Text('Stale — stream dropped',
+                              style: PT.small.copyWith(color: P.warn)),
+                        ],
+                      ),
+                    ),
                   ),
                 ),
             ],
