@@ -5,6 +5,7 @@ import 'screens/approvals_screen.dart';
 import 'screens/browser_screen.dart';
 import 'screens/config_screen.dart';
 import 'screens/connect_screen.dart';
+import 'screens/experts_screen.dart';
 import 'screens/gateway_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/ideas_screen.dart';
@@ -447,6 +448,14 @@ class MoreTab extends StatelessWidget {
             title: 'Swarm',
             subtitle: 'Split a task across subagents',
             onTap: () => _push(context, SwarmScreen(api: api)),
+          ),
+          const SizedBox(height: 12),
+          _hubCard(
+            context,
+            icon: Icons.groups_outlined,
+            title: 'Experts',
+            subtitle: 'Pre-built teams of agents',
+            onTap: () => _push(context, ExpertsScreen(api: api)),
           ),
           const SizedBox(height: 12),
           _hubCard(

@@ -1020,4 +1020,66 @@ class PantheonApi {
     return await _post(
         '/api/swarm/${Uri.encodeComponent(id)}/retry', body);
   }
+
+  // ------------------------------------------------------------------
+  // Expert teams & experts: pre-built teams of agents (and standalone
+  // experts) whose `use` endpoints spawn a working session.
+  // ------------------------------------------------------------------
+
+  /// `GET /api/teams` → `{"teams": [...]}` (a bare list is accepted too).
+  /// The teams `use` endpoint lives on the dashboard worker; the app
+  /// codes defensively until its exact shape lands.
+  Future<List<Team>> getTeams() async {
+    final j = await _get('/api/teams');
+    final list = (j['teams'] as List?) ?? [];
+    return list
+        .whereType<Map>()
+        .map((e) => Team.fromJson(e.cast<String, dynamic>()))
+        .toList();
+  }
+
+  /// `GET /api/teams/:id` → one team with its member roster.
+  Future<Team> getTeam(String id) async {
+    final j = await _get('/api/teams/${Uri.encodeComponent(id)}');
+    return Team.fromJson(j);
+  }
+
+  /// `POST /api/teams/:id/use` with `{}` or `{"task": "..."}` →
+  /// `{"ok": true, "swarm_id": ...}`. Spawns the swarm session and
+  /// returns its id.
+  Future<String> useTeam(String id, {String? task}) async {
+    final body = <String, dynamic>{};
+    if (task != null && task.isNotEmpty) body['task'] = task;
+    final j =
+        await _post('/api/teams/${Uri.encodeComponent(id)}/use', body);
+    return _sessionIdOf(j);
+  }
+
+  /// `GET /api/experts` → `{"experts": [...]}` (a bare list accepted too).
+  Future<List<Expert>> getExperts() async {
+    final j = await _get('/api/experts');
+    final list = (j['experts'] as List?) ?? [];
+    return list
+        .whereType<Map>()
+        .map((e) => Expert.fromJson(e.cast<String, dynamic>()))
+        .toList();
+  }
+
+  /// `POST /api/experts/:id/use` → `{"ok": true, ...}`. Spawns the
+  /// expert's session and returns the new session id.
+  Future<String> useExpert(String id) async {
+    final j = await _post('/api/experts/${Uri.encodeComponent(id)}/use', {});
+    return _sessionIdOf(j);
+  }
+
+  /// Read the spawned session id defensively: the contract says
+  /// `swarm_id` (fallback `id`); `run_id` / `session_id` are accepted
+  /// too in case the sibling backend varies the key.
+  String _sessionIdOf(Map<String, dynamic> j) {
+    for (final k in ['run_id', 'swarm_id', 'session_id', 'id']) {
+      final v = j[k]?.toString();
+      if (v != null && v.isNotEmpty) return v;
+    }
+    throw PantheonApiException(500, 'Use returned no session id.');
+  }
 }

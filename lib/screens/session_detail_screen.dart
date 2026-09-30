@@ -48,12 +48,23 @@ class SessionDetailScreen extends StatefulWidget {
   /// Applied once in initState; the user can edit before sending.
   final String? initialDraft;
 
+  /// Indicator chip shown above the composer naming the expert team or
+  /// standalone expert this session was opened for ("Use team" /
+  /// "Use expert"). Tapping × dismisses the chip only; the session
+  /// keeps running.
+  final String? attachedName;
+
+  /// Icon shown on the attached-team/expert chip.
+  final IconData attachedIcon;
+
   const SessionDetailScreen(
       {super.key,
       required this.api,
       required this.runId,
       this.pendingApprovals,
-      this.initialDraft});
+      this.initialDraft,
+      this.attachedName,
+      this.attachedIcon = Icons.groups_outlined});
 
   @override
   State<SessionDetailScreen> createState() => _SessionDetailScreenState();
@@ -107,6 +118,11 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
 
   /// Retry of a failed turn is in flight.
   bool _retrying = false;
+
+  /// The expert-team/expert indicator chip above the composer. Set from
+  /// [SessionDetailScreen.attachedName]; dismissing it only hides the
+  /// chip — the session keeps running.
+  String? _attachedName;
 
   /// Attachments staged on the composer: picked locally, uploaded to
   /// `POST /api/uploads`, then sent with the message as attachment ids.
@@ -179,6 +195,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
   void initState() {
     super.initState();
     _scroll.addListener(_trackScroll);
+    _attachedName = widget.attachedName;
     if (widget.initialDraft != null && widget.initialDraft!.isNotEmpty) {
       _composer.text = widget.initialDraft!;
     }
@@ -1790,6 +1807,10 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+              if (_attachedName != null) ...[
+                _attachedChip(),
+                const SizedBox(height: 8),
+              ],
               if (_compressing) ...[
                 _compressingRow(),
                 const SizedBox(height: 8),
@@ -1807,6 +1828,56 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
           ),
         ),
       ),
+    );
+  }
+
+  /// Removable indicator chip above the composer naming the attached
+  /// expert team or expert (set by "Use team" / "Use expert"). Tapping
+  /// × dismisses the chip only — the session keeps running.
+  Widget _attachedChip() {
+    final name = _attachedName;
+    if (name == null || name.isEmpty) return const SizedBox.shrink();
+    return Row(
+      children: [
+        Container(
+          padding:
+              const EdgeInsets.only(left: 12, top: 6, bottom: 6, right: 6),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(999),
+            color: P.accentSoft,
+            border: Border.all(color: P.accent.withValues(alpha: 0.4)),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(widget.attachedIcon,
+                  size: 14, color: P.accent, weight: 1.8),
+              const SizedBox(width: 6),
+              Flexible(
+                child: Text(
+                  name,
+                  style: PT.label.copyWith(fontSize: 13, color: P.ink),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              const SizedBox(width: 4),
+              GestureDetector(
+                onTap: () => setState(() => _attachedName = null),
+                child: Container(
+                  padding: const EdgeInsets.all(4),
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: P.inkFaint.withValues(alpha: 0.25),
+                  ),
+                  child: const Icon(Icons.close_rounded,
+                      size: 12, color: P.inkSecondary),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 
