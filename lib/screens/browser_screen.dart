@@ -49,6 +49,12 @@ class _BrowserScreenState extends State<BrowserScreen> {
   String? _streamError;
   bool _sending = false;
 
+  /// True once a live session's stream has ended (error or disconnect).
+  /// Drives the "Completed · <session>" panel: the browser session may
+  /// still be open server-side, so offer take-control or stop instead of
+  /// just a reconnect link.
+  bool _sessionEnded = false;
+
   @override
   void initState() {
     super.initState();
@@ -86,6 +92,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
       setState(() {
         _streamState = null;
         _streamError = null;
+        _sessionEnded = false;
         _frame = null;
         _imgW = null;
         _imgH = null;
@@ -109,6 +116,14 @@ class _BrowserScreenState extends State<BrowserScreen> {
     _stateSub = client.state.listen((s) {
       if (!mounted) return;
       setState(() {
+        // A stream that was live and then ended leaves the session-end
+        // panel: the browser session may still be open, so the user can
+        // take control of it or stop it.
+        if ((s == BrowserStreamState.error ||
+                s == BrowserStreamState.disconnected) &&
+            _streamState == BrowserStreamState.live) {
+          _sessionEnded = true;
+        }
         _streamState = s;
         if (s == BrowserStreamState.error) {
           _streamError = 'The stream dropped unexpectedly.';
@@ -310,7 +325,53 @@ class _BrowserScreenState extends State<BrowserScreen> {
             ],
           ),
         ),
-        if (_streamState == BrowserStreamState.error ||
+        if (_sessionEnded) ...[
+          const SizedBox(height: 12),
+          PCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(Icons.check_circle_rounded,
+                        color: P.ok, size: 20),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        'Completed · $_session',
+                        style:
+                            PT.cardTitle.copyWith(fontSize: 15),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'The stream ended, but the browser session may '
+                  'still be open. Take control to keep using it, '
+                  'or stop it.',
+                  style: PT.small
+                      .copyWith(color: P.inkSecondary),
+                ),
+                const SizedBox(height: 12),
+                GradientButton(
+                  label: 'Take control of the browser',
+                  icon: Icons.touch_app_rounded,
+                  onTap: _connect,
+                ),
+                const SizedBox(height: 4),
+                Center(
+                  child: TextButton(
+                    onPressed: _disconnect,
+                    child: Text('Stop the task',
+                        style: PT.label
+                            .copyWith(color: P.err)),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ] else if (_streamState == BrowserStreamState.error ||
             _streamState == BrowserStreamState.disconnected) ...[
           const SizedBox(height: 12),
           PCard(
@@ -384,8 +445,20 @@ class _BrowserScreenState extends State<BrowserScreen> {
                   color: P.tonal,
                   child: Center(
                     child: connecting
-                        ? CircularProgressIndicator(color: P.accent)
-                        : Text('Waiting for frames…', style: PT.meta),
+                        ? Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              CircularProgressIndicator(
+                                  color: P.accent),
+                              const SizedBox(height: 12),
+                              Text('Getting control…',
+                                  style: PT.label),
+                              const SizedBox(height: 4),
+                              Text(_session, style: PT.meta),
+                            ],
+                          )
+                        : Text('Waiting for frames…',
+                            style: PT.meta),
                   ),
                 ),
               if (stale)
