@@ -38,6 +38,15 @@ class PantheonAuthException extends PantheonApiException {
   String toString() => 'Wrong or missing dashboard token.';
 }
 
+/// A 404 from an endpoint the app knows but the dashboard doesn't:
+/// the server is older than the app.
+class PantheonStaleBackendException extends PantheonApiException {
+  PantheonStaleBackendException(super.status, super.body);
+  @override
+  String toString() =>
+      'This needs a newer dashboard — update Pantheon and try again.';
+}
+
 class PantheonUnreachableException implements Exception {
   final String message;
   PantheonUnreachableException(this.message);
@@ -97,7 +106,7 @@ class PantheonApi {
     } catch (e) {
       throw PantheonUnreachableException('Cannot reach $baseUrl ($e).');
     }
-    return _decode(res);
+    return _decode(res, path);
   }
 
   Future<Map<String, dynamic>> _post(String path,
@@ -114,7 +123,7 @@ class PantheonApi {
     } catch (e) {
       throw PantheonUnreachableException('Cannot reach $baseUrl ($e).');
     }
-    return _decode(res);
+    return _decode(res, path);
   }
 
   Future<Map<String, dynamic>> _put(String path,
@@ -131,7 +140,7 @@ class PantheonApi {
     } catch (e) {
       throw PantheonUnreachableException('Cannot reach $baseUrl ($e).');
     }
-    return _decode(res);
+    return _decode(res, path);
   }
 
   Future<Map<String, dynamic>> _delete(String path) async {
@@ -143,7 +152,7 @@ class PantheonApi {
     } catch (e) {
       throw PantheonUnreachableException('Cannot reach $baseUrl ($e).');
     }
-    return _decode(res);
+    return _decode(res, path);
   }
 
   Future<Map<String, dynamic>> _patch(String path,
@@ -160,7 +169,7 @@ class PantheonApi {
     } catch (e) {
       throw PantheonUnreachableException('Cannot reach $baseUrl ($e).');
     }
-    return _decode(res);
+    return _decode(res, path);
   }
 
   /// Raw-bytes GET for download endpoints (config export, run export).
@@ -183,13 +192,19 @@ class PantheonApi {
     return res.bodyBytes;
   }
 
-  Map<String, dynamic> _decode(http.Response res) {
+  Map<String, dynamic> _decode(http.Response res, String path) {
     if (res.statusCode == 401) throw PantheonAuthException();
+    if (res.statusCode == 404 && _isNewEndpoint(path)) {
+      throw PantheonStaleBackendException(
+          res.statusCode, _serverMessage(res.body));
+    }
     if (res.statusCode == 409) {
       final msg = _serverMessage(res.body);
       switch (_serverCode(res.body)) {
         case 'TURN_IN_FLIGHT':
           throw PantheonTurnInFlightException(msg);
+        case 'RUN_PARKED':
+          throw PantheonRetryParkedException(msg);
         default:
           throw PantheonApiException(res.statusCode, msg);
       }
@@ -199,6 +214,17 @@ class PantheonApi {
     }
     final v = jsonDecode(res.body);
     return v is Map ? v.cast<String, dynamic>() : {'value': v};
+  }
+
+  /// Endpoints added after the app's first release: a 404 from one of
+  /// these almost always means the dashboard is older than the app, not
+  /// that the resource is missing.
+  static bool _isNewEndpoint(String path) {
+    return path.contains('/api/link-preview') ||
+        path.contains('/api/browser/') ||
+        path.contains('/api/logins') ||
+        path.contains('/retry') ||
+        RegExp(r'/api/runs/[^/]+/queue/\d+').hasMatch(path);
   }
 
   /// The dashboard wraps errors as {"ok": false, "error": {"code": "…",
@@ -356,14 +382,7 @@ class PantheonApi {
   /// already running, [PantheonRetryParkedException] when the run is
   /// parked on an approval.
   Future<void> retryRun(String id) async {
-    try {
-      await _post('/api/runs/${Uri.encodeComponent(id)}/retry');
-    } on PantheonApiException catch (e) {
-      if (e.status == 409 && e.body.contains('parked on approval')) {
-        throw PantheonRetryParkedException(e.body);
-      }
-      rethrow;
-    }
+    await _post('/api/runs/${Uri.encodeComponent(id)}/retry');
   }
 
   /// Answer a parked `ask_user` question and resume the turn.
@@ -548,13 +567,14 @@ class PantheonApi {
         .toList();
   }
 
-  /// `POST /api/logins` with `{site, username, password}`.
+  /// `POST /api/logins` with `{site, username, password, confirm}`.
   Future<LoginEntry> createLogin(
       String site, String username, String password) async {
     final j = await _post('/api/logins', {
       'site': site,
       'username': username,
       'password': password,
+      'confirm': true,
     });
     final entry = j['login'];
     if (entry is Map) {
@@ -570,7 +590,7 @@ class PantheonApi {
   /// The password key is only sent when it changed.
   Future<void> updateLogin(String id,
       {String? site, String? username, String? password}) async {
-    final body = <String, dynamic>{};
+    final body = <String, dynamic>{'confirm': true};
     if (site != null) body['site'] = site;
     if (username != null) body['username'] = username;
     if (password != null && password.isNotEmpty) body['password'] = password;
@@ -667,9 +687,11 @@ class PantheonApi {
     await _post('/api/mcp/reload');
   }
 
-  /// Approve a server stuck in `pending_approval`.
+  /// Approve a server stuck in `pending_approval`. The backend requires
+  /// an explicit confirmation.
   Future<void> approveMcpServer(String name) async {
-    await _post('/api/mcp/servers/${Uri.encodeComponent(name)}/approve');
+    await _post('/api/mcp/servers/${Uri.encodeComponent(name)}/approve',
+        {'confirm': true});
   }
 
   // ------------------------------------------------------------------
@@ -782,13 +804,25 @@ class PantheonApi {
   // Schedule: full CRUD + trigger + templates
   // ------------------------------------------------------------------
 
+  /// Create returns an envelope `{ok, job, last_run, next_fire_ms}`:
+  /// unwrap `job` and fold the envelope timing into it.
   Future<ScheduledJob> createJob(Map<String, dynamic> body) async {
-    return ScheduledJob.fromJson(await _post('/api/schedule/jobs', body));
+    return _jobFromEnvelope(await _post('/api/schedule/jobs', body));
   }
 
   Future<ScheduledJob> updateJob(String id, Map<String, dynamic> body) async {
-    return ScheduledJob.fromJson(
+    return _jobFromEnvelope(
         await _put('/api/schedule/jobs/${Uri.encodeComponent(id)}', body));
+  }
+
+  ScheduledJob _jobFromEnvelope(Map<String, dynamic> j) {
+    final raw = j['job'];
+    final jobJson = raw is Map
+        ? Map<String, dynamic>.from(raw.cast<String, dynamic>())
+        : <String, dynamic>{};
+    jobJson.putIfAbsent('last_run', () => j['last_run']);
+    jobJson.putIfAbsent('next_fire_ms', () => j['next_fire_ms']);
+    return ScheduledJob.fromJson(jobJson);
   }
 
   Future<void> deleteJob(String id) async {

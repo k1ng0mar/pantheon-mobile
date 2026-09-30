@@ -433,7 +433,8 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
     final run = _run;
     if (run == null || !_canChat(run.status)) return;
     setState(() => _sending = true);
-    _composer.clear();
+    // The composer keeps its draft until the send succeeds: on failure
+    // the user gets their text back instead of losing it.
     final optimistic = TranscriptItem(
         type: 'message',
         role: 'user',
@@ -447,8 +448,13 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
         messageText,
         attachments: ids,
       );
-      // The staged attachments are now on their way: clear the chips.
-      if (mounted) setState(() => _attachments.clear());
+      // Success: the draft and the staged attachments are on their way.
+      if (mounted) {
+        setState(() {
+          _composer.clear();
+          _attachments.clear();
+        });
+      }
       if (result.queued || result.steered) {
         _queuedByMe++;
         if (!mounted) return;
@@ -517,7 +523,12 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
         ),
       ),
     );
-    if (choice == null || !mounted) return;
+    if (choice == null) {
+      // Dismissed: hand the draft back to the composer.
+      if (mounted) setState(() => _composer.text = text);
+      return;
+    }
+    if (!mounted) return;
     setState(() => _sending = true);
     final optimistic =
         TranscriptItem(type: 'message', role: 'user', content: text);
@@ -528,9 +539,14 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
       // Steer wipes the server queue and parks just this message; a
       // plain queue appends behind what's already waiting.
       _queuedByMe = result.steered ? 1 : _queuedByMe + 1;
-      // The staged attachments are now queued/steered with the message:
-      // clear the chips so a later send can't attach them twice.
-      if (mounted) setState(() => _attachments.clear());
+      // The draft and staged attachments are now queued/steered with the
+      // message: clear them so a later send can't attach them twice.
+      if (mounted) {
+        setState(() {
+          _composer.clear();
+          _attachments.clear();
+        });
+      }
       if (!mounted) return;
       toast(
           context,
@@ -625,6 +641,14 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
   /// Drop every queued message. The optimistic bubbles (if any) are
   /// retracted by the [_load] below, which reconciles from the server.
   Future<void> _clearQueue() async {
+    final ok = await confirmAction(
+      context,
+      title: 'Clear queued messages?',
+      body: 'Every message waiting behind the current turn will be dropped.',
+      confirmLabel: 'Clear queue',
+      destructive: true,
+    );
+    if (!ok) return;
     try {
       await widget.api.clearQueue(widget.runId);
       _queuedByMe = 0;
@@ -1786,8 +1810,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
     if (!await recorder.hasPermission()) {
       await recorder.dispose();
       if (!mounted) return;
-      toast(context,
-          'Microphone permission denied. Allow it in Settings to record voice notes.');
+      await micDeniedSheet(context, what: 'to record voice notes');
       return;
     }
     if (!mounted) {
@@ -2032,6 +2055,33 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
     final name = path.split('/').last.split('\\').last;
     final pending = _PendingAttachment(name: name, localPath: path);
     setState(() => _attachments.add(pending));
+    await _runUpload(pending, bytes);
+  }
+
+  /// Retry a failed upload in place: re-reads the bytes from the retained
+  /// local path and uploads again on the same chip.
+  Future<void> _retryUpload(_PendingAttachment pending) async {
+    final path = pending.localPath;
+    if (path == null || path.isEmpty) {
+      toast(context, 'Original file is gone — pick it again.');
+      return;
+    }
+    List<int> bytes;
+    try {
+      bytes = await File(path).readAsBytes();
+    } catch (e) {
+      toastError(context, 'Could not re-read the file: $e');
+      return;
+    }
+    await _runUpload(pending, bytes);
+  }
+
+  Future<void> _runUpload(_PendingAttachment pending, List<int> bytes) async {
+    final name = pending.name;
+    setState(() {
+      pending.error = null;
+      pending.record = null;
+    });
     try {
       final record = await widget.api.uploadAttachment(
         name: name.isEmpty ? 'file' : name,
@@ -2084,7 +2134,8 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
   }
 
   Widget _attachmentCard(_PendingAttachment a) {
-    return SizedBox(
+    final failed = a.error != null;
+    final tile = SizedBox(
       width: 76,
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -2108,6 +2159,20 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
                   ),
                 ),
               ),
+              if (failed)
+                Positioned(
+                  bottom: 2,
+                  right: 2,
+                  child: Container(
+                    padding: const EdgeInsets.all(4),
+                    decoration: const BoxDecoration(
+                      color: P.err,
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(Icons.refresh_rounded,
+                        size: 12, color: Colors.white),
+                  ),
+                ),
               if (a.uploading)
                 Positioned.fill(
                   child: Container(
@@ -2128,9 +2193,9 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
           ),
           const SizedBox(height: 4),
           Text(
-            a.error != null ? 'failed' : a.name,
+            failed ? 'tap to retry' : a.name,
             style: PT.faint.copyWith(
-                color: a.error != null ? P.err : P.inkFaint),
+                color: failed ? P.err : P.inkFaint),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             textAlign: TextAlign.center,
@@ -2138,6 +2203,14 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
         ],
       ),
     );
+    // A failed chip retries the upload in place; the X still removes it.
+    if (failed && !a.uploading) {
+      return GestureDetector(
+        onTap: () => _retryUpload(a),
+        child: tile,
+      );
+    }
+    return tile;
   }
 
   /// The 72px tile for a pending attachment: local image thumbnail,
@@ -2225,13 +2298,14 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
           final a = shown[i];
           final extra =
               (i == shown.length - 1 && overflow > 0) ? overflow : 0;
-          return _sentTile(a, overflowCount: extra);
+          return _sentTile(a, overflowCount: extra, all: atts);
         },
       ),
     );
   }
 
-  Widget _sentTile(_SentAttachment a, {int overflowCount = 0}) {
+  Widget _sentTile(_SentAttachment a,
+      {int overflowCount = 0, List<_SentAttachment>? all}) {
     final Widget body;
     if (a.isImage && a.openable) {
       body = _SentThumb(future: _thumbFuture(a.id!), name: a.name);
@@ -2261,12 +2335,84 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
         ),
       ),
     );
-    // The +N overflow tile is a count indicator, not a file; attachments
-    // from old messages (no id) have nothing to open.
-    if (!a.openable || overflowCount > 0) return tile;
+    // The +N overflow tile opens a sheet with every attachment so the
+    // hidden ones stay reachable.
+    if (overflowCount > 0 && all != null) {
+      return GestureDetector(
+        onTap: () => _allAttachmentsSheet(all),
+        child: tile,
+      );
+    }
+    // Attachments from old messages (no id) have nothing to open.
+    if (!a.openable) return tile;
     return GestureDetector(
       onTap: () => _openSentAttachment(a),
       child: tile,
+    );
+  }
+
+  /// Bottom sheet listing every attachment on a message, so the ones
+  /// hidden behind the +N overflow tile stay reachable.
+  Future<void> _allAttachmentsSheet(List<_SentAttachment> atts) async {
+    await showPSheet(
+      context,
+      SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const SheetHandle(),
+              const SizedBox(height: 8),
+              Text('${atts.length} attachments', style: PT.sectionTitle),
+              const SizedBox(height: 12),
+              Flexible(
+                child: ListView.separated(
+                  shrinkWrap: true,
+                  itemCount: atts.length,
+                  separatorBuilder: (_, __) => const SizedBox(height: 8),
+                  itemBuilder: (_, i) {
+                    final a = atts[i];
+                    return ListTile(
+                      contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 4),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(P.r12),
+                        side: BorderSide(color: P.border),
+                      ),
+                      leading: Icon(
+                        a.isImage
+                            ? Icons.image_outlined
+                            : a.isVideo
+                                ? Icons.play_arrow_rounded
+                                : Icons.insert_drive_file_outlined,
+                        color: P.inkSecondary,
+                      ),
+                      title: Text(a.name,
+                          style: PT.body,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis),
+                      subtitle: Text(_extLabel(a.name),
+                          style: PT.meta),
+                      trailing: a.openable
+                          ? const Icon(Icons.open_in_new_rounded,
+                              color: P.inkMuted)
+                          : null,
+                      onTap: a.openable
+                          ? () {
+                              Navigator.pop(context);
+                              _openSentAttachment(a);
+                            }
+                          : null,
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 
@@ -2302,10 +2448,24 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
       _thumbFutures.putIfAbsent(id,
           () => widget.api.downloadUpload(id).then(Uint8List.fromList));
 
+  /// Attachments currently being opened: double-taps on a tile are
+  /// ignored instead of opening the viewer twice.
+  final Set<String> _openingIds = {};
+
   /// Open a sent attachment: images in the in-app full-screen viewer,
   /// video and documents via the system app (downloaded to temp first).
   Future<void> _openSentAttachment(_SentAttachment a) async {
     if (!a.openable) return;
+    final id = a.id!;
+    if (!_openingIds.add(id)) return;
+    try {
+      await _openSentAttachmentInner(a);
+    } finally {
+      _openingIds.remove(id);
+    }
+  }
+
+  Future<void> _openSentAttachmentInner(_SentAttachment a) async {
     _haptic(HapticFeedback.lightImpact);
     if (a.isImage) {
       Uint8List bytes;
@@ -2442,8 +2602,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
     }
 
     // Optional per-message timestamp (only when the item carries one —
-    // the dashboard doesn't emit these yet, so it mostly covers messages
-    // just sent from this device).
+    // older transcript entries may omit it).
     if (!prefs.showTimestamps.value || t.tsMs == null) return core;
     final label = prefs.timestampFormat.value == 'absolute'
         ? clockTime(t.tsMs!)

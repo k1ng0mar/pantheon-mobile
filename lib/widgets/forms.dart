@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 import '../theme.dart';
 import 'buttons.dart';
@@ -194,6 +195,48 @@ void toast(BuildContext context, String message) {
 void toastError(BuildContext context, Object e) {
   ScaffoldMessenger.of(context).showSnackBar(
     SnackBar(content: Text('Failed: $e')),
+  );
+}
+
+/// Microphone-permission denial sheet: explains the block and offers a
+/// one-tap path to the OS app settings. Use instead of a bare toast
+/// wherever recording is gated on mic permission.
+Future<void> micDeniedSheet(BuildContext context, {required String what}) async {
+  await showPSheet(
+    context,
+    SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const SheetHandle(),
+            const SizedBox(height: 8),
+            Text('Microphone is off', style: PT.sectionTitle),
+            const SizedBox(height: 8),
+            Text(
+              'Pantheon needs microphone access $what. '
+              'Enable it in Settings to continue.',
+              style: PT.small,
+            ),
+            const SizedBox(height: 20),
+            GradientButton(
+              label: 'Open Settings',
+              onTap: () async {
+                Navigator.pop(context);
+                await openAppSettings();
+              },
+            ),
+            const SizedBox(height: 12),
+            TonalButton(
+              label: 'Not now',
+              onTap: () => Navigator.pop(context),
+            ),
+          ],
+        ),
+      ),
+    ),
   );
 }
 

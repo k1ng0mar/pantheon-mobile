@@ -41,8 +41,7 @@ class VoiceMic {
   /// permission is denied or the recorder fails to start.
   Future<Stream<Uint8List>> start() async {
     if (!await _recorder.hasPermission()) {
-      throw VoiceMicException(
-          'Microphone permission denied. Allow it in system settings to use live voice.');
+      throw VoiceMicException('Microphone permission denied.');
     }
     final stream = await _recorder.startStream(
       const RecordConfig(

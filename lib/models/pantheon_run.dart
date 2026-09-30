@@ -4,9 +4,9 @@ class TranscriptItem {
   final String type; // message | reasoning
   final String? role;
   final String content;
-  /// Milliseconds since epoch when present. The dashboard does not emit
-  /// per-message timestamps yet, so this is usually null; the app stamps
-  /// its own optimistic messages.
+  /// Milliseconds since epoch when present. The dashboard emits
+  /// per-message timestamps; older entries may omit them, in which case
+  /// this is null and the app falls back to hiding the time.
   final int? tsMs;
 
   TranscriptItem(
