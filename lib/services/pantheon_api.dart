@@ -232,6 +232,7 @@ class PantheonApi {
     return path.contains('/api/link-preview') ||
         path.contains('/api/browser/') ||
         path.contains('/api/logins') ||
+        path.contains('/api/plugins/import') ||
         path.contains('/retry') ||
         path.contains('/kill') ||
         RegExp(r'/api/runs/[^/]+/queue/\d+').hasMatch(path);
@@ -756,6 +757,19 @@ class PantheonApi {
   Future<void> disablePlugin(String kind, String name) async {
     await _post(
         '/api/plugins/${Uri.encodeComponent(kind)}/${Uri.encodeComponent(name)}/disable');
+  }
+
+  /// `POST /api/plugins/import` — `{url, ref?}` →
+  /// `{name, kind, version, detected_capabilities, approval_required: true}`.
+  /// Imported plugins land UNAPPROVED; the user must approve before loading.
+  /// A 404 (endpoint not landed yet) surfaces as PantheonStaleBackendException
+  /// via [_isNewEndpoint].
+  Future<Map<String, dynamic>> importPlugin(
+      {required String url, String? ref}) async {
+    final body = <String, dynamic>{'url': url};
+    final r = ref?.trim();
+    if (r != null && r.isNotEmpty) body['ref'] = r;
+    return await _post('/api/plugins/import', body);
   }
 
   // ------------------------------------------------------------------
