@@ -928,4 +928,49 @@ class PantheonApi {
   Future<void> browserInput(Map<String, dynamic> body) async {
     await _post('/api/browser/input', body);
   }
+
+  // ------------------------------------------------------------------
+  // Swarm: split a task across N subagents or picked profiles, with an
+  // optional judge ruling whether the work is done.
+  // ------------------------------------------------------------------
+
+  /// `POST /api/swarm` → 201 `{"swarm_id","run_id","agents":[...]}`.
+  /// 400 on bad input. [mode] is `"count"` or `"profiles"`.
+  Future<Map<String, dynamic>> createSwarm({
+    required String task,
+    required String mode,
+    int? subagentCount,
+    List<String>? profiles,
+    required bool judge,
+  }) async {
+    final body = <String, dynamic>{'task': task, 'mode': mode, 'judge': judge};
+    if (subagentCount != null) body['subagent_count'] = subagentCount;
+    if (profiles != null) body['profiles'] = profiles;
+    return await _post('/api/swarm', body);
+  }
+
+  /// `GET /api/swarm/status?swarm=<id>` → task, status, round, per-agent
+  /// statuses, and the judge verdict (null until judged).
+  /// 404 when the swarm is unknown.
+  Future<Map<String, dynamic>> swarmStatus(String id) async {
+    return await _get('/api/swarm/status', {'swarm': id});
+  }
+
+  /// `GET /api/swarm/transcript?swarm=<id>&agent=<name>` → the agent's
+  /// live transcript. 404 when the swarm or agent is unknown.
+  Future<Map<String, dynamic>> swarmTranscript(String id, String agent) async {
+    return await _get(
+        '/api/swarm/transcript', {'swarm': id, 'agent': agent});
+  }
+
+  /// `POST /api/swarm/<id>/retry` → 200 `{"swarm_id","round"}`.
+  /// No feedback → the backend defaults to the judge's notes.
+  /// 400 when the max round is reached or there is nothing to retry.
+  Future<Map<String, dynamic>> retrySwarm(String id,
+      {String? feedback}) async {
+    final body = <String, dynamic>{};
+    if (feedback != null && feedback.isNotEmpty) body['feedback'] = feedback;
+    return await _post(
+        '/api/swarm/${Uri.encodeComponent(id)}/retry', body);
+  }
 }
