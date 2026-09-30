@@ -489,6 +489,14 @@ class MoreTab extends StatelessWidget {
           const SizedBox(height: 12),
           _hubCard(
             context,
+            icon: Icons.web_asset_outlined,
+            title: 'Browser',
+            subtitle: 'Live session stream and take-control',
+            onTap: () => _push(context, BrowserScreen(api: api)),
+          ),
+          const SizedBox(height: 12),
+          _hubCard(
+            context,
             icon: Icons.mic_outlined,
             title: 'Voice',
             subtitle: 'Live mode, STT and TTS providers',
