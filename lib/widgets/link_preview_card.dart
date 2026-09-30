@@ -4,6 +4,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../models/link_preview.dart';
 import '../services/pantheon_api.dart';
 import '../theme.dart';
+import 'forms.dart';
 
 /// Rich link preview card rendered under a chat message's text.
 ///
@@ -169,6 +170,7 @@ class _LinkPreviewCardState extends State<LinkPreviewCard> {
   Future<void> _open(String url) async {
     final uri = Uri.tryParse(url);
     if (uri == null) return;
-    await launchUrl(uri, mode: LaunchMode.externalApplication);
+    final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (!ok && mounted) toast(context, "Couldn't open link.");
   }
 }

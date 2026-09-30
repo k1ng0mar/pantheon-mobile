@@ -7,6 +7,7 @@ import '../services/live_voice_client.dart';
 import '../services/pantheon_api.dart';
 import '../services/voice_audio.dart';
 import '../theme.dart';
+import '../widgets/forms.dart';
 
 /// Opt-in live voice mode. NOT the default chat path.
 ///
@@ -105,6 +106,11 @@ class _VoiceScreenState extends State<VoiceScreen> with WidgetsBindingObserver {
     late final Stream<Uint8List> stream;
     try {
       stream = await mic.start();
+    } on VoiceMicException {
+      _addSystem('Microphone permission denied.');
+      setState(() => _listening = false);
+      if (mounted) await micDeniedSheet(context, what: 'for live voice');
+      return;
     } catch (e) {
       _addSystem(e.toString());
       setState(() => _listening = false);

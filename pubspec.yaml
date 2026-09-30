@@ -20,6 +20,7 @@ dependencies:
   syntax_highlight: ^0.5.0
   record: ^5.1.2
   audioplayers: ^6.1.0
+  permission_handler: ^11.3.1
 
 dev_dependencies:
   flutter_test:
