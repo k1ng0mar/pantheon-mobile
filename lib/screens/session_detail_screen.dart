@@ -44,11 +44,16 @@ class SessionDetailScreen extends StatefulWidget {
   /// inline grant/deny decisions made on this screen.
   final ValueNotifier<int>? pendingApprovals;
 
+  /// Pre-filled composer draft (e.g. an error handed over from Logs).
+  /// Applied once in initState; the user can edit before sending.
+  final String? initialDraft;
+
   const SessionDetailScreen(
       {super.key,
       required this.api,
       required this.runId,
-      this.pendingApprovals});
+      this.pendingApprovals,
+      this.initialDraft});
 
   @override
   State<SessionDetailScreen> createState() => _SessionDetailScreenState();
@@ -174,6 +179,9 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
   void initState() {
     super.initState();
     _scroll.addListener(_trackScroll);
+    if (widget.initialDraft != null && widget.initialDraft!.isNotEmpty) {
+      _composer.text = widget.initialDraft!;
+    }
     _load(initial: true);
   }
 
