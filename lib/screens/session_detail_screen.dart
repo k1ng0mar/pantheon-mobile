@@ -90,6 +90,9 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
   /// Whether the queue section lists its messages expanded.
   bool _queueExpanded = false;
 
+  /// Retry of a failed turn is in flight.
+  bool _retrying = false;
+
   /// Attachments staged on the composer: picked locally, uploaded to
   /// `POST /api/uploads`, then sent with the message as attachment ids.
   final List<_PendingAttachment> _attachments = [];
@@ -633,6 +636,32 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
     }
   }
 
+  /// Retry a failed turn from the timeline header. The server replays the
+  /// last user message, so the client never resends text.
+  Future<void> _retryRun() async {
+    if (_retrying) return;
+    setState(() => _retrying = true);
+    try {
+      await widget.api.retryRun(widget.runId);
+      if (!mounted) return;
+      toast(context, 'Retrying turn…');
+      // Back to Chat so the new turn is visible; the poll loop picks it up.
+      DefaultTabController.of(context)?.animateTo(0);
+      _ensurePolling();
+      await _load();
+    } on PantheonTurnInFlightException {
+      if (mounted) toast(context, 'A turn is already running.');
+    } on PantheonRetryParkedException {
+      if (mounted) {
+        toast(context, 'Parked on approval — grant or deny it first.');
+      }
+    } catch (e) {
+      if (mounted) toastError(context, e);
+    } finally {
+      if (mounted) setState(() => _retrying = false);
+    }
+  }
+
   /// Tap the queue header to send the oldest queued message now. The
   /// server pops the head of its FIFO queue on the idle send, so the
   /// rest stay queued — never clear the whole queue here.
@@ -651,6 +680,122 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
       if (mounted) toastError(context, e);
     } finally {
       if (mounted) setState(() => _sending = false);
+    }
+  }
+
+  /// Edit one queued message in place. The run is reloaded from the
+  /// server afterwards so index shifts can never desync the list.
+  Future<void> _editQueueItem(int index, String current) async {
+    final ctrl = TextEditingController(text: current);
+    var busy = false;
+    final saved = await showPSheet<bool>(
+      context,
+      StatefulBuilder(
+        builder: (ctx, setSheet) {
+          return SafeArea(
+            child: Padding(
+              padding: EdgeInsets.fromLTRB(
+                  20, 8, 20, 24 + MediaQuery.of(ctx).viewInsets.bottom),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const SheetHandle(),
+                  const SizedBox(height: 8),
+                  Text('Edit queued message', style: PT.sectionTitle),
+                  const SizedBox(height: 4),
+                  Text('It stays queued until the turn settles.',
+                      style: PT.meta),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: ctrl,
+                    style: PT.body,
+                    maxLines: 5,
+                    minLines: 2,
+                    autofocus: true,
+                    decoration: const InputDecoration(
+                      hintText: 'Message text',
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TonalButton(
+                            label: 'Cancel',
+                            onTap: () => Navigator.pop(ctx, false)),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: GradientButton(
+                          label: busy ? 'Saving…' : 'Save',
+                          onTap: busy
+                              ? null
+                              : () async {
+                                  final text = ctrl.text.trim();
+                                  if (text.isEmpty) {
+                                    toast(ctx, 'Message can\'t be empty.');
+                                    return;
+                                  }
+                                  setSheet(() => busy = true);
+                                  try {
+                                    await widget.api.editQueueItem(
+                                        widget.runId, index, text);
+                                    if (ctx.mounted) Navigator.pop(ctx, true);
+                                  } catch (e) {
+                                    setSheet(() => busy = false);
+                                    if (ctx.mounted) toastError(ctx, e);
+                                  }
+                                },
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+    ctrl.dispose();
+    if (saved == true && mounted) {
+      toast(context, 'Queued message updated.');
+      await _load();
+    }
+  }
+
+  /// Delete one queued message after a confirm. The run is reloaded
+  /// from the server afterwards so index shifts stay correct.
+  Future<void> _deleteQueueItem(int index) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: P.surface,
+        shape:
+            RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Text('Delete queued message?', style: PT.cardTitle),
+        content: Text('This can\'t be undone.', style: PT.body),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text('Cancel', style: PT.label.copyWith(color: P.inkMuted)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text('Delete', style: PT.label.copyWith(color: P.err)),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    try {
+      await widget.api.deleteQueueItem(widget.runId, index);
+      if (!mounted) return;
+      toast(context, 'Queued message deleted.');
+      await _load();
+    } catch (e) {
+      if (mounted) toastError(context, e);
     }
   }
 
@@ -1434,14 +1579,36 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('${i + 1}.',
-                        style: PT.meta.copyWith(color: P.inkFaint)),
+                    Padding(
+                      padding: const EdgeInsets.only(top: 2),
+                      child: Text('${i + 1}.',
+                          style: PT.meta.copyWith(color: P.inkFaint)),
+                    ),
                     const SizedBox(width: 8),
                     Expanded(
-                      child: Text(queue[i],
-                          style: PT.small.copyWith(color: P.inkMuted),
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis),
+                      child: Padding(
+                        padding: const EdgeInsets.only(top: 2),
+                        child: Text(queue[i],
+                            style: PT.small.copyWith(color: P.inkMuted),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis),
+                      ),
+                    ),
+                    GestureDetector(
+                      onTap: () => _editQueueItem(i, queue[i]),
+                      child: const Padding(
+                        padding: EdgeInsets.all(6),
+                        child: Icon(Icons.edit_outlined,
+                            size: 16, color: P.inkMuted),
+                      ),
+                    ),
+                    GestureDetector(
+                      onTap: () => _deleteQueueItem(i),
+                      child: const Padding(
+                        padding: EdgeInsets.all(6),
+                        child: Icon(Icons.delete_outline_rounded,
+                            size: 16, color: P.inkMuted),
+                      ),
                     ),
                   ],
                 ),
@@ -2416,6 +2583,30 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
                       fontSize: 13.5, color: P.inkSecondary)),
             ),
           ],
+          if (run.status == 'failed') ...[
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: _retrying ? null : _retryRun,
+                icon: _retrying
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.refresh_rounded, size: 18),
+                label: Text(_retrying ? 'Retrying…' : 'Retry turn'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: P.accent,
+                  side: BorderSide(color: P.accent.withValues(alpha: 0.5)),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12)),
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                ),
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -2615,6 +2806,12 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
       case 'turn_started':
       case 'model_requested':
         return _GlyphSpec(Icons.fiber_manual_record_rounded, P.accent);
+      case 'tool_started':
+        return _GlyphSpec(Icons.build_rounded, P.accent);
+      case 'tool_completed':
+        return _GlyphSpec(Icons.check_rounded, P.ok);
+      case 'model_fallback':
+        return _GlyphSpec(Icons.swap_horiz_rounded, P.warn);
       default:
         return _GlyphSpec(Icons.info_outline_rounded, P.inkMuted);
     }
@@ -2662,6 +2859,12 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
         return 'Subagent finished';
       case 'titled':
         return 'Session renamed';
+      case 'tool_started':
+        return 'Tool started';
+      case 'tool_completed':
+        return 'Tool finished';
+      case 'model_fallback':
+        return 'Model fallback';
       default:
         final words = kind.replaceAll('_', ' ').trim();
         if (words.isEmpty) return 'Event';
