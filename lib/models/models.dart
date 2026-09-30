@@ -4,6 +4,7 @@ export 'config_doc.dart';
 export 'env_key.dart';
 export 'gateway_status.dart';
 export 'log_tail.dart';
+export 'link_preview.dart';
 export 'mcp_server.dart';
 export 'memory_entry.dart';
 export 'nightly_status.dart';
