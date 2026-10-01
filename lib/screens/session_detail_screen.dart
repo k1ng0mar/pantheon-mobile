@@ -85,6 +85,9 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
   PantheonRun? _run;
   final List<TranscriptItem> _messages = [];
 
+  /// Composer emptiness for the send button's dim/disabled state.
+  bool _composerEmpty = true;
+
   /// Local-only message votes (thumbs up/down), keyed by [_voteKey].
   /// Persisted in SharedPreferences; there is no backend endpoint for
   /// these — they are a device-local signal only.
@@ -236,8 +239,17 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
     if (widget.initialDraft != null && widget.initialDraft!.isNotEmpty) {
       _composer.text = widget.initialDraft!;
     }
+    _composer.addListener(_onComposerChanged);
     _loadVotes();
     _load(initial: true);
+  }
+
+  void _onComposerChanged() {
+    final empty = _composer.text.trim().isEmpty &&
+        !_attachments.any((a) => a.record != null);
+    if (empty != _composerEmpty) {
+      setState(() => _composerEmpty = empty);
+    }
   }
 
   @override
@@ -259,6 +271,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
         } catch (_) {}
       }();
     }
+    _composer.removeListener(_onComposerChanged);
     _composer.dispose();
     _composerFocus.dispose();
     _answerCtrl.dispose();
@@ -837,7 +850,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
       toast(
           context,
           effective == 'plan'
-              ? 'Plan mode — Pantheon proposes, you approve.'
+              ? 'Plan mode — $_agentName proposes, you approve.'
               : 'Build mode.');
     } catch (e) {
       if (mounted) toastError(context, e);
@@ -943,7 +956,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
                     maxLines: 5,
                     minLines: 2,
                     autofocus: true,
-                    decoration: const InputDecoration(
+                    decoration: InputDecoration(
                       hintText: 'Message text',
                     ),
                   ),
@@ -1147,7 +1160,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
                     TextField(
                       controller: pCtrl,
                       style: PT.body,
-                      decoration: const InputDecoration(
+                      decoration: InputDecoration(
                         labelText: 'Provider',
                         hintText: 'openai',
                       ),
@@ -1156,7 +1169,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
                     TextField(
                       controller: mCtrl,
                       style: PT.body,
-                      decoration: const InputDecoration(
+                      decoration: InputDecoration(
                         labelText: 'Model',
                         hintText: 'gpt-4o-mini',
                       ),
@@ -1663,7 +1676,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
               const Icon(Icons.help_outline_rounded,
                   size: 18, color: P.warn),
               const SizedBox(width: 8),
-              Text('Pantheon is asking',
+              Text('$_agentName is asking',
                   style: PT.label.copyWith(color: P.warn)),
             ],
           ),
@@ -1696,7 +1709,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
                   textInputAction: TextInputAction.send,
                   onSubmitted: (_) => _answerInput(pi.callId),
                   style: PT.body.copyWith(fontSize: 14),
-                  decoration: const InputDecoration(
+                  decoration: InputDecoration(
                     hintText: 'Your answer…',
                     contentPadding: EdgeInsets.symmetric(
                         horizontal: 16, vertical: 12),
@@ -2479,45 +2492,40 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
   Widget _modelPill() {
     final label = _modelLine;
     if (label == null || label.isEmpty) return const SizedBox.shrink();
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Row(
-        children: [
-          GestureDetector(
-            onTap: () {
-              _haptic(HapticFeedback.lightImpact);
-              _modelPickerSheet();
-            },
-            child: Container(
-              padding: const EdgeInsets.symmetric(
-                  horizontal: 12, vertical: 7),
-              decoration: BoxDecoration(
-                border: Border.all(color: P.border),
-                borderRadius: BorderRadius.circular(999),
-                color: P.tonal,
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.smart_toy_outlined,
-                      size: 14, color: P.inkSecondary),
-                  const SizedBox(width: 6),
-                  Flexible(
-                    child: Text(
-                      label,
-                      style: PT.small.copyWith(color: P.inkSecondary),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                  const SizedBox(width: 4),
-                  Icon(Icons.expand_more_rounded,
-                      size: 14, color: P.inkSecondary),
-                ],
+    return GestureDetector(
+      onTap: () {
+        _haptic(HapticFeedback.lightImpact);
+        _modelPickerSheet();
+      },
+      child: Container(
+        constraints: BoxConstraints(
+            maxWidth: MediaQuery.sizeOf(context).width * 0.5),
+        padding:
+            const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+        decoration: BoxDecoration(
+          border: Border.all(color: P.border),
+          borderRadius: BorderRadius.circular(999),
+          color: P.tonal,
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.smart_toy_outlined,
+                size: 14, color: P.inkSecondary),
+            const SizedBox(width: 6),
+            Flexible(
+              child: Text(
+                label,
+                style: PT.small.copyWith(color: P.inkSecondary),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
               ),
             ),
-          ),
-        ],
+            const SizedBox(width: 4),
+            Icon(Icons.expand_more_rounded,
+                size: 14, color: P.inkSecondary),
+          ],
+        ),
       ),
     );
   }
@@ -2711,8 +2719,8 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
                 : TextInputAction.newline,
             onSubmitted: returnSends ? (_) => _send() : null,
             style: PT.body.copyWith(fontSize: 14),
-            decoration: const InputDecoration(
-              hintText: 'Message Pantheon…  ( / for commands)',
+            decoration: InputDecoration(
+              hintText: 'Message $_agentName…',
               contentPadding:
                   EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             ),
@@ -2724,14 +2732,18 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
         const SizedBox(width: 8),
         GestureDetector(
           // Stop state: tap stops the turn at once; long-press opens
-          // the full in-flight sheet (stop / steer / queue).
-          onTap: stopLive ? _stopTurn : _send,
+          // the full in-flight sheet (stop / steer / queue). With an
+          // empty composer (and no finished attachment) the button is
+          // dimmed and non-functional — stop excepted.
+          onTap: stopLive ? _stopTurn : (_composerEmpty ? null : _send),
           onLongPress:
               stopLive ? () => _stopSheet() : null,
           child: AnimatedOpacity(
             duration: Duration(
                 milliseconds: reduceMotion ? 0 : 150),
-            opacity: _sending ? 0.5 : 1,
+            opacity: _sending
+                ? 0.5
+                : (_composerEmpty && !stopLive ? 0.35 : 1),
             child: Container(
               width: 48,
               height: 48,
