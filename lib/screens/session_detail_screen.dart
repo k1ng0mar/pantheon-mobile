@@ -1899,9 +1899,6 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
     final prefs = AppPreferences.instance;
     final dividers = prefs.dateDividers.value;
     final rows = <Widget>[];
-    // Subagent pill placement is recomputed per build: the timeline
-    // (and transcript) change on every poll.
-    _pillSpans = null;
     DateTime? lastDay;
     void dividerFor(TranscriptItem t) {
       if (dividers && t.tsMs != null) {
@@ -1930,11 +1927,14 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
       bufferedIndices.clear();
       if (steps.isNotEmpty) {
         rows.add(StaggerItem(
-            index: indices.first,
-            child: _thoughtsRow(steps, live)));
-      }
-      for (final bi in indices) {
-        _maybeSubagentPill(rows, bi);
+            index: indices.first, child: _thoughtsRow(steps, live)));
+        // The agent pill anchors to the delegate step's transcript
+        // position (this turn's steps), never a timestamp scan.
+        final delegates = steps.where((s) => s.isDelegate).toList();
+        if (delegates.isNotEmpty) {
+          rows.add(StaggerItem(
+              index: indices.first, child: _agentPill(delegates)));
+        }
       }
     }
 
@@ -1945,7 +1945,6 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
       if (t.role == 'user') {
         flushThoughts();
         rows.add(StaggerItem(index: i, child: _bubble(t)));
-        _maybeSubagentPill(rows, i);
         i++;
         continue;
       }
@@ -1955,7 +1954,6 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
         if (t.content.trim().isNotEmpty) {
           flushThoughts();
           rows.add(StaggerItem(index: i, child: _bubble(_stripToolCalls(t))));
-          _maybeSubagentPill(rows, i);
         }
         thoughtItems.add(t);
         bufferedIndices.add(i);
@@ -1970,7 +1968,6 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
       }
       flushThoughts();
       rows.add(StaggerItem(index: i, child: _bubble(t)));
-      _maybeSubagentPill(rows, i);
       i++;
     }
     flushThoughts();
@@ -2029,149 +2026,6 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
     return steps;
   }
 
-  /// Subagent spans from the run timeline (the same source the agent
-  /// activity view uses). A span is a maximal run of agent-kind events.
-  List<_SubagentSpan> _subagentSpans() {
-    final spans = <_SubagentSpan>[];
-    var current = <TimelineItem>[];
-    var inSpan = false;
-    String? name;
-    int? started;
-
-    void close({int? endedMs}) {
-      if (!inSpan) return;
-      spans.add(_SubagentSpan(
-        name: (name ?? '').isEmpty ? 'subagent' : name!,
-        startedMs: started,
-        endedMs: endedMs,
-        items: current,
-      ));
-      current = <TimelineItem>[];
-      inSpan = false;
-      name = null;
-      started = null;
-    }
-
-    for (final e in _run?.timeline ?? <TimelineItem>[]) {
-      if (!tlIsAgentKind(e.kind)) {
-        close();
-        continue;
-      }
-      if (!inSpan) {
-        inSpan = true;
-        name = (e.detail ?? '').trim();
-        started = e.tsMs;
-      }
-      current.add(e);
-      if (e.kind == 'agent_completed') close(endedMs: e.tsMs);
-    }
-    close();
-    return spans;
-  }
-
-  /// Map of transcript index → subagent spans whose work finished around
-  /// that item. Computed lazily once per message list build.
-  Map<int, List<_SubagentSpan>>? _pillSpans;
-
-  void _maybeSubagentPill(List<Widget> rows, int msgIndex) {
-    _pillSpans ??= _buildPillSpans();
-    final spans = _pillSpans![msgIndex];
-    if (spans == null || spans.isEmpty) return;
-    rows.add(StaggerItem(index: msgIndex, child: _subagentPill(spans)));
-  }
-
-  Map<int, List<_SubagentSpan>> _buildPillSpans() {
-    final map = <int, List<_SubagentSpan>>{};
-    final spans = _subagentSpans();
-    if (spans.isEmpty) return map;
-    final last = _messages.length - 1;
-    for (final s in spans) {
-      final endMs = s.endedMs ?? s.startedMs;
-      var idx = last;
-      if (endMs != null) {
-        idx = last;
-        for (var k = _messages.length - 1; k >= 0; k--) {
-          final ts = _messages[k].tsMs;
-          if (ts != null && ts <= endMs) {
-            idx = k;
-            break;
-          }
-        }
-      }
-      map.putIfAbsent(idx, () => []).add(s);
-    }
-    return map;
-  }
-
-  /// Compact "N agent used" pill below the turn that used subagents.
-  /// Tapping opens the subagents sheet.
-  Widget _subagentPill(List<_SubagentSpan> spans) {
-    final n = spans.length;
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: () => _openSubagents(spans),
-      child: Padding(
-        padding: const EdgeInsets.only(bottom: 10, top: 2),
-        child: Align(
-          alignment: Alignment.centerLeft,
-          child: Container(
-            padding:
-                const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            decoration: BoxDecoration(
-              border: Border.all(color: P.border),
-              borderRadius: BorderRadius.circular(999),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.hub_outlined,
-                    size: 15, color: P.inkSecondary),
-                const SizedBox(width: 8),
-                Text(
-                  '$n agent${n == 1 ? '' : 's'} used',
-                  style: PT.small.copyWith(color: P.inkSecondary),
-                ),
-                const SizedBox(width: 4),
-                Icon(Icons.chevron_right_rounded,
-                    size: 15, color: P.inkSecondary),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  /// Near-full-screen sheet listing the turn's subagents: name, status
-  /// with elapsed time, and its nested content (the span's timeline
-  /// rows rendered as checklist rows, same visual language as the
-  /// Thoughts sheet). Data is the run timeline — the same source the
-  /// agent activity view uses; the backend does not expose subagent
-  /// transcripts, so nothing is fabricated.
-  void _openSubagents(List<_SubagentSpan> spans) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (_) => DraggableScrollableSheet(
-        initialChildSize: 0.92,
-        minChildSize: 0.5,
-        maxChildSize: 0.95,
-        builder: (_, controller) => Container(
-          decoration: BoxDecoration(
-            color: P.surface,
-            borderRadius:
-                const BorderRadius.vertical(top: Radius.circular(20)),
-          ),
-          child: _SubagentsSheet(
-            spans: spans,
-            scrollController: controller,
-          ),
-        ),
-      ),
-    );
-  }
-
   /// Assistant message copy without its tool calls, so the text renders
   /// as a normal message while the calls live in the Thoughts sheet.
   TranscriptItem _stripToolCalls(TranscriptItem t) => TranscriptItem(
@@ -2216,6 +2070,65 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
     );
   }
 
+  /// Compact "N agents used" pill below the turn that delegated
+  /// work. Anchored to the delegate step's transcript position (see
+  /// [flushThoughts]). Tapping opens the agent sheet.
+  Widget _agentPill(List<_ThoughtStep> delegates) {
+    final n = delegates.length;
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () => _openAgentSheet(delegates),
+      child: Padding(
+        padding: const EdgeInsets.only(bottom: 10, top: 2),
+        child: Align(
+          alignment: Alignment.centerLeft,
+          child: Container(
+            padding:
+                const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              border: Border.all(color: P.border),
+              borderRadius: BorderRadius.circular(999),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.hub_outlined,
+                    size: 15, color: P.inkSecondary),
+                const SizedBox(width: 8),
+                Text(
+                  '$n agent${n == 1 ? '' : 's'} used',
+                  style: PT.small.copyWith(color: P.inkSecondary),
+                ),
+                const SizedBox(width: 4),
+                Icon(Icons.chevron_right_rounded,
+                    size: 15, color: P.inkSecondary),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Agent sheet for one turn's delegate steps: task title, status row,
+  /// the full prompt the agent received, and its result. The delegate
+  /// call itself is not re-rendered as a step row here — the Thoughts
+  /// sheet owns that.
+  void _openAgentSheet(List<_ThoughtStep> delegates) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: P.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (_) => FractionallySizedBox(
+        heightFactor: 0.92,
+        child: _AgentSheet(delegates: delegates),
+      ),
+    );
+  }
+
   void _openThoughts(List<_ThoughtStep> steps, bool live) {
     showModalBottomSheet(
       context: context,
@@ -2226,7 +2139,8 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
       ),
       builder: (_) => FractionallySizedBox(
         heightFactor: 0.92,
-        child: _ThoughtsSheet(steps: steps, live: live),
+        child: _ThoughtsSheet(
+            steps: steps, live: live, onOpenAgent: _openAgentSheet),
       ),
     );
   }
@@ -4434,7 +4348,12 @@ class _ThoughtsSheet extends StatefulWidget {
   /// finished, non-live turn gets a trailing "Done" row.
   final bool live;
 
-  const _ThoughtsSheet({required this.steps, required this.live});
+  /// Open the agent sheet for a delegate step (its prompt/result live
+  /// there, not in the Thoughts expansion).
+  final void Function(List<_ThoughtStep>) onOpenAgent;
+
+  const _ThoughtsSheet(
+      {required this.steps, required this.live, required this.onOpenAgent});
 
   @override
   State<_ThoughtsSheet> createState() => _ThoughtsSheetState();
@@ -4618,9 +4537,33 @@ class _ThoughtsSheetState extends State<_ThoughtsSheet> {
             const SizedBox(height: 6),
             Text('\u00b7 $dur', style: PT.faint),
           ],
-          const SizedBox(height: 6),
-          Text('Full prompt and result live in the agent view.',
-              style: PT.meta),
+          const SizedBox(height: 10),
+          GestureDetector(
+            onTap: () {
+              Navigator.pop(context);
+              widget.onOpenAgent([s]);
+            },
+            child: Container(
+              padding: const EdgeInsets.symmetric(
+                  horizontal: 14, vertical: 9),
+              decoration: BoxDecoration(
+                color: P.accentSoft,
+                borderRadius: BorderRadius.circular(999),
+                border: Border.all(
+                    color: P.accent.withValues(alpha: 0.4)),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.hub_outlined,
+                      size: 14, color: P.accent),
+                  const SizedBox(width: 6),
+                  Text('View agent detail',
+                      style: PT.small.copyWith(color: P.accent)),
+                ],
+              ),
+            ),
+          ),
         ],
       ),
     );
@@ -4776,61 +4719,28 @@ class _ThoughtsSheetState extends State<_ThoughtsSheet> {
   }
 }
 
-/// One subagent's activity span: a maximal run of agent-kind timeline
-/// events (`agent_spawned` → `agent_message`* → `agent_completed`).
-/// The backend does not expose subagent transcripts, so the span's
-/// nested content is its timeline events — the same data source the
-/// agent activity view uses.
-class _SubagentSpan {
-  final String name;
-  final int? startedMs;
-  final int? endedMs;
-  final List<TimelineItem> items;
+/// Agent sheet: one block per delegate step of the turn. The block
+/// title is the agent's task; the status row reads "Completed ·
+/// {elapsed}" (check) or "Running" (spinner); then the full prompt the
+/// agent received and its result (expandable when long). The delegate
+/// call is not re-rendered as a step row — the Thoughts sheet owns that.
+/// Child step rows render only when attributable; the backend exposes no
+/// subagent transcripts, so in practice there are none.
+class _AgentSheet extends StatefulWidget {
+  final List<_ThoughtStep> delegates;
 
-  const _SubagentSpan({
-    required this.name,
-    required this.startedMs,
-    required this.endedMs,
-    required this.items,
-  });
-
-  bool get completed => endedMs != null;
-
-  /// Elapsed wall time: spawn → completion, or spawn → now while
-  /// still running.
-  Duration get elapsed {
-    final start = startedMs ?? DateTime.now().millisecondsSinceEpoch;
-    final end =
-        endedMs ?? DateTime.now().millisecondsSinceEpoch;
-    return Duration(milliseconds: (end - start).clamp(0, 1 << 62));
-  }
-
-  String get statusLabel {
-    final e = elapsed;
-    final t = e.inMinutes > 0
-        ? '${e.inMinutes}m ${e.inSeconds % 60}s'
-        : '${e.inSeconds}s';
-    return completed ? 'Completed · $t' : 'Running · $t';
-  }
-}
-
-/// Near-full-screen sheet listing the turn's subagents: task name,
-/// status with elapsed time, and each subagent's nested content — its
-/// timeline events as checklist rows in the same visual language as
-/// the Thoughts sheet.
-class _SubagentsSheet extends StatefulWidget {
-  final List<_SubagentSpan> spans;
-  final ScrollController scrollController;
-
-  const _SubagentsSheet(
-      {required this.spans, required this.scrollController});
+  const _AgentSheet({required this.delegates});
 
   @override
-  State<_SubagentsSheet> createState() => _SubagentsSheetState();
+  State<_AgentSheet> createState() => _AgentSheetState();
 }
 
-class _SubagentsSheetState extends State<_SubagentsSheet> {
+class _AgentSheetState extends State<_AgentSheet> {
   final Set<int> _open = {};
+  final Set<int> _fullPrompt = {};
+  final Set<int> _fullResult = {};
+
+  static const _expandAt = 500;
 
   @override
   Widget build(BuildContext context) {
@@ -4844,7 +4754,11 @@ class _SubagentsSheetState extends State<_SubagentsSheet> {
             padding: const EdgeInsets.fromLTRB(20, 8, 12, 12),
             child: Row(
               children: [
-                Text('Subagents', style: PT.sectionTitle),
+                Text(
+                    widget.delegates.length == 1
+                        ? 'Agent'
+                        : '${widget.delegates.length} agents',
+                    style: PT.sectionTitle),
                 const Spacer(),
                 IconButton(
                   icon:
@@ -4857,10 +4771,9 @@ class _SubagentsSheetState extends State<_SubagentsSheet> {
           const Divider(height: 1),
           Expanded(
             child: ListView.builder(
-              controller: widget.scrollController,
               padding: const EdgeInsets.only(bottom: 24),
-              itemCount: widget.spans.length,
-              itemBuilder: (_, i) => _agentBlock(widget.spans[i], i),
+              itemCount: widget.delegates.length,
+              itemBuilder: (_, i) => _agentBlock(widget.delegates[i], i),
             ),
           ),
         ],
@@ -4868,31 +4781,40 @@ class _SubagentsSheetState extends State<_SubagentsSheet> {
     );
   }
 
-  Widget _agentBlock(_SubagentSpan span, int index) {
+  Widget _agentBlock(_ThoughtStep s, int index) {
     final open = _open.contains(index);
+    final completed = s.status == _StepStatus.done;
+    final dur = _stepDuration(s);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         InkWell(
-          onTap: () =>
-              setState(() => open ? _open.remove(index) : _open.add(index)),
+          onTap: () => setState(
+              () => open ? _open.remove(index) : _open.add(index)),
           child: Padding(
             padding:
                 const EdgeInsets.symmetric(horizontal: 20, vertical: 13),
             child: Row(
               children: [
-                _agentStatusGlyph(span),
+                _agentStatusGlyph(s),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(span.name,
+                      Text(s.task ?? s.label,
                           style: PT.body.copyWith(
                               fontSize: 14,
                               fontWeight: FontWeight.w600)),
                       const SizedBox(height: 2),
-                      Text(span.statusLabel, style: PT.meta),
+                      Text(
+                        completed
+                            ? (dur != null
+                                ? 'Completed \u00b7 $dur'
+                                : 'Completed')
+                            : 'Running',
+                        style: PT.meta,
+                      ),
                     ],
                   ),
                 ),
@@ -4906,16 +4828,18 @@ class _SubagentsSheetState extends State<_SubagentsSheet> {
             ),
           ),
         ),
-        if (open)
-          ...span.items.map((e) => _eventRow(e)),
+        if (open) _agentDetail(s, index),
         const Divider(height: 1, indent: 20, endIndent: 20),
       ],
     );
   }
 
-  Widget _agentStatusGlyph(_SubagentSpan span) {
-    if (span.completed) {
+  Widget _agentStatusGlyph(_ThoughtStep s) {
+    if (s.status == _StepStatus.done) {
       return Icon(Icons.check_rounded, size: 16, color: P.inkSecondary);
+    }
+    if (s.status == _StepStatus.error) {
+      return const Icon(Icons.close_rounded, size: 16, color: P.err);
     }
     return const SizedBox(
       width: 16,
@@ -4924,35 +4848,80 @@ class _SubagentsSheetState extends State<_SubagentsSheet> {
     );
   }
 
-  /// One timeline event in the subagent's nested content: status glyph
-  /// plus title, with detail on a second line.
-  Widget _eventRow(TimelineItem e) {
-    final spec = tlGlyph(e.kind);
-    final detail = (e.detail ?? '').trim();
+  Widget _agentDetail(_ThoughtStep s, int index) {
+    final prompt = (s.prompt ?? '').trim();
+    final result = s.output.trim();
     return Padding(
-      padding: const EdgeInsets.fromLTRB(52, 4, 20, 8),
-      child: Row(
+      padding: const EdgeInsets.fromLTRB(20, 0, 20, 14),
+      child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          GlyphCircle(icon: spec.icon, color: spec.color),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(tlTitle(e.kind),
-                    style: PT.body.copyWith(
-                        fontSize: 13.5, fontWeight: FontWeight.w600)),
-                if (detail.isNotEmpty)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 2),
-                    child: Text(detail, style: PT.meta),
-                  ),
-              ],
-            ),
-          ),
+          if (s.agent != null) ...[
+            _kv('Agent', s.agent!),
+            const SizedBox(height: 10),
+          ],
+          if (prompt.isNotEmpty) ...[
+            Text('PROMPT',
+                style: PT.monoEyebrow.copyWith(color: P.inkSecondary)),
+            const SizedBox(height: 6),
+            _expandableText(prompt, _fullPrompt, index),
+            const SizedBox(height: 10),
+          ],
+          if (result.isNotEmpty) ...[
+            Text(
+                s.status == _StepStatus.error ? 'ERROR' : 'RESULT',
+                style: PT.monoEyebrow.copyWith(
+                    color: s.status == _StepStatus.error
+                        ? P.err
+                        : P.inkSecondary)),
+            const SizedBox(height: 6),
+            _expandableText(result, _fullResult, index),
+          ],
+          // Child step rows render only when attributable. The backend
+          // exposes no subagent transcripts, so there is nothing honest
+          // to list here today.
         ],
       ),
+    );
+  }
+
+  Widget _kv(String k, String v) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          width: 52,
+          child:
+              Text(k, style: PT.monoEyebrow.copyWith(fontSize: 10)),
+        ),
+        Expanded(child: SelectableText(v, style: PT.small)),
+      ],
+    );
+  }
+
+  /// Long text collapses past [_expandAt] chars with a Show more/less
+  /// toggle; short text renders fully selectable.
+  Widget _expandableText(String text, Set<int> expanded, int index) {
+    final isOpen = expanded.contains(index);
+    final truncated = text.length > _expandAt;
+    final shown = !truncated || isOpen
+        ? text
+        : '${text.substring(0, _expandAt).trimRight()}\u2026';
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SelectableText(shown, style: PT.small),
+        if (truncated)
+          GestureDetector(
+            onTap: () => setState(
+                () => isOpen ? expanded.remove(index) : expanded.add(index)),
+            child: Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Text(isOpen ? 'Show less' : 'Show more',
+                  style: PT.small.copyWith(color: P.accent)),
+            ),
+          ),
+      ],
     );
   }
 }
