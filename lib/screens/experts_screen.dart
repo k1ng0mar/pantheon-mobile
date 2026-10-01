@@ -67,7 +67,7 @@ class _TeamsTab extends StatefulWidget {
 }
 
 class _TeamsTabState extends State<_TeamsTab>
-    with AutomaticKeepAlivesMixin {
+    with AutomaticKeepAliveClientMixin {
   Future<List<Team>>? _future;
   final Set<String> _busy = {};
 
@@ -257,7 +257,7 @@ class _ExpertsTab extends StatefulWidget {
 }
 
 class _ExpertsTabState extends State<_ExpertsTab>
-    with AutomaticKeepAlivesMixin {
+    with AutomaticKeepAliveClientMixin {
   Future<List<Expert>>? _future;
   final Set<String> _busy = {};
 

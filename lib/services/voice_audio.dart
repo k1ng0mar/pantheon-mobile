@@ -6,7 +6,7 @@ import 'package:record/record.dart';
 
 /// Microphone + speaker for live voice mode.
 ///
-/// DEPENDENCIES (not yet in pubspec — add and run `flutter pub get`):
+/// DEPENDENCIES (in pubspec.yaml — run `flutter pub get` after edits):
 /// - `record: ^5.1.2` — mic capture as 16 kHz mono 16-bit PCM
 /// - `audioplayers: ^6.1.0` — playback of the agent's spoken replies
 ///

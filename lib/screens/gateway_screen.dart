@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../widgets/chips.dart';
+
 import '../models/models.dart';
 import '../services/pantheon_api.dart';
 import '../theme.dart';

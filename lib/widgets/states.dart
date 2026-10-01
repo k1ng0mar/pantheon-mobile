@@ -61,6 +61,46 @@ class EmptyState extends StatelessWidget {
   }
 }
 
+/// Centered loading indicator with a label.
+class LoadingState extends StatelessWidget {
+  final String label;
+
+  const LoadingState({super.key, this.label = 'Loading…'});
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const CircularProgressIndicator(strokeWidth: 2.5),
+          const SizedBox(height: 12),
+          Text(label, style: PT.small),
+        ],
+      ),
+    );
+  }
+}
+
+/// Centered error message with an optional retry action.
+class ErrorState extends StatelessWidget {
+  final String message;
+  final VoidCallback? onRetry;
+
+  const ErrorState({super.key, required this.message, this.onRetry});
+
+  @override
+  Widget build(BuildContext context) {
+    return EmptyState(
+      icon: Icons.cloud_off_outlined,
+      title: 'Something went wrong',
+      body: message,
+      ctaLabel: onRetry != null ? 'Retry' : null,
+      onCta: onRetry,
+    );
+  }
+}
+
 /// Shimmer skeleton block.
 class Shimmer extends StatefulWidget {
   final double width;

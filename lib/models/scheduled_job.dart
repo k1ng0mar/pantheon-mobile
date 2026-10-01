@@ -81,6 +81,7 @@ class ScheduledJob {
   final int? nextFireMs;
   final String? model;
   final String? provider;
+  final String? overlap;
 
   ScheduledJob({
     required this.id,
@@ -92,6 +93,7 @@ class ScheduledJob {
     this.nextFireMs,
     this.model,
     this.provider,
+    this.overlap,
   });
 
   factory ScheduledJob.fromJson(Map<String, dynamic> j) => ScheduledJob(
@@ -104,5 +106,6 @@ class ScheduledJob {
         nextFireMs: (j['next_fire_ms'] as num?)?.toInt(),
         model: j['model'] as String?,
         provider: j['provider'] as String?,
+        overlap: j['overlap'] as String?,
       );
 }

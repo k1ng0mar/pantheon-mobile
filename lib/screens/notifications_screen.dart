@@ -10,12 +10,12 @@ import '../widgets/states.dart';
 
 /// Notification preferences.
 ///
-/// Persisted locally and ready to drive a delivery path, but: the app has
-/// no push or local-notification delivery wired yet (no FCM/APNs/local
-/// notifications package), so nothing actually fires today. Quiet hours,
-/// per-session mute, and sound prefs are stored now and the delivery layer
-/// will consult `isQuietNow()`, `isSessionMuted(id)`, and
-/// `notifSoundEnabled` when it lands.
+/// Persisted locally and consulted by [NotificationService] before every
+/// local notification: master switch, per-event toggles, quiet hours
+/// (`isQuietNow()`), per-session mute (`isSessionMuted(id)`), and sound.
+/// There is no push (FCM/APNs) path — delivery is local notifications
+/// only, so events are observed while the app polls (run poller,
+/// approvals poller).
 class NotificationsScreen extends StatelessWidget {
   final PantheonApi api;
 
@@ -33,8 +33,9 @@ class NotificationsScreen extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 8),
             child: Text(
               'Choose what the app may tell you about. '
-              'Push delivery is not wired yet, so these preferences are '
-              'stored now and will take effect when delivery lands.',
+              'Delivery is local notifications (no push): the app checks '
+              'these preferences — master switch, quiet hours, '
+              'per-session mute — before showing anything.',
               style: PT.meta.copyWith(height: 1.4),
             ),
           ),
@@ -150,7 +151,7 @@ class NotificationsScreen extends StatelessWidget {
                     children: [
                       Text('${muted.length} muted', style: PT.monoSm),
                       const SizedBox(width: 4),
-                      const Icon(Icons.chevron_right_rounded,
+                      Icon(Icons.chevron_right_rounded,
                           size: 18, color: P.inkFaint),
                     ],
                   ),

@@ -109,7 +109,6 @@ class _SwarmScreenState extends State<SwarmScreen> {
   // and back resumes the same swarm.
   String? _swarmId;
   _SwarmView? _status;
-  bool _statusLoading = false;
   bool _gone = false;
   bool _retrying = false;
   Timer? _poll;
@@ -189,7 +188,6 @@ class _SwarmScreenState extends State<SwarmScreen> {
       final view = _SwarmView.fromJson(j);
       setState(() {
         _status = view;
-        _statusLoading = false;
         _gone = false;
       });
       if (!_isLive(view.status)) {
@@ -203,7 +201,6 @@ class _SwarmScreenState extends State<SwarmScreen> {
       if (e.status == 404 && mounted) {
         setState(() {
           _gone = true;
-          _statusLoading = false;
         });
         _stopPolling();
       }
@@ -245,7 +242,6 @@ class _SwarmScreenState extends State<SwarmScreen> {
         _swarmId = id;
         _status = null;
         _gone = false;
-        _statusLoading = true;
       });
       await _pollOnce();
       _ensurePolling();
@@ -261,7 +257,8 @@ class _SwarmScreenState extends State<SwarmScreen> {
     if (id == null) return;
     setState(() => _retrying = true);
     try {
-      // No feedback body: the backend defaults to the judge's notes.
+      // The backend retry takes no feedback body (it relaunches with the
+      // judge's notes), so send nothing: promising feedback would drop it.
       await widget.api.retrySwarm(id);
       if (!mounted) return;
       toast(context, 'Retry sent. Starting a new round.');
@@ -599,8 +596,11 @@ class _SwarmScreenState extends State<SwarmScreen> {
               Text('Max rounds reached.',
                   style: PT.meta.copyWith(color: P.inkFaint))
             else
+              // Plain retry: the backend ignores any feedback body, so the
+              // button must not promise one. The next round is judged
+              // again, and its notes drive the round after.
               PillButton(
-                label: _retrying ? 'Retrying…' : 'Retry with feedback',
+                label: _retrying ? 'Retrying…' : 'Retry',
                 color: P.warn,
                 onTap: _retrying ? null : _retry,
               ),

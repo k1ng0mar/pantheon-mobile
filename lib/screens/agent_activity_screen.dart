@@ -78,7 +78,7 @@ class _AgentActivityScreenState extends State<AgentActivityScreen> {
     return Scaffold(
       appBar: AppBar(
         leading: IconButton(
-          icon: const Icon(Icons.chevron_left_rounded,
+          icon: Icon(Icons.chevron_left_rounded,
               size: 30, color: P.ink, weight: 1.6),
           onPressed: () => Navigator.of(context).pop(),
         ),

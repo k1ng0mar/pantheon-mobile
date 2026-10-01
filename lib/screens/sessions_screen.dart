@@ -33,6 +33,10 @@ class _SessionsScreenState extends State<SessionsScreen> {
   String? _statusFilter;
   Future<List<PantheonRun>>? _future;
 
+  /// Active agent/profile name for the pinned home row; 'Pantheon'
+  /// until the config resolves.
+  String _agentName = 'Pantheon';
+
   static const _statuses = [
     'running',
     'awaiting_approval',
@@ -45,6 +49,19 @@ class _SessionsScreenState extends State<SessionsScreen> {
   void initState() {
     super.initState();
     _load();
+    _resolveAgentName();
+  }
+
+  /// Best-effort active-agent name for the pinned home row.
+  Future<void> _resolveAgentName() async {
+    try {
+      final doc = await widget.api.getConfig();
+      final name = doc.activeAgent;
+      if (!mounted) return;
+      if (name != null && name.isNotEmpty) {
+        setState(() => _agentName = name);
+      }
+    } catch (_) {}
   }
 
   @override
@@ -233,6 +250,11 @@ class _SessionsScreenState extends State<SessionsScreen> {
 
   Widget _sessionRow(PantheonRun s) {
     final live = s.status == 'running';
+    // The backend's permanent home session renders with the agent name
+    // as its title and no PINNED chip; other pinned sessions (if any)
+    // keep the badge.
+    final isHome = s.id == 'home';
+    final title = isHome ? _agentName : s.displayTitle;
     final subtitle = (s.lastActivity?.isNotEmpty ?? false)
         ? s.lastActivity!
         : '${s.turns} turns · ${s.toolCalls} tool calls';
@@ -278,13 +300,13 @@ class _SessionsScreenState extends State<SessionsScreen> {
                     children: [
                       Expanded(
                         child: Text(
-                          s.displayTitle,
+                          title,
                           style: PT.rowTitle,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),
-                      if (s.pinned) _pinnedBadge(),
+                      if (s.pinned && !isHome) _pinnedBadge(),
                     ],
                   ),
                   const SizedBox(height: 3),
@@ -379,7 +401,7 @@ class _SessionsScreenState extends State<SessionsScreen> {
         try {
           await widget.api.renameRun(s.id, title);
           toast(context, 'Renamed.');
-          await _load();
+          _load();
         } catch (e) {
           if (mounted) toastError(context, e);
         }
@@ -403,7 +425,7 @@ class _SessionsScreenState extends State<SessionsScreen> {
                   api: widget.api,
                   runId: forked.id,
                   pendingApprovals: widget.pendingApprovals)));
-          await _load();
+          _load();
         } catch (e) {
           if (mounted) toastError(context, e);
         }
@@ -420,7 +442,7 @@ class _SessionsScreenState extends State<SessionsScreen> {
           try {
             await widget.api.deleteRun(s.id);
             toast(context, 'Deleted.');
-            await _load();
+            _load();
           } catch (e) {
             if (mounted) toastError(context, e);
           }

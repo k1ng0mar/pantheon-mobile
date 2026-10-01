@@ -1,5 +1,19 @@
 import 'pending_input.dart';
 
+class ToolCallRef {
+  final String id;
+  final String name;
+  final String arguments;
+
+  ToolCallRef({required this.id, required this.name, required this.arguments});
+
+  factory ToolCallRef.fromJson(Map<String, dynamic> j) => ToolCallRef(
+        id: j['id'] as String? ?? '',
+        name: j['name'] as String? ?? '',
+        arguments: j['arguments'] as String? ?? '',
+      );
+}
+
 class TranscriptItem {
   final String type; // message | reasoning
   final String? role;
@@ -8,15 +22,32 @@ class TranscriptItem {
   /// per-message timestamps; older entries may omit them, in which case
   /// this is null and the app falls back to hiding the time.
   final int? tsMs;
+  /// Tool invocations requested by an assistant message. The backend
+  /// serializes these as `tool_calls: [{id, name, arguments}]` on the
+  /// assistant row; the tool result rows follow with `role: "tool"` and
+  /// a matching `tool_call_id`. Never empty except on legacy rows.
+  final List<ToolCallRef> toolCalls;
+  /// Present on `role: "tool"` rows; matches the assistant tool_call id.
+  final String? toolCallId;
 
   TranscriptItem(
-      {required this.type, this.role, required this.content, this.tsMs});
+      {required this.type,
+      this.role,
+      required this.content,
+      this.tsMs,
+      this.toolCalls = const [],
+      this.toolCallId});
 
   factory TranscriptItem.fromJson(Map<String, dynamic> j) => TranscriptItem(
         type: j['type'] as String? ?? 'message',
         role: j['role'] as String?,
         content: j['content'] as String? ?? '',
         tsMs: (j['ts_ms'] as num?)?.toInt(),
+        toolCalls: ((j['tool_calls'] as List?) ?? const [])
+            .whereType<Map<String, dynamic>>()
+            .map(ToolCallRef.fromJson)
+            .toList(),
+        toolCallId: j['tool_call_id'] as String?,
       );
 }
 

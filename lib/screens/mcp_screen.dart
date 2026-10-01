@@ -315,7 +315,7 @@ class _McpScreenState extends State<McpScreen> {
                                   child: Text(name, style: PT.mono),
                                 ),
                                 if (_busy.contains(name))
-                                  const SizedBox(
+                                  SizedBox(
                                     width: 18,
                                     height: 18,
                                     child: CircularProgressIndicator(

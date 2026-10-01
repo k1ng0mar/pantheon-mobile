@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../models/models.dart';
+import '../services/notification_service.dart';
 import '../services/pantheon_api.dart';
 import '../theme.dart';
 import '../widgets/buttons.dart';
@@ -30,6 +31,10 @@ class _ApprovalsScreenState extends State<ApprovalsScreen> {
   /// decision can't be made against a stale list.
   Timer? _pollTimer;
 
+  /// Approval ids already seen: the poller notifies only for newly
+  /// parked ones.
+  final Set<String> _seenApprovalIds = {};
+
   @override
   void initState() {
     super.initState();
@@ -49,6 +54,11 @@ class _ApprovalsScreenState extends State<ApprovalsScreen> {
       _leaving.clear();
       _future = widget.api.approvals().then((list) {
         widget.pendingApprovals.value = list.length;
+        // Seed the seen set so the initial load doesn't notify for
+        // approvals that were already parked.
+        _seenApprovalIds
+          ..clear()
+          ..addAll(list.map((a) => a.id));
         return list;
       });
     });
@@ -64,6 +74,18 @@ class _ApprovalsScreenState extends State<ApprovalsScreen> {
       final list = await widget.api.approvals();
       if (!mounted) return;
       widget.pendingApprovals.value = list.length;
+      // Alertable event: newly parked approvals. The delivery path
+      // consults the stored notification prefs before showing anything.
+      for (final a in list) {
+        if (_seenApprovalIds.add(a.id)) {
+          unawaited(NotificationService.instance.notify(
+            event: NotificationService.eventApprovalParked,
+            sessionId: a.runId.isNotEmpty ? a.runId : null,
+            title: 'Approval needed',
+            body: '${a.displayRun} is parked waiting for your decision.',
+          ));
+        }
+      }
       setState(() => _future = Future.value(list));
     } catch (_) {}
   }
