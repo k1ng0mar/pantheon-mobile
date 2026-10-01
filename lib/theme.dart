@@ -331,7 +331,9 @@ ThemeData pantheonTheme(Brightness brightness, {bool compact = false}) {
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(P.r28)),
       ),
-      showDragHandle: true,
+      // Sheets draw their own styled handle (SheetHandle); the framework
+      // handle on top of it showed two pills on every sheet.
+      showDragHandle: false,
     ),
     snackBarTheme: SnackBarThemeData(
       backgroundColor:
