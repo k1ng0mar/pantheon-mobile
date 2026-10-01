@@ -29,6 +29,10 @@ class _CodeBlockState extends State<CodeBlock> {
   late String _languageTag;
   late String _themeId;
 
+  /// Shared by the horizontal code scroller and its visible scrollbar,
+  /// so wide code shows a scroll cue instead of silently clipping.
+  final ScrollController _codeScroll = ScrollController();
+
   @override
   void initState() {
     super.initState();
@@ -36,6 +40,12 @@ class _CodeBlockState extends State<CodeBlock> {
     _languageTag = widget.languageTag;
     _themeId = AppPreferences.instance.codeTheme.value;
     _highlight();
+  }
+
+  @override
+  void dispose() {
+    _codeScroll.dispose();
+    super.dispose();
   }
 
   void _highlight() {
@@ -109,15 +119,20 @@ class _CodeBlockState extends State<CodeBlock> {
                 future: _highlighted,
                 builder: (_, snap) {
                   final span = snap.data ?? TextSpan(text: widget.code);
-                  return SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    padding: const EdgeInsets.all(12),
-                    child: SelectableText.rich(
-                      span,
-                      style: const TextStyle(
-                        fontFamily: 'JetBrainsMono',
-                        fontSize: 12.5,
-                        height: 1.5,
+                  return Scrollbar(
+                    controller: _codeScroll,
+                    thumbVisibility: true,
+                    child: SingleChildScrollView(
+                      controller: _codeScroll,
+                      scrollDirection: Axis.horizontal,
+                      padding: const EdgeInsets.all(12),
+                      child: SelectableText.rich(
+                        span,
+                        style: const TextStyle(
+                          fontFamily: 'JetBrainsMono',
+                          fontSize: 12.5,
+                          height: 1.5,
+                        ),
                       ),
                     ),
                   );
