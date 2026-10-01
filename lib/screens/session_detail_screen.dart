@@ -2122,9 +2122,13 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      builder: (_) => FractionallySizedBox(
-        heightFactor: 0.92,
-        child: _AgentSheet(delegates: delegates),
+      builder: (_) => DraggableScrollableSheet(
+        initialChildSize: 0.5,
+        minChildSize: 0.3,
+        maxChildSize: delegates.length == 1 ? 0.6 : 0.92,
+        expand: false,
+        builder: (_, scrollController) => _AgentSheet(
+            delegates: delegates, scrollController: scrollController),
       ),
     );
   }
@@ -2137,10 +2141,16 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      builder: (_) => FractionallySizedBox(
-        heightFactor: 0.92,
-        child: _ThoughtsSheet(
-            steps: steps, live: live, onOpenAgent: _openAgentSheet),
+      builder: (_) => DraggableScrollableSheet(
+        initialChildSize: 0.5,
+        minChildSize: 0.3,
+        maxChildSize: steps.length == 1 ? 0.6 : 0.92,
+        expand: false,
+        builder: (_, scrollController) => _ThoughtsSheet(
+            steps: steps,
+            live: live,
+            onOpenAgent: _openAgentSheet,
+            scrollController: scrollController),
       ),
     );
   }
@@ -4352,8 +4362,14 @@ class _ThoughtsSheet extends StatefulWidget {
   /// there, not in the Thoughts expansion).
   final void Function(List<_ThoughtStep>) onOpenAgent;
 
+  /// Scroll controller owned by the enclosing DraggableScrollableSheet.
+  final ScrollController? scrollController;
+
   const _ThoughtsSheet(
-      {required this.steps, required this.live, required this.onOpenAgent});
+      {required this.steps,
+      required this.live,
+      required this.onOpenAgent,
+      this.scrollController});
 
   @override
   State<_ThoughtsSheet> createState() => _ThoughtsSheetState();
@@ -4395,6 +4411,7 @@ class _ThoughtsSheetState extends State<_ThoughtsSheet> {
           const Divider(height: 1),
           Expanded(
             child: ListView.builder(
+              controller: widget.scrollController,
               padding: const EdgeInsets.only(bottom: 24),
               itemCount: widget.steps.length + (_showDone ? 1 : 0),
               itemBuilder: (_, i) => i < widget.steps.length
@@ -4729,7 +4746,10 @@ class _ThoughtsSheetState extends State<_ThoughtsSheet> {
 class _AgentSheet extends StatefulWidget {
   final List<_ThoughtStep> delegates;
 
-  const _AgentSheet({required this.delegates});
+  /// Scroll controller owned by the enclosing DraggableScrollableSheet.
+  final ScrollController? scrollController;
+
+  const _AgentSheet({required this.delegates, this.scrollController});
 
   @override
   State<_AgentSheet> createState() => _AgentSheetState();
@@ -4771,6 +4791,7 @@ class _AgentSheetState extends State<_AgentSheet> {
           const Divider(height: 1),
           Expanded(
             child: ListView.builder(
+              controller: widget.scrollController,
               padding: const EdgeInsets.only(bottom: 24),
               itemCount: widget.delegates.length,
               itemBuilder: (_, i) => _agentBlock(widget.delegates[i], i),
