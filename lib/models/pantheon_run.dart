@@ -5,12 +5,27 @@ class ToolCallRef {
   final String name;
   final String arguments;
 
-  ToolCallRef({required this.id, required this.name, required this.arguments});
+  /// Backend-provided wall-clock start of the tool call (ms since epoch).
+  /// Absent on legacy rows.
+  final int? startedMs;
+
+  /// Backend-provided execution time in ms. Absent on legacy rows; the
+  /// app falls back to the assistant→result timestamp delta.
+  final int? durationMs;
+
+  ToolCallRef(
+      {required this.id,
+      required this.name,
+      required this.arguments,
+      this.startedMs,
+      this.durationMs});
 
   factory ToolCallRef.fromJson(Map<String, dynamic> j) => ToolCallRef(
         id: j['id'] as String? ?? '',
         name: j['name'] as String? ?? '',
         arguments: j['arguments'] as String? ?? '',
+        startedMs: (j['started_ms'] as num?)?.toInt(),
+        durationMs: (j['duration_ms'] as num?)?.toInt(),
       );
 }
 
@@ -30,13 +45,18 @@ class TranscriptItem {
   /// Present on `role: "tool"` rows; matches the assistant tool_call id.
   final String? toolCallId;
 
+  /// Backend-provided execution time of a tool call, carried on the
+  /// tool-result row. Absent on legacy rows.
+  final int? durationMs;
+
   TranscriptItem(
       {required this.type,
       this.role,
       required this.content,
       this.tsMs,
       this.toolCalls = const [],
-      this.toolCallId});
+      this.toolCallId,
+      this.durationMs});
 
   factory TranscriptItem.fromJson(Map<String, dynamic> j) => TranscriptItem(
         type: j['type'] as String? ?? 'message',
@@ -48,6 +68,7 @@ class TranscriptItem {
             .map(ToolCallRef.fromJson)
             .toList(),
         toolCallId: j['tool_call_id'] as String?,
+        durationMs: (j['duration_ms'] as num?)?.toInt(),
       );
 }
 
@@ -115,6 +136,14 @@ class PantheonRun {
   /// flag is present. The sessions list renders these above all others.
   final bool pinned;
 
+  /// Whether the run is archived. Archived runs are excluded from the
+  /// list endpoint unless `include_archived=1`.
+  final bool archived;
+
+  /// Project this run belongs to, if any (set via
+  /// `POST /api/runs/:id/project`).
+  final String? project;
+
   PantheonRun({
     required this.id,
     required this.status,
@@ -137,6 +166,8 @@ class PantheonRun {
     this.mode = 'build',
     this.contextTokens = const ContextTokens(),
     this.pinned = false,
+    this.archived = false,
+    this.project,
   });
 
   factory PantheonRun.fromJson(Map<String, dynamic> j) {
@@ -192,6 +223,8 @@ class PantheonRun {
       pinned: j['is_home'] == true ||
           j['pinned'] == true ||
           (j['id'] as String?) == 'home',
+      archived: j['archived'] == true,
+      project: j['project'] as String?,
       contextTokens: ctx is Map
           ? ContextTokens.fromJson(ctx.cast<String, dynamic>())
           : const ContextTokens(),

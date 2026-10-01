@@ -233,8 +233,12 @@ class PantheonApi {
         path.contains('/api/browser/') ||
         path.contains('/api/logins') ||
         path.contains('/api/plugins/import') ||
+        path.contains('/api/projects') ||
         path.contains('/retry') ||
         path.contains('/kill') ||
+        path.contains('/pin') ||
+        path.contains('/archive') ||
+        path.contains('/project') ||
         RegExp(r'/api/runs/[^/]+/queue/\d+').hasMatch(path);
   }
 
@@ -466,6 +470,37 @@ class PantheonApi {
   /// Delete a run from the ledger.
   Future<void> deleteRun(String id) async {
     await _delete('/api/runs/${Uri.encodeComponent(id)}');
+  }
+
+  /// Pin or unpin a run (`POST /api/runs/:id/pin {"pinned": bool}`).
+  Future<void> pinRun(String id, bool pinned) async {
+    await _post('/api/runs/${Uri.encodeComponent(id)}/pin',
+        {'pinned': pinned});
+  }
+
+  /// Archive or unarchive a run (`POST /api/runs/:id/archive
+  /// {"archived": bool}`). Archived runs leave the list unless
+  /// `include_archived=1`.
+  Future<void> archiveRun(String id, bool archived) async {
+    await _post('/api/runs/${Uri.encodeComponent(id)}/archive',
+        {'archived': archived});
+  }
+
+  /// Move a run into a project (`POST /api/runs/:id/project
+  /// {"project": name|null}`).
+  Future<void> setRunProject(String id, String? project) async {
+    await _post('/api/runs/${Uri.encodeComponent(id)}/project',
+        {'project': project});
+  }
+
+  /// List run projects (`GET /api/projects [{name, runs}]`).
+  Future<List<RunProject>> getProjects() async {
+    final j = await _get('/api/projects');
+    final list = (j['projects'] as List?) ?? [];
+    return list
+        .whereType<Map>()
+        .map((e) => RunProject.fromJson(e.cast<String, dynamic>()))
+        .toList();
   }
 
   // ------------------------------------------------------------------

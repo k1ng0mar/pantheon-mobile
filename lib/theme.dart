@@ -359,7 +359,13 @@ String compactNum(num n) {
   return n.toStringAsFixed(0);
 }
 
-String money(num usd) => '\$${usd.toDouble().toStringAsFixed(2)}';
+String money(num usd) {
+  final v = usd.toDouble();
+  // Sub-cent but nonzero costs: show the floor as "<$0.01" rather than
+  // a misleading "$0.00".
+  if (v > 0 && v < 0.01) return '<\$0.01';
+  return '\$${v.toStringAsFixed(2)}';
+}
 
 /// Absolute clock time: "10:29pm".
 String clockTime(int tsMs) {
