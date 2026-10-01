@@ -10,6 +10,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:open_filex/open_filex.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:record/record.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/models.dart';
 import '../services/app_preferences.dart';
@@ -83,6 +84,11 @@ class SessionDetailScreen extends StatefulWidget {
 class _SessionDetailScreenState extends State<SessionDetailScreen> {
   PantheonRun? _run;
   final List<TranscriptItem> _messages = [];
+
+  /// Local-only message votes (thumbs up/down), keyed by [_voteKey].
+  /// Persisted in SharedPreferences; there is no backend endpoint for
+  /// these — they are a device-local signal only.
+  final Map<String, int> _votes = {};
 
   /// Optimistic bubbles not yet present in the server transcript.
   /// Reconciled away by [_syncMessages] once the server admits them —
@@ -230,6 +236,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
     if (widget.initialDraft != null && widget.initialDraft!.isNotEmpty) {
       _composer.text = widget.initialDraft!;
     }
+    _loadVotes();
     _load(initial: true);
   }
 
@@ -1938,6 +1945,42 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
       }
     }
 
+    // Turn-final assistant messages (the last assistant text before
+    // the next user message, or end-of-list when settled) get an
+    // elapsed + actions footer. Elapsed is measured from the turn's
+    // start (user message, else first item) to that message's stamp.
+    final turnElapsed = <int, int?>{};
+    {
+      int? startMs;
+      int? candidate;
+      for (var k = 0; k < _messages.length; k++) {
+        final m = _messages[k];
+        if (m.role == 'user') {
+          if (candidate != null) {
+            final endMs = _messages[candidate].tsMs;
+            turnElapsed[candidate] =
+                (startMs != null && endMs != null && endMs >= startMs)
+                    ? endMs - startMs
+                    : null;
+          }
+          startMs = m.tsMs;
+          candidate = null;
+        } else {
+          startMs ??= m.tsMs;
+          if (m.role == 'assistant' && m.content.trim().isNotEmpty) {
+            candidate = k;
+          }
+        }
+      }
+      if (candidate != null && !live) {
+        final endMs = _messages[candidate].tsMs;
+        turnElapsed[candidate] =
+            (startMs != null && endMs != null && endMs >= startMs)
+                ? endMs - startMs
+                : null;
+      }
+    }
+
     var i = 0;
     while (i < _messages.length) {
       final t = _messages[i];
@@ -1954,6 +1997,11 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
         if (t.content.trim().isNotEmpty) {
           flushThoughts();
           rows.add(StaggerItem(index: i, child: _bubble(_stripToolCalls(t))));
+          if (turnElapsed.containsKey(i)) {
+            rows.add(StaggerItem(
+                index: i,
+                child: _turnFooter(_messages[i], turnElapsed[i])));
+          }
         }
         thoughtItems.add(t);
         bufferedIndices.add(i);
@@ -1968,6 +2016,10 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
       }
       flushThoughts();
       rows.add(StaggerItem(index: i, child: _bubble(t)));
+      if (turnElapsed.containsKey(i)) {
+        rows.add(StaggerItem(
+            index: i, child: _turnFooter(_messages[i], turnElapsed[i])));
+      }
       i++;
     }
     flushThoughts();
@@ -2024,6 +2076,135 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
       }
     }
     return steps;
+  }
+
+  /// Footer under a turn's final assistant message: the turn's
+  /// elapsed time (hidden when timestamps are missing) and actions.
+  /// Copy goes to the clipboard, Share opens the export sheet with
+  /// that message's markdown, thumbs up/down are local-only persisted
+  /// toggles (no backend endpoint).
+  Widget _turnFooter(TranscriptItem t, int? elapsedMs) {
+    final vote = _votes[_voteKey(t.content)];
+    return Padding(
+      padding: const EdgeInsets.only(top: 2, bottom: 12),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (elapsedMs != null) ...[
+            Text('Took ${_fmtTurnElapsed(elapsedMs)}', style: PT.meta),
+            const SizedBox(width: 14),
+          ],
+          _footerBtn(Icons.copy_rounded, 'Copy', () => _copyMessage(t)),
+          _footerBtn(
+              Icons.ios_share_rounded, 'Share', () => _shareMessage(t)),
+          _footerBtn(
+            vote == 1 ? Icons.thumb_up_rounded : Icons.thumb_up_outlined,
+            'Thumbs up',
+            () => _toggleVote(t, 1),
+            active: vote == 1,
+          ),
+          _footerBtn(
+            vote == -1
+                ? Icons.thumb_down_rounded
+                : Icons.thumb_down_outlined,
+            'Thumbs down',
+            () => _toggleVote(t, -1),
+            active: vote == -1,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _footerBtn(IconData icon, String tooltip, VoidCallback onTap,
+      {bool active = false}) {
+    return Tooltip(
+      message: tooltip,
+      child: GestureDetector(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(6),
+          child: Icon(icon,
+              size: 17, color: active ? P.accent : P.inkSecondary),
+        ),
+      ),
+    );
+  }
+
+  String _fmtTurnElapsed(int ms) {
+    final totalSec = (ms / 1000).round();
+    if (totalSec < 60) return '${totalSec}s';
+    final m = totalSec ~/ 60;
+    final s = totalSec % 60;
+    if (m < 60) return s == 0 ? '${m}m' : '${m}m ${s}s';
+    final h = m ~/ 60;
+    final rm = m % 60;
+    return rm == 0 ? '${h}h' : '${h}h ${rm}m';
+  }
+
+  /// Stable local key for a message's vote. Uses an FNV-1a hash of the
+  /// content (String.hashCode isn't stable across app runs).
+  String _voteKey(String content) =>
+      'msg_vote_${widget.runId}_${content.length}_${_fnv1a(content)}';
+
+  int _fnv1a(String s) {
+    var h = 0x811c9dc5;
+    for (final c in s.codeUnits) {
+      h ^= c;
+      h = (h * 0x01000193) & 0xFFFFFFFF;
+    }
+    return h;
+  }
+
+  Future<void> _loadVotes() async {
+    try {
+      final sp = await SharedPreferences.getInstance();
+      final prefix = 'msg_vote_${widget.runId}_';
+      var changed = false;
+      for (final k in sp.getKeys()) {
+        if (k.startsWith(prefix)) {
+          final v = sp.getInt(k);
+          if (v != null) {
+            _votes[k] = v;
+            changed = true;
+          }
+        }
+      }
+      if (changed && mounted) setState(() {});
+    } catch (_) {}
+  }
+
+  Future<void> _toggleVote(TranscriptItem t, int value) async {
+    final key = _voteKey(t.content);
+    setState(() {
+      if (_votes[key] == value) {
+        _votes.remove(key);
+      } else {
+        _votes[key] = value;
+      }
+    });
+    try {
+      final sp = await SharedPreferences.getInstance();
+      if (_votes.containsKey(key)) {
+        await sp.setInt(key, _votes[key]!);
+      } else {
+        await sp.remove(key);
+      }
+    } catch (_) {}
+  }
+
+  void _copyMessage(TranscriptItem t) {
+    Clipboard.setData(ClipboardData(text: t.content));
+    toast(context, 'Message copied.');
+    HapticFeedback.lightImpact();
+  }
+
+  void _shareMessage(TranscriptItem t) {
+    showExportSheet(
+      context,
+      _run?.displayTitle ?? 'Message',
+      utf8.encode(t.content),
+    );
   }
 
   /// Assistant message copy without its tool calls, so the text renders
