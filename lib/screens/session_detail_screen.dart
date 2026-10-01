@@ -1924,7 +1924,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
     final bufferedIndices = <int>[];
     void flushThoughts() {
       final indices = List<int>.from(bufferedIndices);
-      final steps = _stepsFromItems(thoughtItems);
+      final steps = _stepsFromItems(thoughtItems, indices);
       thoughtItems.clear();
       bufferedIndices.clear();
       if (steps.isNotEmpty) {
@@ -1987,8 +1987,11 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
   /// Build Thought steps from one contiguous block of thought items:
   /// reasoning summaries and tool calls (with their results). Orphan
   /// tool results with no matching call row become their own step rather
-  /// than a fake assistant bubble.
-  List<_ThoughtStep> _stepsFromItems(List<TranscriptItem> items) {
+  /// than a fake assistant bubble. [indices] are the transcript indices
+  /// of [items], used to anchor subagent pills to the delegate step's
+  /// transcript position.
+  List<_ThoughtStep> _stepsFromItems(
+      List<TranscriptItem> items, List<int> indices) {
     final live = _isLive(_run?.status ?? '');
     final results = <String, TranscriptItem>{};
     for (final t in items) {
@@ -1997,24 +2000,28 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
       }
     }
     final steps = <_ThoughtStep>[];
+    var k = 0;
     for (final t in items) {
+      final idx = k < indices.length ? indices[k] : -1;
+      k++;
       if (t.type == 'reasoning') {
         if (t.content.trim().isNotEmpty) {
-          steps.add(_ThoughtStep.reasoning(t.content));
+          steps.add(_ThoughtStep.reasoning(t.content, idx));
         }
       } else if (t.role == 'assistant' && t.toolCalls.isNotEmpty) {
         for (final c in t.toolCalls) {
           steps.add(_ThoughtStep.tool(
             call: c,
             result: results[c.id],
-            anchorTsMs: t.tsMs,
+            transcriptIndex: idx,
             live: live,
+            ownerTsMs: t.tsMs,
           ));
         }
       } else if (t.role == 'tool') {
         final matched =
-            steps.any((s) => !s.isReasoning && s.call?.id == t.toolCallId);
-        if (!matched) steps.add(_ThoughtStep.orphanResult(t));
+            steps.any((s) => !s.isReasoning && s.id == t.toolCallId);
+        if (!matched) steps.add(_ThoughtStep.orphanResult(t, idx));
       }
     }
     return steps;
@@ -4118,58 +4125,36 @@ class _ImageViewerDialog extends StatelessWidget {
   }
 }
 
-/// Tool-call status for the Thoughts sheet.
-enum _CallStatus { running, done, failed, pending }
+/// Tool-call status for the Thoughts sheet: spinner, check, or red X.
+/// There is no pending state — a call with no result on a settled run
+/// is an error, not a clock.
+enum _StepStatus { running, done, error }
 
-/// One row in the Thoughts sheet: a reasoning summary or a tool call
-/// with its result.
-class _ThoughtStep {
-  final bool isReasoning;
-  final String? reasoningText;
-  final ToolCallRef? call;
-  final TranscriptItem? result;
-  final _CallStatus status;
-  final int? anchorTsMs;
-
-  _ThoughtStep.reasoning(this.reasoningText)
-      : isReasoning = true,
-        call = null,
-        result = null,
-        status = _CallStatus.done,
-        anchorTsMs = null;
-
-  _ThoughtStep.tool(
-      {required this.call,
-      this.result,
-      this.anchorTsMs,
-      required bool live})
-      : isReasoning = false,
-        reasoningText = null,
-        status = result != null
-            ? (_looksLikeError(result.content)
-                ? _CallStatus.failed
-                : _CallStatus.done)
-            : (live ? _CallStatus.running : _CallStatus.pending);
-
-  /// A tool result row with no matching call row: shown as a step with
-  /// its output, never as a fake assistant message.
-  _ThoughtStep.orphanResult(this.result)
-      : isReasoning = false,
-        reasoningText = null,
-        call = null,
-        anchorTsMs = null,
-        status = _CallStatus.done;
-}
-
-/// Tool name → verb base for the Thoughts rows.
-String _verbBase(String name) {
+/// Tool name → step kind. Covers the contract kinds:
+/// command | tool | delegate | file-search | web-search | read | edit.
+String _stepKind(String name) {
   final n = name.toLowerCase();
-  if (n.contains('search') ||
-      n.contains('grep') ||
-      n.contains('find') ||
-      n.contains('lookup')) {
-    return 'search';
+  if (n.contains('delegate') ||
+      n.contains('subagent') ||
+      n.contains('dispatch') ||
+      n.contains('swarm')) {
+    return 'delegate';
   }
+  if (n.contains('web') &&
+      (n.contains('search') ||
+          n.contains('lookup') ||
+          n.contains('fetch') ||
+          n.contains('crawl'))) {
+    return 'web-search';
+  }
+  if (n.contains('grep') ||
+      n.contains('glob') ||
+      n.contains('find') ||
+      n.contains('rg') ||
+      n.contains('lookup')) {
+    return 'file-search';
+  }
+  if (n.contains('search')) return 'web-search';
   if (n.contains('exec') ||
       n.contains('command') ||
       n.contains('shell') ||
@@ -4185,6 +4170,184 @@ String _verbBase(String name) {
   }
   if (n.contains('read')) return 'read';
   return 'tool';
+}
+
+/// MCP-ish names like `filesystem__read_file` → "Read File".
+String _humanToolName(String name) {
+  var n = name;
+  final sep = n.lastIndexOf('__');
+  if (sep >= 0) n = n.substring(sep + 2);
+  final words = n
+      .split(RegExp(r'[_\-\s]+'))
+      .where((w) => w.isNotEmpty)
+      .map((w) => '${w[0].toUpperCase()}${w.substring(1)}');
+  final label = words.join(' ');
+  return label.isEmpty ? name : label;
+}
+
+Map<String, dynamic>? _argsMap(String argsJson) {
+  try {
+    final v = jsonDecode(argsJson);
+    if (v is Map) return v.cast<String, dynamic>();
+  } catch (_) {}
+  return null;
+}
+
+String? _nonEmptyArg(dynamic v) =>
+    v is String && v.trim().isNotEmpty ? v.trim() : null;
+
+/// Delegate call extras parsed from the call arguments. Key names vary
+/// across backends, so probe the common ones.
+String? _delegateAgent(Map<String, dynamic> args) =>
+    _nonEmptyArg(args['agent']) ??
+    _nonEmptyArg(args['subagent_type']) ??
+    _nonEmptyArg(args['subagent']) ??
+    _nonEmptyArg(args['name']);
+
+String? _delegateTask(Map<String, dynamic> args) =>
+    _nonEmptyArg(args['task']) ??
+    _nonEmptyArg(args['description']) ??
+    _nonEmptyArg(args['summary']) ??
+    _nonEmptyArg(args['title']);
+
+String? _delegatePrompt(Map<String, dynamic> args) =>
+    _nonEmptyArg(args['prompt']) ??
+    _nonEmptyArg(args['message']) ??
+    _nonEmptyArg(args['instructions']) ??
+    _nonEmptyArg(args['input']);
+
+/// One row in the Thoughts sheet / agent sheet: a reasoning summary or
+/// a tool call with its result, derived from the new transcript
+/// contract (ts_ms, tool_calls[{id,name,arguments,started_ms,
+/// duration_ms}], tool_call_id, duration_ms on tool results).
+class _ThoughtStep {
+  final bool isReasoning;
+  final String? reasoningText;
+  final ToolCallRef? call;
+  final TranscriptItem? result;
+  final _StepStatus status;
+
+  /// Step identity and derived presentation.
+  final String id;
+  final String kind;
+  final String label;
+  final String args;
+  final String output;
+  final int? startedAtMs;
+  final int? durationMs;
+
+  /// Delegate extras: agent, task, prompt; the agent's result is [output].
+  final String? agent;
+  final String? task;
+  final String? prompt;
+
+  /// Transcript index of the assistant item that owns this step — the
+  /// subagent pill anchors here, never on a timestamp scan.
+  final int transcriptIndex;
+
+  bool get isDelegate => kind == 'delegate';
+
+  _ThoughtStep.reasoning(this.reasoningText, [this.transcriptIndex = -1])
+      : isReasoning = true,
+        call = null,
+        result = null,
+        status = _StepStatus.done,
+        id = '',
+        kind = 'reasoning',
+        label = '',
+        args = '',
+        output = '',
+        startedAtMs = null,
+        durationMs = null,
+        agent = null,
+        task = null,
+        prompt = null;
+
+  _ThoughtStep.tool({
+    required ToolCallRef call,
+    TranscriptItem? result,
+    required this.transcriptIndex,
+    required bool live,
+    int? ownerTsMs,
+  })  : isReasoning = false,
+        reasoningText = null,
+        call = call,
+        result = result,
+        id = call.id,
+        kind = _stepKind(call.name),
+        startedAtMs = call.startedMs,
+        durationMs = _resolveDuration(call, result, ownerTsMs),
+        args = _prettyArgs(call.arguments),
+        output = result?.content ?? '',
+        status = result != null
+            ? (_looksLikeError(result.content)
+                ? _StepStatus.error
+                : _StepStatus.done)
+            : (live ? _StepStatus.running : _StepStatus.error),
+        agent = _stepKind(call.name) == 'delegate'
+            ? _delegateAgent(_argsMap(call.arguments) ?? const {})
+            : null,
+        task = _stepKind(call.name) == 'delegate'
+            ? _delegateTask(_argsMap(call.arguments) ?? const {})
+            : null,
+        prompt = _stepKind(call.name) == 'delegate'
+            ? _delegatePrompt(_argsMap(call.arguments) ?? const {})
+            : null,
+        label = _stepLabel(call, result, live);
+
+  /// A tool result row with no matching call row: shown as a step with
+  /// its output, never as a fake assistant message.
+  _ThoughtStep.orphanResult(this.result, [this.transcriptIndex = -1])
+      : isReasoning = false,
+        reasoningText = null,
+        call = null,
+        status = _StepStatus.done,
+        id = result.toolCallId ?? '',
+        kind = 'tool',
+        label = 'Tool result',
+        args = '',
+        output = result.content,
+        startedAtMs = null,
+        durationMs = result.durationMs,
+        agent = null,
+        task = null,
+        prompt = null;
+
+  /// Backend duration_ms wins (on the call, then on the result row);
+  /// otherwise fall back to the owner→result timestamp delta.
+  static int? _resolveDuration(
+      ToolCallRef call, TranscriptItem? result, int? ownerTsMs) {
+    final direct = call.durationMs ?? result?.durationMs;
+    if (direct != null && direct >= 0) return direct;
+    if (result?.tsMs != null && ownerTsMs != null) {
+      final ms = result!.tsMs! - ownerTsMs;
+      if (ms >= 0) return ms;
+    }
+    return null;
+  }
+
+  /// Self-describing collapsed label, running vs past tense. Delegates
+  /// read "Delegate → {agent}: {task}".
+  static String _stepLabel(
+      ToolCallRef call, TranscriptItem? result, bool live) {
+    final kind = _stepKind(call.name);
+    if (kind == 'delegate') {
+      final m = _argsMap(call.arguments) ?? const {};
+      final a = _delegateAgent(m) ?? 'agent';
+      final t = _delegateTask(m) ?? _humanToolName(call.name);
+      return 'Delegate \u2192 $a: $t';
+    }
+    final past = result != null || !live;
+    final human = _humanToolName(call.name);
+    return switch (kind) {
+      'command' => past ? 'Ran command' : 'Running command',
+      'file-search' => past ? 'Searched files' : 'Searching files',
+      'web-search' => past ? 'Searched the web' : 'Searching the web',
+      'read' => past ? 'Read file' : 'Reading file',
+      'edit' => past ? 'Edited file' : 'Editing file',
+      _ => past ? 'Ran $human' : 'Running $human',
+    };
+  }
 }
 
 /// Best-effort error detection: the backend has no machine-readable
@@ -4236,11 +4399,10 @@ String _prettyArgs(String argsJson) {
   }
 }
 
-/// "1.1s" / "350ms" from the assistant message ts to the tool result ts.
-String? _durationStr(TranscriptItem? result, int? anchorTsMs) {
-  if (result?.tsMs == null || anchorTsMs == null) return null;
-  final ms = result!.tsMs! - anchorTsMs;
-  if (ms < 0) return null;
+/// "1.1s" / "350ms" from a step's resolved duration.
+String? _stepDuration(_ThoughtStep s) {
+  final ms = s.durationMs;
+  if (ms == null || ms < 0) return null;
   if (ms < 1000) return '${ms}ms';
   return '${(ms / 1000).toStringAsFixed(1)}s';
 }
@@ -4250,32 +4412,18 @@ String _reasoningSummary(String text) {
   return _trunc(first, 64);
 }
 
-/// Checklist row title: "Ran command", "Searched", "Edited file"…,
-/// or the reasoning summary.
+/// Checklist row title: the step's self-describing label
+/// ("Running command", "Delegate → researcher: …"), or the reasoning
+/// summary for reasoning steps.
 String _stepTitle(_ThoughtStep s) {
   if (s.isReasoning) return _reasoningSummary(s.reasoningText ?? '');
-  final name = s.call?.name ?? 'tool';
-  final base = _verbBase(name);
-  final past = s.status == _CallStatus.done || s.status == _CallStatus.failed;
-  return switch (base) {
-    'command' => past ? 'Ran command' : 'Running command',
-    'search' => past ? 'Searched' : 'Searching',
-    'edit' => past ? 'Edited file' : 'Editing file',
-    'read' => past ? 'Read file' : 'Reading file',
-    _ => past ? 'Used $name' : 'Using $name',
-  };
+  return s.label;
 }
 
-/// Verb label for an expanded tool card: "Ran command".
+/// Verb label for an expanded tool card: the same self-describing label.
 String _detailVerb(_ThoughtStep s) {
-  final name = s.call?.name ?? 'tool';
-  return switch (_verbBase(name)) {
-    'command' => 'Ran command',
-    'search' => 'Searched',
-    'edit' => 'Edited file',
-    'read' => 'Read file',
-    _ => 'Used $name',
-  };
+  if (s.isReasoning) return 'Reasoning';
+  return s.label;
 }
 
 final _urlRe = RegExp(r'https?://[^\s)>\]]+');
@@ -4377,22 +4525,21 @@ class _ThoughtsSheetState extends State<_ThoughtsSheet> {
     );
   }
 
-  Widget _statusGlyph(_CallStatus status) {
+  /// Status glyph: spinner (running), check (done), red X (error).
+  /// There is intentionally no pending/clock state.
+  Widget _statusGlyph(_StepStatus status) {
     switch (status) {
-      case _CallStatus.running:
+      case _StepStatus.running:
         return const SizedBox(
           width: 16,
           height: 16,
           child: CircularProgressIndicator(strokeWidth: 2),
         );
-      case _CallStatus.done:
+      case _StepStatus.done:
         return Icon(Icons.check_rounded,
             size: 16, color: P.inkSecondary);
-      case _CallStatus.failed:
+      case _StepStatus.error:
         return const Icon(Icons.close_rounded, size: 16, color: P.err);
-      case _CallStatus.pending:
-        return Icon(Icons.schedule_rounded,
-            size: 16, color: P.inkSecondary);
     }
   }
 
@@ -4419,9 +4566,9 @@ class _ThoughtsSheetState extends State<_ThoughtsSheet> {
   Widget _toolDetail(_ThoughtStep s) {
     final call = s.call;
     final argsLine = call == null ? '' : _argSummary(call.arguments);
-    final dur = _durationStr(s.result, s.anchorTsMs);
+    final dur = _stepDuration(s);
     final sources = s.result != null &&
-            _verbBase(call?.name ?? '') == 'search'
+            (s.kind == 'web-search' || s.kind == 'file-search')
         ? _sourceDomains(s.result!.content)
         : const <String>[];
     final resultText = s.result?.content ?? '';
