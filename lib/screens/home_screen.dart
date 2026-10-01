@@ -4,8 +4,10 @@ import '../models/models.dart';
 import '../services/pantheon_api.dart';
 import '../theme.dart';
 import '../widgets/chips.dart';
+import '../widgets/new_chat_sheet.dart';
 import '../widgets/pantheon_card.dart';
 import '../widgets/states.dart';
+import 'session_detail_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   final PantheonApi api;
@@ -20,6 +22,7 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   Future<(Overview, GatewayStatus)>? _future;
+  Future<List<PantheonRun>>? _sessionsFuture;
 
   @override
   void initState() {
@@ -36,6 +39,7 @@ class _HomeScreenState extends State<HomeScreen> {
         widget.pendingApprovals.value = (v[0] as Overview).approvalsPending;
         return (v[0] as Overview, v[1] as GatewayStatus);
       });
+      _sessionsFuture = widget.api.runs(limit: 6);
     });
   }
 
@@ -131,11 +135,9 @@ class _HomeScreenState extends State<HomeScreen> {
                             P.accent)),
                   ],
                 ),
-                const Overline('Runs by status'),
-                StaggerItem(index: 5, child: _statusCard(ov)),
                 const Overline('Scheduler'),
                 StaggerItem(
-                  index: 6,
+                  index: 5,
                   child: PCard(
                     padding: EdgeInsets.zero,
                     child: PRow(
@@ -147,6 +149,8 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                   ),
                 ),
+                const Overline('Recent sessions'),
+                StaggerItem(index: 6, child: _recentSessions()),
               ],
             ),
           );
@@ -212,29 +216,50 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _statusCard(Overview ov) {
-    if (ov.byStatus.isEmpty) {
-      return  PCard(child: Text('No runs yet.', style: PT.small));
-    }
-    final entries = ov.byStatus.entries.toList()
-      ..sort((a, b) => b.value.compareTo(a.value));
-    return PRowCard(
-      rows: [
-        for (final e in entries)
-          PRow(
-            title: _prettyStatus(e.key),
-            dotColor: _statusColor(e.key),
-            supporting: '${e.value}',
-          ),
-      ],
+  /// Latest sessions, newest first; tapping one opens its detail view.
+  Widget _recentSessions() {
+    return FutureBuilder<List<PantheonRun>>(
+      future: _sessionsFuture,
+      builder: (context, snap) {
+        if (!snap.hasData) {
+          return const PCard(
+            child: SizedBox(
+              height: 20,
+              child: Center(
+                child: SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+              ),
+            ),
+          );
+        }
+        final sessions = snap.data!;
+        if (sessions.isEmpty) {
+          return PCard(child: Text('No sessions yet.', style: PT.small));
+        }
+        return PRowCard(
+          rows: [
+            for (final s in sessions)
+              PRow(
+                title: s.displayTitle,
+                subtitle: (s.lastActivity?.isNotEmpty ?? false)
+                    ? s.lastActivity!
+                    : '${s.turns} turns · ${s.toolCalls} tool calls',
+                dotColor: _statusColor(s.status),
+                onTap: () => Navigator.of(context).push(
+                  buildDetailRoute(SessionDetailScreen(
+                      api: widget.api,
+                      runId: s.id,
+                      pendingApprovals: widget.pendingApprovals)),
+                ),
+              ),
+          ],
+        );
+      },
     );
   }
-
-  String _prettyStatus(String s) => s
-      .replaceAll('_', ' ')
-      .split(' ')
-      .map((w) => w.isEmpty ? w : '${w[0].toUpperCase()}${w.substring(1)}')
-      .join(' ');
 
   Widget _skeleton() {
     return ListView(

@@ -47,7 +47,7 @@ class _ProfilesScreenState extends State<ProfilesScreen> {
         title: const Text('Profiles'),
         actions: [
           IconButton(
-            icon: const Icon(Icons.add_rounded,
+            icon: Icon(Icons.add_rounded,
                 color: P.accent, weight: 1.6),
             tooltip: 'New profile',
             onPressed: () async {
@@ -60,7 +60,7 @@ class _ProfilesScreenState extends State<ProfilesScreen> {
             },
           ),
           IconButton(
-            icon: const Icon(Icons.refresh_rounded,
+            icon: Icon(Icons.refresh_rounded,
                 color: P.inkSecondary, weight: 1.6),
             onPressed: _load,
           ),
@@ -372,7 +372,7 @@ class _ProfileDetailSheetState extends State<_ProfileDetailSheet> {
                     children: [
                       Text(widget.name, style: PT.sectionTitle),
                       const SizedBox(height: 4),
-                      const Text('AGENT PROFILE', style: PT.overline),
+                      Text('AGENT PROFILE', style: PT.overline),
                     ],
                   ),
                 ),
@@ -549,7 +549,7 @@ class _AvatarPickerState extends State<_AvatarPicker> {
             const SizedBox(height: 12),
             Text('Choose a picture', style: PT.sectionTitle),
             const SizedBox(height: 4),
-            const Text('PROFILE PICTURE', style: PT.overline),
+            Text('PROFILE PICTURE', style: PT.overline),
             const SizedBox(height: 16),
             GridView.builder(
               shrinkWrap: true,
@@ -602,7 +602,7 @@ class _AvatarPickerState extends State<_AvatarPicker> {
                         : Column(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
-                              const Icon(Icons.upload_rounded,
+                              Icon(Icons.upload_rounded,
                                   color: P.inkSecondary, size: 26),
                               const SizedBox(height: 4),
                               Text('Upload',
@@ -789,7 +789,7 @@ class _CreateProfileSheetState extends State<_CreateProfileSheet> {
             const SizedBox(height: 12),
             Text('New profile', style: PT.sectionTitle),
             const SizedBox(height: 4),
-            const Text('AGENT PROFILE', style: PT.overline),
+            Text('AGENT PROFILE', style: PT.overline),
             const SizedBox(height: 16),
             Row(
               children: [

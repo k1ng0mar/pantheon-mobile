@@ -298,6 +298,14 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                   const SizedBox(width: 8),
                   Expanded(
                     child: PillButton(
+                      label: 'Edit',
+                      filled: false,
+                      onTap: () => _editJob(j),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: PillButton(
                       label: 'Delete',
                       filled: false,
                       color: P.err,
@@ -312,14 +320,76 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     );
   }
 
-  Future<void> _createJobSheet() async {
-    final taskCtrl = TextEditingController();
+  Future<void> _createJobSheet() => _jobSheet();
+
+  /// Edit an existing job, reusing the creation form. Only every/cron/
+  /// once schedules are editable here — other kinds keep their trigger
+  /// via the pause toggle alone.
+  void _editJob(ScheduledJob j) {
+    const editable = {'every', 'cron', 'oneshot'};
+    if (!editable.contains(j.kind.type)) {
+      toast(context, 'Only every / cron / once schedules can be edited here.');
+      return;
+    }
+    _jobSheet(edit: j);
+  }
+
+  /// Open the job creation form prefilled from a template (client-side
+  /// prefill only — the backend has no template-instantiate endpoint).
+  void _useTemplate(ScheduleTemplate t) {
+    setState(() => _tab = 0);
+    _jobSheet(template: t);
+  }
+
+  /// Format an every_ms duration back into the schedule field's input
+  /// syntax (e.g. 3600000 → "1h").
+  static String _fmtDurationInput(int ms) {
+    final s = ms ~/ 1000;
+    if (s % 86400 == 0) return '${s ~/ 86400}d';
+    if (s % 3600 == 0) return '${s ~/ 3600}h';
+    if (s % 60 == 0) return '${s ~/ 60}m';
+    return '${s}s';
+  }
+
+  /// Job create/edit sheet. [edit] prefills the form from the existing
+  /// job and saves via `updateJob`; [template] prefills the schedule
+  /// from a template. Otherwise a blank creation form.
+  Future<void> _jobSheet({ScheduledJob? edit, ScheduleTemplate? template}) async {
+    final taskCtrl =
+        TextEditingController(text: edit?.task ?? template?.description ?? '');
     final everyCtrl = TextEditingController(text: '1h');
     final cronCtrl = TextEditingController();
-    final agentCtrl = TextEditingController();
-    final modelCtrl = TextEditingController();
+    final agentCtrl = TextEditingController(text: edit?.agent ?? '');
+    final modelCtrl = TextEditingController(text: edit?.model ?? '');
     String kind = 'every';
-    DateTime? onceAt;    try {
+    DateTime? onceAt;
+    if (edit != null) {
+      switch (edit.kind.type) {
+        case 'every':
+          kind = 'every';
+          everyCtrl.text = edit.kind.everyMs != null
+              ? _fmtDurationInput(edit.kind.everyMs!)
+              : '1h';
+        case 'cron':
+          kind = 'cron';
+          cronCtrl.text = edit.kind.expr ?? '';
+        case 'oneshot':
+          kind = 'once';
+          if (edit.kind.atMs != null) {
+            onceAt =
+                DateTime.fromMillisecondsSinceEpoch(edit.kind.atMs!);
+          }
+      }
+    } else if (template != null) {
+      kind = template.scheduleType == 'cron' ? 'cron' : 'every';
+      final detail = template.scheduleDetail;
+      if (kind == 'cron') {
+        cronCtrl.text = detail;
+      } else {
+        everyCtrl.text = detail.isNotEmpty ? detail : '1h';
+      }
+    }
+    try {
       final created = await showPSheet<bool>(
         context,
         StatefulBuilder(
@@ -333,7 +403,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                 children: [
                   const SheetHandle(),
                   const SizedBox(height: 8),
-                   Text('New scheduled job', style: PT.sectionTitle),
+                   Text(edit != null ? 'Edit scheduled job' : template != null ? 'New job from template' : 'New scheduled job', style: PT.sectionTitle),
                   const SizedBox(height: 16),
                   TextField(
                     controller: taskCtrl,
@@ -438,7 +508,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                       const SizedBox(width: 12),
                       Expanded(
                         child: GradientButton(
-                          label: 'Create',
+                          label: edit != null ? 'Save' : 'Create',
                           onTap: () async {
                             final task = taskCtrl.text.trim();
                             if (task.isEmpty) {
@@ -467,7 +537,11 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                               body['model'] = modelCtrl.text.trim();
                             }
                             try {
-                              await widget.api.createJob(body);
+                              if (edit != null) {
+                                await widget.api.updateJob(edit.id, body);
+                              } else {
+                                await widget.api.createJob(body);
+                              }
                               if (ctx.mounted) Navigator.pop(ctx, true);
                             } catch (e) {
                               if (ctx.mounted) toastError(ctx, e);
@@ -484,7 +558,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
         ),
       );
       if (created == true && mounted) {
-        toast(context, 'Job created.');
+        toast(context, edit != null ? 'Job updated.' : 'Job created.');
         _loadJobs();
       }
     } finally {
@@ -613,6 +687,14 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
             const SizedBox(height: 12),
             Row(
               children: [
+                Expanded(
+                  child: PillButton(
+                    label: 'Use template',
+                    filled: false,
+                    onTap: () => _useTemplate(t),
+                  ),
+                ),
+                const SizedBox(width: 8),
                 Expanded(
                   child: PillButton(
                     label: 'Delete',

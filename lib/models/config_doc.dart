@@ -21,7 +21,7 @@ class ConfigDoc {
     if (a is! Map) return {};
     return a.map((k, v) => MapEntry(
         k.toString(),
-        v is Map ? (v as Map).cast<String, dynamic>() : <String, dynamic>{}));
+        v is Map ? v.cast<String, dynamic>() : <String, dynamic>{}));
   }
 
   /// The active profile selector: the top-level `agent` key, if set.

@@ -1,6 +1,6 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
@@ -13,6 +13,7 @@ import 'package:record/record.dart';
 
 import '../models/models.dart';
 import '../services/app_preferences.dart';
+import '../services/notification_service.dart';
 import '../services/pantheon_api.dart';
 import '../theme.dart';
 import '../widgets/active_profile_avatar.dart';
@@ -95,6 +96,11 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
   final _answerCtrl = TextEditingController();
   final _scroll = ScrollController();
   Timer? _poll;
+
+  /// Live-turn clock: anchor ms for the "Working for …" row, ticking
+  /// once a second while the turn runs. See [_syncLiveClock].
+  int? _liveSinceMs;
+  Timer? _liveTicker;
   bool _sending = false;
   bool _atBottom = true;
 
@@ -113,17 +119,24 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
   /// Open (non-completed) todo count for the header chip.
   int _openTodos = 0;
 
-  /// `provider · model` from the `[model]` config section.
+  /// `provider · model · effort` from the `[model]` config section.
   String? _modelLine;
 
   /// How many of the run's queued messages were parked from this screen.
-  /// The poller auto-drains them oldest-first as turns settle; steer
-  /// resets this to 1 because it wipes the server queue and parks just
-  /// the steered message.
+  /// The poller auto-drains the server queue oldest-first as turns
+  /// settle, regardless of which screen or device parked each message;
+  /// this counter only tracks the local share (used to reconcile the
+  /// "Queued — sends when the turn settles." toast state). Steer resets
+  /// this to 1 because it wipes the server queue and parks just the
+  /// steered message.
   int _queuedByMe = 0;
 
   /// Whether the queue section lists its messages expanded.
   bool _queueExpanded = false;
+
+  /// Edge detector for the approval-parked notification: the poller
+  /// fires it once per parking, not once per tick.
+  bool _wasParked = false;
 
   /// Retry of a failed turn is in flight.
   bool _retrying = false;
@@ -142,8 +155,18 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
   final Map<String, Future<Uint8List>> _thumbFutures = {};
 
   /// Voice-note recording state. The composer mic starts a recording
-  /// (the pill); the AppBar mic still opens the live voice screen.
+  /// (the pill); the composer also has its own mic — the AppBar no
+  /// longer carries one (it now holds new-chat and options actions).
   bool _recordingVoiceNote = false;
+
+  /// Collapsed header: hides the date/model line, mode/todos/context
+  /// row and the stats block; the Chat/Timeline tab bar stays visible.
+  /// Toggled from the header chevron or the options sheet.
+  bool _headerCollapsed = false;
+
+  /// Active agent/profile name for chat labels; 'Pantheon' until the
+  /// config resolves (best-effort — the label never blocks the chat).
+  String _agentName = 'Pantheon';
 
   /// True while a finished voice note is being transcribed.
   bool _transcribing = false;
@@ -177,12 +200,14 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
       if (m == null) continue;
       final name = m.group(1)!.trim();
       final mime = m.group(2)!.trim();
+      final size = m.group(3)?.trim();
       final id = m.group(4)?.trim();
       if (name.isEmpty) continue;
       out.add(_SentAttachment(
         name: name,
         mime: mime.isEmpty ? 'application/octet-stream' : mime,
         id: (id == null || id.isEmpty) ? null : id,
+        size: size?.isEmpty ?? true ? null : size,
       ));
     }
     return out;
@@ -211,6 +236,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
   @override
   void dispose() {
     _poll?.cancel();
+    _liveTicker?.cancel();
     // Best-effort: abandon any in-flight voice-note recording. The pill
     // is gone with the widget tree, so cancel here instead of the
     // normal discard path (no setState in dispose).
@@ -246,6 +272,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
       if (!mounted) return;
       final todos = await _safeTodos();
       final modelLine = await _safeModelLine();
+      final agentName = await _safeAgentName();
       final approvals = run.status == 'awaiting_approval'
           ? await _safeRunApprovals()
           : <Approval>[];
@@ -258,11 +285,13 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
           ..addAll(run.transcript);
         _openTodos = todos.where((t) => !t.done).length;
         _modelLine = modelLine;
+        _agentName = agentName;
         _runApprovals = approvals;
         _error = null;
         _loading = false;
       });
       _syncPolling(run.status);
+      _syncLiveClock(run.status);
       if (initial) _jumpToBottom();
     } catch (e) {
       if (!mounted) return;
@@ -290,8 +319,10 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
     }
   }
 
-  /// `provider · model` from the `[model]` config section; null when
-  /// unreadable (the header falls back to the run's own fields).
+  /// `provider · model · effort` from the `[model]` config section; null
+  /// when unreadable (the header falls back to the run's own fields).
+  /// Effort is the `[model].reasoning` level, shown only when set and
+  /// not "off".
   Future<String?> _safeModelLine() async {
     try {
       final doc = await widget.api.getConfig();
@@ -299,14 +330,30 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
       if (m is Map) {
         final p = m['provider']?.toString();
         final mod = m['model']?.toString();
+        final reasoning = m['reasoning']?.toString();
         final parts = [
           if (p != null && p.isNotEmpty) p,
           if (mod != null && mod.isNotEmpty) mod,
+          if (reasoning != null &&
+              reasoning.isNotEmpty &&
+              reasoning != 'off')
+            reasoning,
         ];
         if (parts.isNotEmpty) return parts.join(' · ');
       }
     } catch (_) {}
     return null;
+  }
+
+  /// Active agent/profile name for the chat labels; 'Pantheon' when the
+  /// config is unreadable or no agent is selected.
+  Future<String> _safeAgentName() async {
+    try {
+      final doc = await widget.api.getConfig();
+      final name = doc.activeAgent;
+      if (name != null && name.isNotEmpty) return name;
+    } catch (_) {}
+    return 'Pantheon';
   }
 
   Future<void> _refreshRunApprovals() async {
@@ -346,22 +393,56 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
       // Always take the fresh run: the queued chip, mode pills, and
       // context meter read from _run, not just its status.
       setState(() => _run = run);
-      // Turn settled: haptic + auto-drain the oldest message this
-      // screen queued, if any are still waiting server-side.
+      _syncLiveClock(run.status);
+      // Turn settled: haptic + auto-drain the oldest queued message,
+      // whoever parked it (this screen, another screen, or another
+      // device). The server pops the head of its FIFO queue on the
+      // idle send, so the rest stay queued.
       if (wasLive && !_isLive(run.status)) {
         _haptic(HapticFeedback.lightImpact);
+        // Alertable event: run completed / failed. The delivery path
+        // consults the stored notification prefs (master, event toggle,
+        // quiet hours, per-session mute) before showing anything.
+        final settled = run.status;
+        if (settled == 'completed' || settled == 'failed') {
+          final label = run.title.isNotEmpty ? run.title : 'A run';
+          final failed = settled == 'failed';
+          unawaited(NotificationService.instance.notify(
+            event: failed
+                ? NotificationService.eventRunFailed
+                : NotificationService.eventRunCompleted,
+            sessionId: widget.runId,
+            title: failed ? 'Run failed' : 'Run completed',
+            body: '$label ${failed ? 'failed' : 'finished'}.',
+          ));
+        }
       }
-      if (wasLive && !_isLive(run.status) && _queuedByMe > 0) {
+      if (wasLive && !_isLive(run.status)) {
         final queue = run.queuedMessages;
         if (queue.isEmpty) {
           _queuedByMe = 0;
         } else {
           // Attempt the drain; on failure _drainQueueText keeps the
           // poller alive (turn-in-flight) so the next settle retries.
-          if (await _drainQueueText(queue.first)) _queuedByMe--;
+          if (await _drainQueueText(queue.first) && _queuedByMe > 0) {
+            _queuedByMe--;
+          }
           return;
         }
       }
+      // Alertable event: freshly parked on approval — edge-triggered
+      // so the poller fires it once per parking, not once per tick.
+      final parked = run.status == 'awaiting_approval';
+      if (parked && !_wasParked) {
+        final label = run.title.isNotEmpty ? run.title : 'A run';
+        unawaited(NotificationService.instance.notify(
+          event: NotificationService.eventApprovalParked,
+          sessionId: widget.runId,
+          title: 'Approval needed',
+          body: '$label is parked waiting for your decision.',
+        ));
+      }
+      _wasParked = parked;
       // Keep the inline approval banner fresh while parked.
       if (run.status == 'awaiting_approval') {
         await _refreshRunApprovals();
@@ -474,8 +555,9 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
     final run = _run;
     if (run == null || !_canChat(run.status)) return;
     if (_isLive(run.status)) {
-      // Smart send/stop: a turn is already in flight, so the composer
-      // button is a stop button — offer stop / interrupt / queue / steer.
+      // Keyboard-submit path while a turn is in flight (the button
+      // itself stops on tap): offer the full in-flight sheet so a typed
+      // draft can be steered or queued instead of dropped.
       await _stopSheet();
       return;
     }
@@ -532,11 +614,12 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
     }
   }
 
-  /// Smart send/stop: the composer button is a stop button while a turn
-  /// is in flight. Offers hard stop, cooperative interrupt, and
-  /// queue/steer of the composer's draft. Queue/steer are only tappable
-  /// when the composer holds a draft and the run is actually running
-  /// (a parked run 409s message sends until its approval is decided).
+  /// In-flight task controls: exactly three actions — Stop current task
+  /// (red, destructive hard stop), Steer current task (redirects the
+  /// running turn with the composer's draft), Queue for next turn
+  /// (parks the draft behind the running turn). Queue/steer need a
+  /// draft and a genuinely running turn (a parked run 409s message
+  /// sends until its approval is decided).
   Future<void> _stopSheet() async {
     final raw = _composer.text.trim();
     final ids = _attachments
@@ -563,46 +646,46 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
             children: [
               const SheetHandle(),
               const SizedBox(height: 8),
-              Text('Turn in flight', style: PT.sectionTitle),
+              Text('Task in flight', style: PT.sectionTitle),
               const SizedBox(height: 8),
               Text(
-                'Stop the model, interrupt it, or park this message behind it.',
+                'Stop the model, redirect it, or park this message behind it.',
                 style: PT.small),
               const SizedBox(height: 20),
               _DangerSheetButton(
-                label: 'Stop the model',
-                onTap: () => Navigator.pop(context, 'kill'),
-              ),
-              const SizedBox(height: 12),
-              TonalButton(
-                label: 'Interrupt',
-                onTap: () => Navigator.pop(context, 'interrupt'),
+                label: 'Stop current task',
+                onTap: () => Navigator.pop(context, 'stop'),
               ),
               const SizedBox(height: 12),
               Opacity(
                 opacity: canQueue ? 1 : 0.4,
                 child: TonalButton(
-                  label: 'Queue the message',
-                  onTap: canQueue
-                      ? () => Navigator.pop(context, 'queue')
-                      : null,
-                ),
-              ),
-              const SizedBox(height: 12),
-              Opacity(
-                opacity: canQueue ? 1 : 0.4,
-                child: TonalButton(
-                  label: 'Steer the message',
+                  label: 'Steer current task',
                   onTap: canQueue
                       ? () => Navigator.pop(context, 'steer')
                       : null,
                 ),
               ),
               const SizedBox(height: 12),
-              TonalButton(
-                label: 'Dismiss',
-                onTap: () => Navigator.pop(context),
+              Opacity(
+                opacity: canQueue ? 1 : 0.4,
+                child: TonalButton(
+                  label: 'Queue for next turn',
+                  onTap: canQueue
+                      ? () => Navigator.pop(context, 'queue')
+                      : null,
+                ),
               ),
+              if (!canQueue) ...[
+                const SizedBox(height: 12),
+                Text(
+                  hasDraft
+                      ? 'Queue and steer need a running turn.'
+                      : 'Type a message to steer or queue it.',
+                  style: PT.meta,
+                  textAlign: TextAlign.center,
+                ),
+              ],
             ],
           ),
         ),
@@ -610,10 +693,8 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
     );
     if (choice == null || !mounted) return;
     switch (choice) {
-      case 'kill':
+      case 'stop':
         await _hardStopTurn();
-      case 'interrupt':
-        await _stopTurn();
       case 'queue':
       case 'steer':
         await _queueOrSteer(choice == 'steer', messageText, ids);
@@ -788,7 +869,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
       if (!mounted) return;
       toast(context, 'Retrying turn…');
       // Back to Chat so the new turn is visible; the poll loop picks it up.
-      DefaultTabController.of(context)?.animateTo(0);
+      DefaultTabController.of(context).animateTo(0);
       _ensurePolling();
       await _load();
     } on PantheonTurnInFlightException {
@@ -1300,9 +1381,16 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
         title: Text(title),
         actions: [
           IconButton(
-            icon: Icon(Icons.mic_rounded, color: P.ink, weight: 1.6),
-            tooltip: 'Live voice',
-            onPressed: _openVoice,
+            icon: Icon(Icons.edit_outlined,
+                color: P.ink, weight: 1.6),
+            tooltip: 'New chat',
+            onPressed: () => showNewChatSheet(context, widget.api),
+          ),
+          IconButton(
+            icon: Icon(Icons.more_horiz_rounded,
+                color: P.ink, weight: 1.6),
+            tooltip: 'Options',
+            onPressed: _optionsSheet,
           ),
           if (running)
             IconButton(
@@ -1397,61 +1485,77 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
                 label: run.status.replaceAll('_', ' ').toUpperCase(),
                 color: _statusColor(run.status),
               ),
-            ],
-          ),
-          const SizedBox(height: 6),
-          Text(
-            '${timeAgo(run.createdMs)}${modelLine.isNotEmpty ? ' · $modelLine' : ''}',
-            style: PT.small.copyWith(
-                color: Colors.white.withValues(alpha: 0.75)),
-          ),
-          const SizedBox(height: 10),
-          Row(
-            children: [
-              _modeSegment(run.mode),
-              if (_openTodos > 0) ...[
-                const SizedBox(width: 8),
-                GestureDetector(
-                  onTap: _openTodosSheet,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 12, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: P.tonal,
-                      borderRadius: BorderRadius.circular(999),
-                      border: Border.all(color: P.border),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                         Icon(Icons.checklist_rounded,
-                            size: 14, color: P.accent),
-                        const SizedBox(width: 6),
-                        Text('$_openTodos todos',
-                            style: PT.label.copyWith(
-                                fontSize: 12, color: P.inkSecondary)),
-                      ],
-                    ),
+              GestureDetector(
+                onTap: () => setState(
+                    () => _headerCollapsed = !_headerCollapsed),
+                child: Padding(
+                  padding: const EdgeInsets.only(left: 6, top: 2),
+                  child: Icon(
+                    _headerCollapsed
+                        ? Icons.expand_more_rounded
+                        : Icons.expand_less_rounded,
+                    color: Colors.white.withValues(alpha: 0.85),
+                    size: 24,
                   ),
                 ),
+              ),
+            ],
+          ),
+          if (!_headerCollapsed) ...[
+            const SizedBox(height: 6),
+            Text(
+              '${timeAgo(run.createdMs)}${modelLine.isNotEmpty ? ' · $modelLine' : ''}',
+              style: PT.small.copyWith(
+                  color: Colors.white.withValues(alpha: 0.75)),
+            ),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                _modeSegment(run.mode),
+                if (_openTodos > 0) ...[
+                  const SizedBox(width: 8),
+                  GestureDetector(
+                    onTap: _openTodosSheet,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: P.tonal,
+                        borderRadius: BorderRadius.circular(999),
+                        border: Border.all(color: P.border),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                           Icon(Icons.checklist_rounded,
+                              size: 14, color: P.accent),
+                          const SizedBox(width: 6),
+                          Text('$_openTodos todos',
+                              style: PT.label.copyWith(
+                                  fontSize: 12, color: P.inkSecondary)),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+                const Spacer(),
+                if (ctx.total > 0)
+                  Text('${compactNum(ctx.total)} ctx',
+                      style: PT.mono.copyWith(
+                          fontSize: 11,
+                          color: Colors.white.withValues(alpha: 0.6))),
               ],
-              const Spacer(),
-              if (ctx.total > 0)
-                Text('${compactNum(ctx.total)} ctx',
-                    style: PT.mono.copyWith(
-                        fontSize: 11,
-                        color: Colors.white.withValues(alpha: 0.6))),
-            ],
-          ),
-          const SizedBox(height: 14),
-          Row(
-            children: [
-              _stat('${run.turns}', 'turns'),
-              _stat('${run.toolCalls}', 'tools'),
-              _stat(compactNum(run.totalTokens), 'tokens'),
-              _stat(money(run.costUsd), 'cost'),
-            ],
-          ),
+            ),
+            const SizedBox(height: 14),
+            Row(
+              children: [
+                _stat('${run.turns}', 'turns'),
+                _stat('${run.toolCalls}', 'tools'),
+                _stat(compactNum(run.totalTokens), 'tokens'),
+                _stat(money(run.costUsd), 'cost'),
+              ],
+            ),
+          ],
         ],
       ),
     );
@@ -1697,7 +1801,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
         children: [
           Row(
             children: [
-              const Icon(Icons.schedule_rounded, size: 16, color: P.accent),
+              Icon(Icons.schedule_rounded, size: 16, color: P.accent),
               const SizedBox(width: 8),
               Expanded(
                 child: GestureDetector(
@@ -1759,7 +1863,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
                     ),
                     GestureDetector(
                       onTap: () => _editQueueItem(i, queue[i]),
-                      child: const Padding(
+                      child: Padding(
                         padding: EdgeInsets.all(6),
                         child: Icon(Icons.edit_outlined,
                             size: 16, color: P.inkMuted),
@@ -1767,7 +1871,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
                     ),
                     GestureDetector(
                       onTap: () => _deleteQueueItem(i),
-                      child: const Padding(
+                      child: Padding(
                         padding: EdgeInsets.all(6),
                         child: Icon(Icons.delete_outline_rounded,
                             size: 16, color: P.inkMuted),
@@ -1795,9 +1899,11 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
     final prefs = AppPreferences.instance;
     final dividers = prefs.dateDividers.value;
     final rows = <Widget>[];
+    // Subagent pill placement is recomputed per build: the timeline
+    // (and transcript) change on every poll.
+    _pillSpans = null;
     DateTime? lastDay;
-    for (var i = 0; i < _messages.length; i++) {
-      final t = _messages[i];
+    void dividerFor(TranscriptItem t) {
       if (dividers && t.tsMs != null) {
         final d = DateTime.fromMillisecondsSinceEpoch(t.tsMs!);
         final day = DateTime(d.year, d.month, d.day);
@@ -1806,13 +1912,340 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
           lastDay = day;
         }
       }
+    }
+
+    // Interleaved streaming: the transcript renders in arrival order as
+    // text message, Thoughts block, text message, Thoughts block, …
+    // Consecutive thought items (reasoning, assistant tool-call rows
+    // and their tool results) accumulate in a buffer; the buffer flushes
+    // as one quiet "Thoughts >" row whenever a text message, a user
+    // message, or the end of the transcript is reached.
+    final thoughtItems = <TranscriptItem>[];
+    final bufferedIndices = <int>[];
+    void flushThoughts() {
+      final indices = List<int>.from(bufferedIndices);
+      final steps = _stepsFromItems(thoughtItems);
+      thoughtItems.clear();
+      bufferedIndices.clear();
+      if (steps.isNotEmpty) {
+        rows.add(
+            StaggerItem(index: indices.first, child: _thoughtsRow(steps)));
+      }
+      for (final bi in indices) {
+        _maybeSubagentPill(rows, bi);
+      }
+    }
+
+    var i = 0;
+    while (i < _messages.length) {
+      final t = _messages[i];
+      dividerFor(t);
+      if (t.role == 'user') {
+        flushThoughts();
+        rows.add(StaggerItem(index: i, child: _bubble(t)));
+        _maybeSubagentPill(rows, i);
+        i++;
+        continue;
+      }
+      if (t.role == 'assistant' && t.toolCalls.isNotEmpty) {
+        // Text and tool calls in one item: text first, calls into the
+        // thoughts buffer (mirrors streaming order).
+        if (t.content.trim().isNotEmpty) {
+          flushThoughts();
+          rows.add(StaggerItem(index: i, child: _bubble(_stripToolCalls(t))));
+          _maybeSubagentPill(rows, i);
+        }
+        thoughtItems.add(t);
+        bufferedIndices.add(i);
+        i++;
+        continue;
+      }
+      if (t.type == 'reasoning' || t.role == 'tool') {
+        thoughtItems.add(t);
+        bufferedIndices.add(i);
+        i++;
+        continue;
+      }
+      flushThoughts();
       rows.add(StaggerItem(index: i, child: _bubble(t)));
+      _maybeSubagentPill(rows, i);
+      i++;
+    }
+    flushThoughts();
+    // Live-turn indicator: "Working for 1m 9s", ticking each second.
+    if (_isLive(_run?.status ?? '') && _liveSinceMs != null) {
+      rows.add(_workingRow());
     }
     return ListView.builder(
       controller: _scroll,
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
       itemCount: rows.length,
       itemBuilder: (context, i) => rows[i],
+    );
+  }
+
+  /// Build Thought steps from one contiguous block of thought items:
+  /// reasoning summaries and tool calls (with their results). Orphan
+  /// tool results with no matching call row become their own step rather
+  /// than a fake assistant bubble.
+  List<_ThoughtStep> _stepsFromItems(List<TranscriptItem> items) {
+    final live = _isLive(_run?.status ?? '');
+    final results = <String, TranscriptItem>{};
+    for (final t in items) {
+      if (t.role == 'tool' && t.toolCallId != null) {
+        results.putIfAbsent(t.toolCallId!, () => t);
+      }
+    }
+    final steps = <_ThoughtStep>[];
+    for (final t in items) {
+      if (t.type == 'reasoning') {
+        if (t.content.trim().isNotEmpty) {
+          steps.add(_ThoughtStep.reasoning(t.content));
+        }
+      } else if (t.role == 'assistant' && t.toolCalls.isNotEmpty) {
+        for (final c in t.toolCalls) {
+          steps.add(_ThoughtStep.tool(
+            call: c,
+            result: results[c.id],
+            anchorTsMs: t.tsMs,
+            live: live,
+          ));
+        }
+      } else if (t.role == 'tool') {
+        final matched =
+            steps.any((s) => !s.isReasoning && s.call?.id == t.toolCallId);
+        if (!matched) steps.add(_ThoughtStep.orphanResult(t));
+      }
+    }
+    return steps;
+  }
+
+  /// Subagent spans from the run timeline (the same source the agent
+  /// activity view uses). A span is a maximal run of agent-kind events.
+  List<_SubagentSpan> _subagentSpans() {
+    final spans = <_SubagentSpan>[];
+    var current = <TimelineItem>[];
+    var inSpan = false;
+    String? name;
+    int? started;
+
+    void close({int? endedMs}) {
+      if (!inSpan) return;
+      spans.add(_SubagentSpan(
+        name: (name ?? '').isEmpty ? 'subagent' : name!,
+        startedMs: started,
+        endedMs: endedMs,
+        items: current,
+      ));
+      current = <TimelineItem>[];
+      inSpan = false;
+      name = null;
+      started = null;
+    }
+
+    for (final e in _run?.timeline ?? <TimelineItem>[]) {
+      if (!tlIsAgentKind(e.kind)) {
+        close();
+        continue;
+      }
+      if (!inSpan) {
+        inSpan = true;
+        name = (e.detail ?? '').trim();
+        started = e.tsMs;
+      }
+      current.add(e);
+      if (e.kind == 'agent_completed') close(endedMs: e.tsMs);
+    }
+    close();
+    return spans;
+  }
+
+  /// Map of transcript index → subagent spans whose work finished around
+  /// that item. Computed lazily once per message list build.
+  Map<int, List<_SubagentSpan>>? _pillSpans;
+
+  void _maybeSubagentPill(List<Widget> rows, int msgIndex) {
+    _pillSpans ??= _buildPillSpans();
+    final spans = _pillSpans![msgIndex];
+    if (spans == null || spans.isEmpty) return;
+    rows.add(StaggerItem(index: msgIndex, child: _subagentPill(spans)));
+  }
+
+  Map<int, List<_SubagentSpan>> _buildPillSpans() {
+    final map = <int, List<_SubagentSpan>>{};
+    final spans = _subagentSpans();
+    if (spans.isEmpty) return map;
+    final last = _messages.length - 1;
+    for (final s in spans) {
+      final endMs = s.endedMs ?? s.startedMs;
+      var idx = last;
+      if (endMs != null) {
+        idx = last;
+        for (var k = _messages.length - 1; k >= 0; k--) {
+          final ts = _messages[k].tsMs;
+          if (ts != null && ts <= endMs) {
+            idx = k;
+            break;
+          }
+        }
+      }
+      map.putIfAbsent(idx, () => []).add(s);
+    }
+    return map;
+  }
+
+  /// Compact "N agent used" pill below the turn that used subagents.
+  /// Tapping opens the subagents sheet.
+  Widget _subagentPill(List<_SubagentSpan> spans) {
+    final n = spans.length;
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () => _openSubagents(spans),
+      child: Padding(
+        padding: const EdgeInsets.only(bottom: 10, top: 2),
+        child: Align(
+          alignment: Alignment.centerLeft,
+          child: Container(
+            padding:
+                const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              border: Border.all(color: P.border),
+              borderRadius: BorderRadius.circular(999),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.hub_outlined,
+                    size: 15, color: P.inkSecondary),
+                const SizedBox(width: 8),
+                Text(
+                  '$n agent${n == 1 ? '' : 's'} used',
+                  style: PT.small.copyWith(color: P.inkSecondary),
+                ),
+                const SizedBox(width: 4),
+                Icon(Icons.chevron_right_rounded,
+                    size: 15, color: P.inkSecondary),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Near-full-screen sheet listing the turn's subagents: name, status
+  /// with elapsed time, and its nested content (the span's timeline
+  /// rows rendered as checklist rows, same visual language as the
+  /// Thoughts sheet). Data is the run timeline — the same source the
+  /// agent activity view uses; the backend does not expose subagent
+  /// transcripts, so nothing is fabricated.
+  void _openSubagents(List<_SubagentSpan> spans) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => DraggableScrollableSheet(
+        initialChildSize: 0.92,
+        minChildSize: 0.5,
+        maxChildSize: 0.95,
+        builder: (_, controller) => Container(
+          decoration: BoxDecoration(
+            color: P.surface,
+            borderRadius:
+                const BorderRadius.vertical(top: Radius.circular(20)),
+          ),
+          child: _SubagentsSheet(
+            spans: spans,
+            scrollController: controller,
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Assistant message copy without its tool calls, so the text renders
+  /// as a normal message while the calls live in the Thoughts sheet.
+  TranscriptItem _stripToolCalls(TranscriptItem t) => TranscriptItem(
+        type: t.type,
+        role: t.role,
+        content: t.content,
+        tsMs: t.tsMs,
+      );
+
+  /// The collapsed per-turn row: quiet, monochrome, no bubble, no
+  /// ASSISTANT label. Tapping opens the near-full-screen Thoughts sheet.
+  Widget _thoughtsRow(List<_ThoughtStep> steps) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () => _openThoughts(steps),
+      child: Padding(
+        padding: const EdgeInsets.only(bottom: 10, top: 2),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text('Thoughts',
+                style: PT.monoEyebrow.copyWith(color: P.inkSecondary)),
+            const SizedBox(width: 2),
+            Icon(Icons.chevron_right_rounded,
+                size: 16, color: P.inkSecondary),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _openThoughts(List<_ThoughtStep> steps) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: P.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (_) => FractionallySizedBox(
+        heightFactor: 0.92,
+        child: _ThoughtsSheet(steps: steps),
+      ),
+    );
+  }
+
+  /// Elapsed-time clock for the live-turn row: anchored the first time
+  /// a live status is observed, cleared when the turn settles.
+  void _syncLiveClock(String status) {
+    if (_isLive(status)) {
+      _liveSinceMs ??= DateTime.now().millisecondsSinceEpoch;
+      _liveTicker ??= Timer.periodic(const Duration(seconds: 1), (_) {
+        if (mounted && _isLive(_run?.status ?? '')) setState(() {});
+      });
+    } else {
+      _liveSinceMs = null;
+      _liveTicker?.cancel();
+      _liveTicker = null;
+    }
+  }
+
+  /// "Working for 1m 9s": quiet live-turn status row at the end of chat,
+  /// ticking each second while the turn runs.
+  Widget _workingRow() {
+    final s =
+        ((DateTime.now().millisecondsSinceEpoch - _liveSinceMs!) / 1000)
+            .floor();
+    final label = s >= 60
+        ? 'Working for ${s ~/ 60}m ${s % 60}s'
+        : 'Working for ${s}s';
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12, top: 2),
+      child: Row(
+        children: [
+          const SizedBox(
+            width: 14,
+            height: 14,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+          const SizedBox(width: 10),
+          Text(label, style: PT.small.copyWith(color: P.inkSecondary)),
+        ],
+      ),
     );
   }
 
@@ -1842,6 +2275,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
                 _attachmentChips(),
                 const SizedBox(height: 8),
               ],
+              _modelPill(),
               _transcribing
                   ? _transcribingRow()
                   : _recordingVoiceNote
@@ -1893,7 +2327,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
                     shape: BoxShape.circle,
                     color: P.inkFaint.withValues(alpha: 0.25),
                   ),
-                  child: const Icon(Icons.close_rounded,
+                  child: Icon(Icons.close_rounded,
                       size: 12, color: P.inkSecondary),
                 ),
               ),
@@ -1904,11 +2338,226 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
     );
   }
 
+  /// Model pill above the composer: current `provider · model · effort`.
+  /// Tapping opens the model picker (default slot + fallbacks from the
+  /// `[model]` config, with a reasoning-effort selector); writes go
+  /// through `PUT /api/config`.
+  Widget _modelPill() {
+    final label = _modelLine;
+    if (label == null || label.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        children: [
+          GestureDetector(
+            onTap: () {
+              _haptic(HapticFeedback.lightImpact);
+              _modelPickerSheet();
+            },
+            child: Container(
+              padding: const EdgeInsets.symmetric(
+                  horizontal: 12, vertical: 7),
+              decoration: BoxDecoration(
+                border: Border.all(color: P.border),
+                borderRadius: BorderRadius.circular(999),
+                color: P.tonal,
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.smart_toy_outlined,
+                      size: 14, color: P.inkSecondary),
+                  const SizedBox(width: 6),
+                  Flexible(
+                    child: Text(
+                      label,
+                      style: PT.small.copyWith(color: P.inkSecondary),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  Icon(Icons.expand_more_rounded,
+                      size: 14, color: P.inkSecondary),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Model picker sheet: the default `[model]` slot plus its fallback
+  /// chain as tappable options, and a reasoning-effort selector. Both
+  /// write through `PUT /api/config` and refresh the pill label.
+  Future<void> _modelPickerSheet() async {
+    ConfigDoc doc;
+    try {
+      doc = await widget.api.getConfig();
+    } catch (e) {
+      if (mounted) toastError(context, e);
+      return;
+    }
+    final m = doc.values['model'];
+    if (m is! Map || !mounted) return;
+    var provider = m['provider']?.toString() ?? '';
+    var model = m['model']?.toString() ?? '';
+    var reasoning = (m['reasoning']?.toString() ?? 'off').toLowerCase();
+    final options = <Map<String, String>>[
+      {'provider': provider, 'model': model},
+    ];
+    final fb = m['fallbacks'];
+    if (fb is List) {
+      for (final f in fb) {
+        if (f is Map) {
+          options.add({
+            'provider': f['provider']?.toString() ?? '',
+            'model': f['model']?.toString() ?? '',
+          });
+        }
+      }
+    }
+    const efforts = ['off', 'minimal', 'low', 'medium', 'high'];
+    await showPSheet<void>(
+      context,
+      StatefulBuilder(
+        builder: (context, setSheetState) {
+          Future<void> applyModel(Map<String, String> opt) async {
+            try {
+              await widget.api.putConfig({
+                'model.provider': opt['provider'] ?? '',
+                'model.model': opt['model'] ?? '',
+              });
+            } catch (e) {
+              if (mounted) toastError(context, e);
+              return;
+            }
+            provider = opt['provider'] ?? '';
+            model = opt['model'] ?? '';
+            setSheetState(() {});
+            if (mounted) {
+              final line = await _safeModelLine();
+              if (mounted) setState(() => _modelLine = line);
+              toast(context, 'Model updated');
+            }
+          }
+
+          Future<void> applyEffort(String level) async {
+            try {
+              await widget.api
+                  .putConfig({'model.reasoning': level});
+            } catch (e) {
+              if (mounted) toastError(context, e);
+              return;
+            }
+            setSheetState(() => reasoning = level);
+            if (mounted) {
+              final line = await _safeModelLine();
+              if (mounted) setState(() => _modelLine = line);
+            }
+          }
+
+          return SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const SheetHandle(),
+                  const SizedBox(height: 12),
+                  Text('Model', style: PT.sectionTitle),
+                  const SizedBox(height: 4),
+                  Text('Default model for new turns.',
+                      style: PT.small),
+                  const SizedBox(height: 12),
+                  for (final opt in options)
+                    _modelOptionRow(
+                      opt,
+                      selected: opt['provider'] == provider &&
+                          opt['model'] == model,
+                      onTap: () => applyModel(opt),
+                    ),
+                  const SizedBox(height: 16),
+                  Text('Reasoning effort', style: PT.rowTitle),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      for (final e in efforts)
+                        GestureDetector(
+                          onTap: () {
+                            _haptic(HapticFeedback.lightImpact);
+                            applyEffort(e);
+                          },
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 14, vertical: 8),
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(999),
+                              color: reasoning == e
+                                  ? P.accent
+                                  : P.tonal,
+                              border: Border.all(
+                                  color: reasoning == e
+                                      ? P.accent
+                                      : P.border),
+                            ),
+                            child: Text(
+                              e,
+                              style: PT.small.copyWith(
+                                  color: reasoning == e
+                                      ? Colors.white
+                                      : P.inkSecondary),
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _modelOptionRow(Map<String, String> opt,
+      {required bool selected, required VoidCallback onTap}) {
+    final label = [
+      if ((opt['provider'] ?? '').isNotEmpty) opt['provider'],
+      if ((opt['model'] ?? '').isNotEmpty) opt['model'],
+    ].join(' · ');
+    return InkWell(
+      onTap: () {
+        _haptic(HapticFeedback.lightImpact);
+        onTap();
+      },
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(label.isEmpty ? 'Unset' : label,
+                  style: PT.body.copyWith(fontSize: 14)),
+            ),
+            if (selected)
+              Icon(Icons.check_rounded, size: 18, color: P.accent),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _composerRow() {
     final returnSends = AppPreferences.instance.returnSends.value;
     final reduceMotion = AppPreferences.instance.reduceMotion.value;
-    // Smart send/stop: while a turn is in flight (and we're not mid-send
-    // ourselves) the button is a stop button in the Nyx danger wash.
+    // Send/stop: while a turn is in flight (and we're not mid-send
+    // ourselves) the button is a stop button in the Nyx danger wash —
+    // tap stops at once, long-press opens the in-flight sheet.
     final stopLive = !_sending && _isLive(_run?.status ?? '');
     return Row(
       crossAxisAlignment: CrossAxisAlignment.end,
@@ -1940,7 +2589,11 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
             Icons.mic_rounded, 'Record voice note', _startVoiceNote),
         const SizedBox(width: 8),
         GestureDetector(
-          onTap: stopLive ? _stopSheet : _send,
+          // Stop state: tap stops the turn at once; long-press opens
+          // the full in-flight sheet (stop / steer / queue).
+          onTap: stopLive ? _stopTurn : _send,
+          onLongPress:
+              stopLive ? () => _stopSheet() : null,
           child: AnimatedOpacity(
             duration: Duration(
                 milliseconds: reduceMotion ? 0 : 150),
@@ -2007,6 +2660,112 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
         builder: (_) => VoiceScreen(api: widget.api),
       ),
     );
+  }
+
+  /// Options bottom sheet (••• in the AppBar): only items wired to real
+  /// functionality. Pin/Archive/Find-in-chat are intentionally absent —
+  /// the backend exposes no pin or archive endpoints and the chat has
+  /// no find UI — so they would be dead buttons.
+  Future<void> _optionsSheet() async {
+    final collapsed = _headerCollapsed;
+    final choice = await showPSheet<String>(
+      context,
+      SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const SheetHandle(),
+              const SizedBox(height: 12),
+              _optionRow(Icons.ios_share_rounded, 'Share',
+                  () => Navigator.pop(context, 'share')),
+              _optionRow(
+                  collapsed
+                      ? Icons.expand_more_rounded
+                      : Icons.expand_less_rounded,
+                  collapsed ? 'Expand header' : 'Collapse header',
+                  () => Navigator.pop(context, 'collapse')),
+              _optionRow(Icons.mic_rounded, 'Live mode',
+                  () => Navigator.pop(context, 'live')),
+              _optionRow(Icons.delete_outline_rounded, 'Delete',
+                  () => Navigator.pop(context, 'delete'),
+                  destructive: true),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (choice == null || !mounted) return;
+    switch (choice) {
+      case 'share':
+        await _shareSession();
+        break;
+      case 'collapse':
+        setState(() => _headerCollapsed = !_headerCollapsed);
+        break;
+      case 'live':
+        _openVoice();
+        break;
+      case 'delete':
+        await _deleteSession();
+        break;
+    }
+  }
+
+  Widget _optionRow(IconData icon, String label, VoidCallback onTap,
+      {bool destructive = false}) {
+    final color = destructive ? P.err : P.ink;
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(P.r12),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 13),
+        child: Row(
+          children: [
+            Icon(icon, size: 21, color: color, weight: 1.6),
+            const SizedBox(width: 14),
+            Text(label,
+                style: PT.rowTitle.copyWith(fontSize: 15, color: color)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Share: export the transcript as markdown and open the system share
+  /// sheet (the same path as `/export`).
+  Future<void> _shareSession() async {
+    try {
+      final bytes = await widget.api.exportRun(widget.runId);
+      if (!mounted) return;
+      await showExportSheet(
+          context, _run?.displayTitle ?? 'Session', bytes);
+    } catch (e) {
+      if (mounted) toastError(context, e);
+    }
+  }
+
+  /// Delete this session after a confirm, then pop back to the list.
+  Future<void> _deleteSession() async {
+    final ok = await confirmAction(
+      context,
+      title: 'Delete session?',
+      body:
+          '“${_run?.displayTitle ?? 'This session'}” will be deleted. This cannot be undone.',
+      confirmLabel: 'Delete',
+      destructive: true,
+    );
+    if (!ok || !mounted) return;
+    try {
+      await widget.api.deleteRun(widget.runId);
+      if (!mounted) return;
+      Navigator.of(context).pop();
+      toast(context, 'Deleted.');
+    } catch (e) {
+      if (mounted) toastError(context, e);
+    }
   }
 
   // ------------------------------------------------------ voice notes --
@@ -2657,7 +3416,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
                       subtitle: Text(_extLabel(a.name),
                           style: PT.meta),
                       trailing: a.openable
-                          ? const Icon(Icons.open_in_new_rounded,
+                          ? Icon(Icons.open_in_new_rounded,
                               color: P.inkMuted)
                           : null,
                       onTap: a.openable
@@ -2699,6 +3458,18 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
                 overflow: TextOverflow.ellipsis,
                 textAlign: TextAlign.center),
           ),
+          if (a.size != null && a.size!.isNotEmpty) ...[
+            const SizedBox(height: 2),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              child: Text('${_extLabel(a.name)} · ${a.size}',
+                  style: PT.monoSm.copyWith(
+                      color: P.inkSecondary, fontSize: 10),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center),
+            ),
+          ],
         ],
       ),
     );
@@ -2802,6 +3573,9 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
             .copyWith(fontSize: 14, color: isUser ? Colors.white : P.ink),
         onQuote: _quoteInReply,
         api: widget.api,
+        // Assistant messages get copyable block cards (Writing/Code);
+        // user text keeps the long-press copy menu.
+        cards: !isUser && !isTool,
       );
       final body = <Widget>[msg];
       if (sentAtts.isNotEmpty) body.add(_sentAttachmentGrid(sentAtts));
@@ -2814,7 +3588,9 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
             children: [
               ActiveProfileAvatar(api: widget.api, size: 22),
               const SizedBox(width: 8),
-              Text((t.role ?? 'assistant').toUpperCase(),
+              // Assistant messages carry the agent/profile name, not a
+              // generic "ASSISTANT" — resolved best-effort from config.
+              Text(isTool ? 'TOOL' : _agentName,
                   style: PT.monoEyebrow
                       .copyWith(color: isTool ? P.info : P.accent)),
             ],
@@ -3111,7 +3887,7 @@ class _ThinkingBlockState extends State<_ThinkingBlock> {
                 padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
                 child: Row(
                   children: [
-                    const Icon(Icons.psychology_outlined,
+                    Icon(Icons.psychology_outlined,
                         size: 14, color: P.inkFaint),
                     const SizedBox(width: 8),
                     Text('Thinking',
@@ -3232,8 +4008,11 @@ class _SentAttachment {
   final String name;
   final String mime;
   final String? id;
+  /// Human size from the `[attachments]` block ("2.4 MB").
+  final String? size;
 
-  _SentAttachment({required this.name, required this.mime, this.id});
+  _SentAttachment(
+      {required this.name, required this.mime, this.id, this.size});
 
   bool get isImage => mime.startsWith('image/');
   bool get isVideo => mime.startsWith('video/');
@@ -3264,7 +4043,7 @@ class _SentThumb extends StatelessWidget {
         return Container(
           color: P.surface,
           alignment: Alignment.center,
-          child: const SizedBox(
+          child: SizedBox(
             width: 20,
             height: 20,
             child: CircularProgressIndicator(
@@ -3284,7 +4063,7 @@ class _ThumbError extends StatelessWidget {
     return Container(
       color: P.surface,
       alignment: Alignment.center,
-      child: const Icon(Icons.broken_image_outlined,
+      child: Icon(Icons.broken_image_outlined,
           size: 28, color: P.inkFaint),
     );
   }
@@ -3332,6 +4111,592 @@ class _ImageViewerDialog extends StatelessWidget {
                 textAlign: TextAlign.center,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Tool-call status for the Thoughts sheet.
+enum _CallStatus { running, done, failed, pending }
+
+/// One row in the Thoughts sheet: a reasoning summary or a tool call
+/// with its result.
+class _ThoughtStep {
+  final bool isReasoning;
+  final String? reasoningText;
+  final ToolCallRef? call;
+  final TranscriptItem? result;
+  final _CallStatus status;
+  final int? anchorTsMs;
+
+  _ThoughtStep.reasoning(this.reasoningText)
+      : isReasoning = true,
+        call = null,
+        result = null,
+        status = _CallStatus.done,
+        anchorTsMs = null;
+
+  _ThoughtStep.tool(
+      {required this.call,
+      this.result,
+      this.anchorTsMs,
+      required bool live})
+      : isReasoning = false,
+        reasoningText = null,
+        status = result != null
+            ? (_looksLikeError(result.content)
+                ? _CallStatus.failed
+                : _CallStatus.done)
+            : (live ? _CallStatus.running : _CallStatus.pending);
+
+  /// A tool result row with no matching call row: shown as a step with
+  /// its output, never as a fake assistant message.
+  _ThoughtStep.orphanResult(this.result)
+      : isReasoning = false,
+        reasoningText = null,
+        call = null,
+        anchorTsMs = null,
+        status = _CallStatus.done;
+}
+
+/// Tool name → verb base for the Thoughts rows.
+String _verbBase(String name) {
+  final n = name.toLowerCase();
+  if (n.contains('search') ||
+      n.contains('grep') ||
+      n.contains('find') ||
+      n.contains('lookup')) {
+    return 'search';
+  }
+  if (n.contains('exec') ||
+      n.contains('command') ||
+      n.contains('shell') ||
+      n.contains('bash') ||
+      n.contains('terminal')) {
+    return 'command';
+  }
+  if (n.contains('edit') ||
+      n.contains('write') ||
+      n.contains('patch') ||
+      n.contains('apply')) {
+    return 'edit';
+  }
+  if (n.contains('read')) return 'read';
+  return 'tool';
+}
+
+/// Best-effort error detection: the backend has no machine-readable
+/// error marker on tool results, so match the common "Error…" prefix.
+bool _looksLikeError(String content) =>
+    content.trimLeft().toLowerCase().startsWith('error');
+
+String _trunc(String s, int n) =>
+    s.length <= n ? s : '${s.substring(0, n).trimRight()}…';
+
+/// One-line summary of a tool call's arguments: the most meaningful
+/// value (command, path, pattern…), truncated.
+String _argSummary(String argsJson) {
+  try {
+    final v = jsonDecode(argsJson);
+    if (v is Map) {
+      const preferred = [
+        'command',
+        'path',
+        'pattern',
+        'query',
+        'url',
+        'file',
+        'prompt'
+      ];
+      for (final k in preferred) {
+        final val = v[k];
+        if (val is String && val.trim().isNotEmpty) {
+          return _trunc(val.trim(), 48);
+        }
+      }
+      for (final val in v.values) {
+        if (val is String && val.trim().isNotEmpty) {
+          return _trunc(val.trim(), 48);
+        }
+      }
+    }
+    return _trunc(v.toString(), 48);
+  } catch (_) {
+    return _trunc(argsJson.trim(), 48);
+  }
+}
+
+String _prettyArgs(String argsJson) {
+  try {
+    return const JsonEncoder.withIndent('  ').convert(jsonDecode(argsJson));
+  } catch (_) {
+    return argsJson;
+  }
+}
+
+/// "1.1s" / "350ms" from the assistant message ts to the tool result ts.
+String? _durationStr(TranscriptItem? result, int? anchorTsMs) {
+  if (result?.tsMs == null || anchorTsMs == null) return null;
+  final ms = result!.tsMs! - anchorTsMs;
+  if (ms < 0) return null;
+  if (ms < 1000) return '${ms}ms';
+  return '${(ms / 1000).toStringAsFixed(1)}s';
+}
+
+String _reasoningSummary(String text) {
+  final first = text.trim().split('\n').first.trim();
+  return _trunc(first, 64);
+}
+
+/// Checklist row title: "Ran command", "Searched", "Edited file"…,
+/// or the reasoning summary.
+String _stepTitle(_ThoughtStep s) {
+  if (s.isReasoning) return _reasoningSummary(s.reasoningText ?? '');
+  final name = s.call?.name ?? 'tool';
+  final base = _verbBase(name);
+  final past = s.status == _CallStatus.done || s.status == _CallStatus.failed;
+  return switch (base) {
+    'command' => past ? 'Ran command' : 'Running command',
+    'search' => past ? 'Searched' : 'Searching',
+    'edit' => past ? 'Edited file' : 'Editing file',
+    'read' => past ? 'Read file' : 'Reading file',
+    _ => past ? 'Used $name' : 'Using $name',
+  };
+}
+
+/// Verb label for an expanded tool card: "Ran command".
+String _detailVerb(_ThoughtStep s) {
+  final name = s.call?.name ?? 'tool';
+  return switch (_verbBase(name)) {
+    'command' => 'Ran command',
+    'search' => 'Searched',
+    'edit' => 'Edited file',
+    'read' => 'Read file',
+    _ => 'Used $name',
+  };
+}
+
+final _urlRe = RegExp(r'https?://[^\s)>\]]+');
+
+/// Domains referenced by a search-type tool's result, for the sources
+/// rows (favicon + domain label).
+List<String> _sourceDomains(String resultText) {
+  final seen = <String>[];
+  for (final m in _urlRe.allMatches(resultText)) {
+    final host = Uri.tryParse(m.group(0)!)?.host ?? '';
+    final h = host.startsWith('www.') ? host.substring(4) : host;
+    if (h.isNotEmpty && !seen.contains(h)) seen.add(h);
+  }
+  return seen;
+}
+
+/// Near-full-screen "Thoughts" sheet: a vertical checklist of one
+/// turn's steps — reasoning summaries and tool calls — each with a
+/// status glyph and a chevron. Tapping a row expands its detail card.
+/// Quiet and monochrome: no chat-bubble styling, no ASSISTANT label.
+class _ThoughtsSheet extends StatefulWidget {
+  final List<_ThoughtStep> steps;
+
+  const _ThoughtsSheet({required this.steps});
+
+  @override
+  State<_ThoughtsSheet> createState() => _ThoughtsSheetState();
+}
+
+class _ThoughtsSheetState extends State<_ThoughtsSheet> {
+  final Set<int> _open = {};
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const SizedBox(height: 8),
+          const Center(child: SheetHandle()),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 8, 12, 12),
+            child: Row(
+              children: [
+                Text('Thoughts', style: PT.sectionTitle),
+                const Spacer(),
+                IconButton(
+                  icon: Icon(Icons.close_rounded, color: P.inkSecondary),
+                  onPressed: () => Navigator.pop(context),
+                ),
+              ],
+            ),
+          ),
+          const Divider(height: 1),
+          Expanded(
+            child: ListView.builder(
+              padding: const EdgeInsets.only(bottom: 24),
+              itemCount: widget.steps.length,
+              itemBuilder: (_, i) => _stepRow(widget.steps[i], i),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _stepRow(_ThoughtStep s, int index) {
+    final open = _open.contains(index);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        InkWell(
+          onTap: () => setState(
+              () => open ? _open.remove(index) : _open.add(index)),
+          child: Padding(
+            padding:
+                const EdgeInsets.symmetric(horizontal: 20, vertical: 13),
+            child: Row(
+              children: [
+                _statusGlyph(s.status),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(_stepTitle(s),
+                      style: PT.body.copyWith(fontSize: 14)),
+                ),
+                Icon(
+                    open
+                        ? Icons.expand_less_rounded
+                        : Icons.expand_more_rounded,
+                    size: 18,
+                    color: P.inkSecondary),
+              ],
+            ),
+          ),
+        ),
+        if (open) _stepDetail(s),
+        const Divider(height: 1, indent: 20, endIndent: 20),
+      ],
+    );
+  }
+
+  Widget _statusGlyph(_CallStatus status) {
+    switch (status) {
+      case _CallStatus.running:
+        return const SizedBox(
+          width: 16,
+          height: 16,
+          child: CircularProgressIndicator(strokeWidth: 2),
+        );
+      case _CallStatus.done:
+        return Icon(Icons.check_rounded,
+            size: 16, color: P.inkSecondary);
+      case _CallStatus.failed:
+        return const Icon(Icons.close_rounded, size: 16, color: P.err);
+      case _CallStatus.pending:
+        return Icon(Icons.schedule_rounded,
+            size: 16, color: P.inkSecondary);
+    }
+  }
+
+  Widget _stepDetail(_ThoughtStep s) {
+    if (s.isReasoning) {
+      return Container(
+        width: double.infinity,
+        margin: const EdgeInsets.fromLTRB(20, 0, 20, 14),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: P.tonal,
+          borderRadius: BorderRadius.circular(P.r12),
+          border: Border.all(color: P.border),
+        ),
+        child: SelectableText(
+          s.reasoningText ?? '',
+          style: PT.body.copyWith(fontSize: 13, color: P.inkSecondary),
+        ),
+      );
+    }
+    return _toolDetail(s);
+  }
+
+  Widget _toolDetail(_ThoughtStep s) {
+    final call = s.call;
+    final argsLine = call == null ? '' : _argSummary(call.arguments);
+    final dur = _durationStr(s.result, s.anchorTsMs);
+    final sources = s.result != null &&
+            _verbBase(call?.name ?? '') == 'search'
+        ? _sourceDomains(s.result!.content)
+        : const <String>[];
+    final resultText = s.result?.content ?? '';
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.fromLTRB(20, 0, 20, 14),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: P.tonal,
+        borderRadius: BorderRadius.circular(P.r12),
+        border: Border.all(color: P.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(_detailVerb(s),
+                    style:
+                        PT.monoEyebrow.copyWith(color: P.inkSecondary)),
+              ),
+              if (argsLine.isNotEmpty)
+                IconButton(
+                  visualDensity: VisualDensity.compact,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                  icon: Icon(Icons.copy_rounded,
+                      size: 15, color: P.inkSecondary),
+                  tooltip: 'Copy',
+                  onPressed: () {
+                    Clipboard.setData(ClipboardData(text: argsLine));
+                    HapticFeedback.lightImpact();
+                  },
+                ),
+            ],
+          ),
+          if (argsLine.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            SelectableText(argsLine, style: PT.monoSm),
+          ],
+          if (dur != null) ...[
+            const SizedBox(height: 4),
+            Text('· $dur', style: PT.faint),
+          ],
+          if (call != null &&
+              _prettyArgs(call.arguments).trim().isNotEmpty &&
+              _prettyArgs(call.arguments).trim() != argsLine) ...[
+            const SizedBox(height: 8),
+            SelectableText(_prettyArgs(call.arguments),
+                style: PT.monoSm.copyWith(color: P.inkSecondary)),
+          ],
+          if (sources.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Text('SOURCES',
+                style: PT.monoEyebrow.copyWith(color: P.inkSecondary)),
+            const SizedBox(height: 6),
+            for (final d in sources) _sourceRow(d),
+          ],
+          if (resultText.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Text('RESULT',
+                style: PT.monoEyebrow.copyWith(color: P.inkSecondary)),
+            const SizedBox(height: 6),
+            SelectableText(
+              resultText.length > 4000
+                  ? '${resultText.substring(0, 4000)}\n…truncated'
+                  : resultText,
+              style: PT.monoSm.copyWith(color: P.inkSecondary),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _sourceRow(String domain) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Row(
+        children: [
+          Image.network(
+            'https://www.google.com/s2/favicons?domain=$domain&sz=32',
+            width: 16,
+            height: 16,
+            errorBuilder: (_, __, ___) => Icon(Icons.public_rounded,
+                size: 16, color: P.inkSecondary),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(domain,
+                style: PT.small.copyWith(color: P.inkSecondary),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// One subagent's activity span: a maximal run of agent-kind timeline
+/// events (`agent_spawned` → `agent_message`* → `agent_completed`).
+/// The backend does not expose subagent transcripts, so the span's
+/// nested content is its timeline events — the same data source the
+/// agent activity view uses.
+class _SubagentSpan {
+  final String name;
+  final int? startedMs;
+  final int? endedMs;
+  final List<TimelineItem> items;
+
+  const _SubagentSpan({
+    required this.name,
+    required this.startedMs,
+    required this.endedMs,
+    required this.items,
+  });
+
+  bool get completed => endedMs != null;
+
+  /// Elapsed wall time: spawn → completion, or spawn → now while
+  /// still running.
+  Duration get elapsed {
+    final start = startedMs ?? DateTime.now().millisecondsSinceEpoch;
+    final end =
+        endedMs ?? DateTime.now().millisecondsSinceEpoch;
+    return Duration(milliseconds: (end - start).clamp(0, 1 << 62));
+  }
+
+  String get statusLabel {
+    final e = elapsed;
+    final t = e.inMinutes > 0
+        ? '${e.inMinutes}m ${e.inSeconds % 60}s'
+        : '${e.inSeconds}s';
+    return completed ? 'Completed · $t' : 'Running · $t';
+  }
+}
+
+/// Near-full-screen sheet listing the turn's subagents: task name,
+/// status with elapsed time, and each subagent's nested content — its
+/// timeline events as checklist rows in the same visual language as
+/// the Thoughts sheet.
+class _SubagentsSheet extends StatefulWidget {
+  final List<_SubagentSpan> spans;
+  final ScrollController scrollController;
+
+  const _SubagentsSheet(
+      {required this.spans, required this.scrollController});
+
+  @override
+  State<_SubagentsSheet> createState() => _SubagentsSheetState();
+}
+
+class _SubagentsSheetState extends State<_SubagentsSheet> {
+  final Set<int> _open = {};
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const SizedBox(height: 8),
+          const Center(child: SheetHandle()),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 8, 12, 12),
+            child: Row(
+              children: [
+                Text('Subagents', style: PT.sectionTitle),
+                const Spacer(),
+                IconButton(
+                  icon:
+                      Icon(Icons.close_rounded, color: P.inkSecondary),
+                  onPressed: () => Navigator.pop(context),
+                ),
+              ],
+            ),
+          ),
+          const Divider(height: 1),
+          Expanded(
+            child: ListView.builder(
+              controller: widget.scrollController,
+              padding: const EdgeInsets.only(bottom: 24),
+              itemCount: widget.spans.length,
+              itemBuilder: (_, i) => _agentBlock(widget.spans[i], i),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _agentBlock(_SubagentSpan span, int index) {
+    final open = _open.contains(index);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        InkWell(
+          onTap: () =>
+              setState(() => open ? _open.remove(index) : _open.add(index)),
+          child: Padding(
+            padding:
+                const EdgeInsets.symmetric(horizontal: 20, vertical: 13),
+            child: Row(
+              children: [
+                _agentStatusGlyph(span),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(span.name,
+                          style: PT.body.copyWith(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600)),
+                      const SizedBox(height: 2),
+                      Text(span.statusLabel, style: PT.meta),
+                    ],
+                  ),
+                ),
+                Icon(
+                    open
+                        ? Icons.expand_less_rounded
+                        : Icons.expand_more_rounded,
+                    size: 18,
+                    color: P.inkSecondary),
+              ],
+            ),
+          ),
+        ),
+        if (open)
+          ...span.items.map((e) => _eventRow(e)),
+        const Divider(height: 1, indent: 20, endIndent: 20),
+      ],
+    );
+  }
+
+  Widget _agentStatusGlyph(_SubagentSpan span) {
+    if (span.completed) {
+      return Icon(Icons.check_rounded, size: 16, color: P.inkSecondary);
+    }
+    return const SizedBox(
+      width: 16,
+      height: 16,
+      child: CircularProgressIndicator(strokeWidth: 2),
+    );
+  }
+
+  /// One timeline event in the subagent's nested content: status glyph
+  /// plus title, with detail on a second line.
+  Widget _eventRow(TimelineItem e) {
+    final spec = tlGlyph(e.kind);
+    final detail = (e.detail ?? '').trim();
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(52, 4, 20, 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          GlyphCircle(icon: spec.icon, color: spec.color),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(tlTitle(e.kind),
+                    style: PT.body.copyWith(
+                        fontSize: 13.5, fontWeight: FontWeight.w600)),
+                if (detail.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 2),
+                    child: Text(detail, style: PT.meta),
+                  ),
+              ],
+            ),
           ),
         ],
       ),

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import 'screens/appearance_screen.dart';
@@ -29,6 +31,7 @@ import 'screens/voice_settings_screen.dart';
 import 'services/app_preferences.dart';
 import 'services/pantheon_api.dart';
 import 'services/settings_store.dart';
+import 'widgets/in_app_banner.dart';
 import 'theme.dart';
 
 void main() {
@@ -237,11 +240,22 @@ class _MainShellState extends State<MainShell> {
   late PantheonApi _api;
   final _pendingApprovals = ValueNotifier<int>(0);
 
+  /// Approvals watcher: polls the approvals list so a pending approval
+  /// surfaces an in-app banner even when the Approvals screen (now in
+  /// the More hub) isn't open. First poll seeds the seen set; later
+  /// polls banner only for newly parked approvals.
+  Timer? _approvalWatch;
+  final Set<String> _seenApprovalIds = {};
+  bool _approvalWatchSeeded = false;
+
   @override
   void initState() {
     super.initState();
     _api = PantheonApi(
         baseUrl: widget.settings.baseUrl, token: widget.settings.token);
+    _approvalWatch =
+        Timer.periodic(const Duration(seconds: 15), (_) => _watchApprovals());
+    _watchApprovals();
   }
 
   @override
@@ -256,8 +270,42 @@ class _MainShellState extends State<MainShell> {
 
   @override
   void dispose() {
+    _approvalWatch?.cancel();
     _pendingApprovals.dispose();
     super.dispose();
+  }
+
+  /// Poll the approvals list: keep the pending count fresh and raise an
+  /// in-app banner for newly parked approvals. Silent on failure — the
+  /// next tick retries.
+  Future<void> _watchApprovals() async {
+    try {
+      final list = await _api.approvals();
+      if (!mounted) return;
+      _pendingApprovals.value = list.length;
+      if (!_approvalWatchSeeded) {
+        _seenApprovalIds.addAll(list.map((a) => a.id));
+        _approvalWatchSeeded = true;
+        return;
+      }
+      for (final a in list) {
+        if (_seenApprovalIds.add(a.id)) {
+          InAppBanner.showApproval(
+            title: 'Approval needed',
+            body:
+                '${a.displayRun} is parked waiting for your decision.',
+            sessionId: a.runId.isNotEmpty ? a.runId : null,
+            onTap: () {
+              InAppBanner.dismiss();
+              Navigator.of(context).push(MaterialPageRoute(
+                  builder: (_) => ApprovalsScreen(
+                      api: _api,
+                      pendingApprovals: _pendingApprovals)));
+            },
+          );
+        }
+      }
+    } catch (_) {}
   }
 
   void _onReconnect(PantheonApi api) {
@@ -270,24 +318,31 @@ class _MainShellState extends State<MainShell> {
     final pages = [
       HomeScreen(api: _api, pendingApprovals: _pendingApprovals),
       SessionsScreen(api: _api, pendingApprovals: _pendingApprovals),
-      ApprovalsScreen(api: _api, pendingApprovals: _pendingApprovals),
+      ScheduleScreen(api: _api),
       StatsScreen(api: _api),
       MoreTab(
         api: _api,
         settings: widget.settings,
         onSignOut: widget.onSignOut,
         onReconnect: _onReconnect,
+        pendingApprovals: _pendingApprovals,
       ),
     ];
     return Scaffold(
-      body: IndexedStack(index: _tab, children: pages),
-      bottomNavigationBar: ValueListenableBuilder<int>(
-        valueListenable: _pendingApprovals,
-        builder: (context, pending, _) => _NyxTabBar(
-          index: _tab,
-          pendingApprovals: pending,
-          onTap: (i) => setState(() => _tab = i),
-        ),
+      body: Stack(
+        children: [
+          IndexedStack(index: _tab, children: pages),
+          const Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: InAppBannerHost(),
+          ),
+        ],
+      ),
+      bottomNavigationBar: _NyxTabBar(
+        index: _tab,
+        onTap: (i) => setState(() => _tab = i),
       ),
     );
   }
@@ -297,12 +352,10 @@ class _MainShellState extends State<MainShell> {
 /// active icon in a 64×32 accent-wash pill, thin-stroke icons.
 class _NyxTabBar extends StatelessWidget {
   final int index;
-  final int pendingApprovals;
   final ValueChanged<int> onTap;
 
   const _NyxTabBar({
     required this.index,
-    required this.pendingApprovals,
     required this.onTap,
   });
 
@@ -311,7 +364,7 @@ class _NyxTabBar extends StatelessWidget {
     const items = [
       _TabDef(Icons.home_outlined, Icons.home_rounded, 'Home'),
       _TabDef(Icons.forum_outlined, Icons.forum_rounded, 'Sessions'),
-      _TabDef(Icons.rule_outlined, Icons.rule_rounded, 'Approvals'),
+      _TabDef(Icons.schedule_outlined, Icons.schedule_rounded, 'Tasks'),
       _TabDef(Icons.bar_chart_outlined, Icons.bar_chart_rounded, 'Usage'),
       _TabDef(Icons.more_horiz_rounded, Icons.more_horiz_rounded, 'More'),
     ];
@@ -359,16 +412,7 @@ class _NyxTabBar extends StatelessWidget {
               color: active ? P.accentSoft : Colors.transparent,
             ),
             alignment: Alignment.center,
-            child: i == 2 && pendingApprovals > 0
-                ? Badge(
-                    label: Text('$pendingApprovals',
-                        style: const TextStyle(
-                            fontSize: 10, fontWeight: FontWeight.w600)),
-                    backgroundColor: P.err,
-                    textColor: Colors.white,
-                    child: icon,
-                  )
-                : icon,
+            child: icon,
           ),
           const SizedBox(height: 4),
           Text(
@@ -401,6 +445,7 @@ class MoreTab extends StatelessWidget {
   final ConnectionSettings settings;
   final VoidCallback onSignOut;
   final void Function(PantheonApi api) onReconnect;
+  final ValueNotifier<int> pendingApprovals;
 
   const MoreTab({
     super.key,
@@ -408,6 +453,7 @@ class MoreTab extends StatelessWidget {
     required this.settings,
     required this.onSignOut,
     required this.onReconnect,
+    required this.pendingApprovals,
   });
 
   @override
@@ -418,6 +464,37 @@ class MoreTab extends StatelessWidget {
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
         children: [
           const _HubSection('Control'),
+          ValueListenableBuilder<int>(
+            valueListenable: pendingApprovals,
+            builder: (context, pending, _) => _hubCard(
+              context,
+              icon: Icons.rule_outlined,
+              title: 'Approvals',
+              subtitle: pending > 0
+                  ? '$pending waiting for your decision'
+                  : 'No pending decisions',
+              trailing: pending > 0
+                  ? Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: P.err,
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: Text('$pending',
+                          style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700)),
+                    )
+                  : null,
+              onTap: () => _push(
+                  context,
+                  ApprovalsScreen(
+                      api: api, pendingApprovals: pendingApprovals)),
+            ),
+          ),
+          const SizedBox(height: 12),
           _hubCard(
             context,
             icon: Icons.schedule_outlined,
@@ -605,7 +682,8 @@ class MoreTab extends StatelessWidget {
       {required IconData icon,
       required String title,
       required String subtitle,
-      required VoidCallback onTap}) {
+      required VoidCallback onTap,
+      Widget? trailing}) {
     return Material(
       color: Colors.transparent,
       child: InkWell(
@@ -641,6 +719,10 @@ class MoreTab extends StatelessWidget {
                   ],
                 ),
               ),
+              if (trailing != null) ...[
+                trailing,
+                const SizedBox(width: 8),
+              ],
                Icon(Icons.chevron_right_rounded,
                   color: P.inkFaint, size: 22),
             ],

@@ -269,7 +269,7 @@ class AppPreferences {
   }
 
   /// True when quiet hours are enabled and now falls inside them.
-  /// The future delivery path calls this before firing.
+  /// [NotificationService.notify] calls this before firing.
   bool isQuietNow() {
     if (!quietHoursEnabled.value) return false;
     final now = DateTime.now();
@@ -280,7 +280,8 @@ class AppPreferences {
     return s < e ? (m >= s && m < e) : (m >= s || m < e);
   }
 
-  /// True when the session is muted. Check at every emission point.
+  /// True when the session is muted. [NotificationService.notify]
+  /// checks this at every emission point.
   bool isSessionMuted(String id) => mutedSessions.value.contains(id);
 
   Future<void> _setColor(

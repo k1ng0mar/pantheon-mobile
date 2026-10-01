@@ -1018,14 +1018,11 @@ class PantheonApi {
   }
 
   /// `POST /api/swarm/<id>/retry` → 200 `{"swarm_id","round"}`.
-  /// No feedback → the backend defaults to the judge's notes.
+  /// The backend takes no feedback body: the next round carries the
+  /// judge's notes, so nothing is sent here.
   /// 400 when the max round is reached or there is nothing to retry.
-  Future<Map<String, dynamic>> retrySwarm(String id,
-      {String? feedback}) async {
-    final body = <String, dynamic>{};
-    if (feedback != null && feedback.isNotEmpty) body['feedback'] = feedback;
-    return await _post(
-        '/api/swarm/${Uri.encodeComponent(id)}/retry', body);
+  Future<Map<String, dynamic>> retrySwarm(String id) async {
+    return await _post('/api/swarm/${Uri.encodeComponent(id)}/retry', {});
   }
 
   // ------------------------------------------------------------------

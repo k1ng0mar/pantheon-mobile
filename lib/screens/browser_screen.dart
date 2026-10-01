@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:typed_data';
-import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 
@@ -51,8 +50,9 @@ class _BrowserScreenState extends State<BrowserScreen> {
 
   /// True once a live session's stream has ended (error or disconnect).
   /// Drives the "Completed · <session>" panel: the browser session may
-  /// still be open server-side, so offer take-control or stop instead of
-  /// just a reconnect link.
+  /// still be open server-side (there is no server-side stop endpoint —
+  /// only GET status, GET stream, POST input), so this panel offers
+  /// take-control or a plain disconnect of the local stream.
   bool _sessionEnded = false;
 
   /// Latest browser narration for this session, polled every 2s.
@@ -188,8 +188,9 @@ class _BrowserScreenState extends State<BrowserScreen> {
       if (!mounted) return;
       setState(() {
         // A stream that was live and then ended leaves the session-end
-        // panel: the browser session may still be open, so the user can
-        // take control of it or stop it.
+        // panel: the browser session may still be open server-side, so
+        // the user can take control of it or just disconnect this view
+        // (no server-side stop endpoint exists).
         if ((s == BrowserStreamState.error ||
                 s == BrowserStreamState.disconnected) &&
             _streamState == BrowserStreamState.live) {
@@ -219,7 +220,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
     // mid-session); skip while a decode is already in flight.
     if ((_imgW == null || _imgH == null) && !_decoding) {
       _decoding = true;
-      ui.decodeImageFromList(bytes).then((img) {
+      decodeImageFromList(bytes).then((img) {
         _decoding = false;
         if (!mounted) return;
         if (_imgW != img.width || _imgH != img.height) {
@@ -428,8 +429,9 @@ class _BrowserScreenState extends State<BrowserScreen> {
                 const SizedBox(height: 8),
                 Text(
                   'The stream ended, but the browser session may '
-                  'still be open. Take control to keep using it, '
-                  'or stop it.',
+                  'still be open server-side. Take control to keep '
+                  'watching it, or disconnect — disconnecting only '
+                  'closes this view, not the session.',
                   style: PT.small
                       .copyWith(color: P.inkSecondary),
                 ),
@@ -443,7 +445,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
                 Center(
                   child: TextButton(
                     onPressed: _disconnect,
-                    child: Text('Stop the task',
+                    child: Text('Disconnect',
                         style: PT.label
                             .copyWith(color: P.err)),
                   ),

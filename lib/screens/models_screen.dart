@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../models/models.dart';
 import '../services/pantheon_api.dart';
@@ -34,6 +35,13 @@ class _ModelsScreenState extends State<ModelsScreen> {
   /// documented default when the section is absent).
   final Map<String, dynamic> _swarmDraft = {};
 
+  /// In-flight value for the `[budget]` child-budget knob while a save
+  /// is pending. Null = show the server value from the ConfigDoc; an
+  /// absent key means no cap is configured.
+  int? _childBudgetDraft;
+  final _childBudgetCtrl = TextEditingController();
+  final _childBudgetFocus = FocusNode();
+
   /// Aux slot labels for the known auxiliary kinds.
   static const _auxTitles = {
     'judge': 'Judge',
@@ -59,6 +67,13 @@ class _ModelsScreenState extends State<ModelsScreen> {
   void initState() {
     super.initState();
     _load();
+  }
+
+  @override
+  void dispose() {
+    _childBudgetCtrl.dispose();
+    _childBudgetFocus.dispose();
+    super.dispose();
   }
 
   void _load() {
@@ -243,6 +258,8 @@ class _ModelsScreenState extends State<ModelsScreen> {
                 ),
                 const Overline('Swarm'),
                 _swarmCard(snap.data!),
+                const Overline('Budget'),
+                _budgetCard(snap.data!),
               ],
             ),
           );
@@ -351,6 +368,97 @@ class _ModelsScreenState extends State<ModelsScreen> {
       await widget.api.putConfig({key: value});
     } catch (e) {
       setState(() => _swarmDraft.remove(short));
+      if (mounted) toastError(context, e);
+    } finally {
+      if (mounted) setState(() => _busy.remove(key));
+    }
+  }
+
+  /// The `[budget]` child-budget knob: the default max tokens for a
+  /// delegated child's generation. A numeric input, saved on submit via
+  /// `PUT /api/config`; an absent key means no cap is configured.
+  Widget _budgetCard(ConfigDoc doc) {
+    final section = doc.values['budget'];
+    final raw = section is Map ? section.cast<String, dynamic>() : {};
+    int? serverVal;
+    final v = raw['delegate_child_max_tokens'];
+    if (v is num) serverVal = v.toInt();
+    final display = _childBudgetDraft ?? serverVal;
+    final text = display?.toString() ?? '';
+    if (!_childBudgetFocus.hasFocus && _childBudgetCtrl.text != text) {
+      _childBudgetCtrl.text = text;
+    }
+
+    const key = 'budget.delegate_child_max_tokens';
+    final busy = _busy.contains(key);
+    return PCard(
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Default child budget (max tokens)', style: PT.rowTitle),
+                const SizedBox(height: 2),
+                Text("Default max tokens for a delegated child's generation.",
+                    style: PT.meta.copyWith(color: P.inkFaint)),
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
+          SizedBox(
+            width: 110,
+            child: TextField(
+              controller: _childBudgetCtrl,
+              focusNode: _childBudgetFocus,
+              enabled: !busy,
+              keyboardType: TextInputType.number,
+              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+              textAlign: TextAlign.right,
+              style: PT.mono,
+              decoration: const InputDecoration(hintText: 'unset'),
+              onSubmitted: (_) => _submitBudget(),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Parse the child-budget input and save it. Empty = leave unchanged;
+  /// a non-positive or unparseable value snaps back to the server value.
+  void _submitBudget() {
+    final text = _childBudgetCtrl.text.trim();
+    if (text.isEmpty) {
+      _childBudgetFocus.unfocus();
+      toast(context, 'No value entered — budget unchanged.');
+      return;
+    }
+    final value = int.tryParse(text);
+    if (value == null || value < 1) {
+      toastError(context, 'Enter a positive number of tokens.');
+      setState(() => _childBudgetDraft = null);
+      _childBudgetFocus.unfocus();
+      return;
+    }
+    _saveBudget('budget.delegate_child_max_tokens', value);
+  }
+
+  /// Save the `[budget]` child-budget knob. The draft keeps the UI stable
+  /// while the save is in flight; it is cleared on failure so the row
+  /// snaps back to the server value.
+  Future<void> _saveBudget(String key, int value) async {
+    if (_busy.contains(key)) return;
+    setState(() {
+      _busy.add(key);
+      _childBudgetDraft = value;
+    });
+    _childBudgetFocus.unfocus();
+    try {
+      await widget.api.putConfig({key: value});
+      if (mounted) toast(context, 'Child budget saved.');
+    } catch (e) {
+      setState(() => _childBudgetDraft = null);
       if (mounted) toastError(context, e);
     } finally {
       if (mounted) setState(() => _busy.remove(key));
