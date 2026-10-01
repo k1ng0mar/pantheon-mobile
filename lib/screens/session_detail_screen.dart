@@ -22,10 +22,12 @@ import '../widgets/export_sheet.dart';
 import '../widgets/forms.dart';
 import '../widgets/message_content.dart';
 import '../widgets/new_chat_sheet.dart';
+import '../widgets/session_timeline.dart';
 import '../widgets/states.dart';
 import '../widgets/team_run_view.dart';
 import '../widgets/todos_sheet.dart';
 import '../widgets/voice_note_pill.dart';
+import 'agent_activity_screen.dart';
 import 'voice_screen.dart';
 
 /// A session as a real chat: transcript bubbles, live polling while the
@@ -149,9 +151,6 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
   /// Recorder for the in-flight voice note; the pill drives it and the
   /// parent disposes it once the pill reports back.
   AudioRecorder? _voiceRecorder;
-
-  /// Timeline rows the user expanded, by item seq.
-  final Set<int> _expandedTl = {};
 
   static bool _isLive(String status) =>
       status == 'running' || status == 'awaiting_approval';
@@ -1264,6 +1263,18 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
           api: widget.api,
           runId: id,
           pendingApprovals: widget.pendingApprovals)),
+    );
+  }
+
+  /// Muse-style agent profile entry: tap the agent avatar in chat to
+  /// open the session-scoped activity view for this run.
+  void _openAgentActivity() {
+    final run = _run;
+    if (run == null) return;
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => AgentActivityScreen(run: run, api: widget.api),
+      ),
     );
   }
 
@@ -2796,15 +2807,18 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
       if (sentAtts.isNotEmpty) body.add(_sentAttachmentGrid(sentAtts));
       final header = Padding(
         padding: const EdgeInsets.only(bottom: 6),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ActiveProfileAvatar(api: widget.api, size: 22),
-            const SizedBox(width: 8),
-            Text((t.role ?? 'assistant').toUpperCase(),
-                style: PT.monoEyebrow
-                    .copyWith(color: isTool ? P.info : P.accent)),
-          ],
+        child: GestureDetector(
+          onTap: _openAgentActivity,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ActiveProfileAvatar(api: widget.api, size: 22),
+              const SizedBox(width: 8),
+              Text((t.role ?? 'assistant').toUpperCase(),
+                  style: PT.monoEyebrow
+                      .copyWith(color: isTool ? P.info : P.accent)),
+            ],
+          ),
         ),
       );
       if (!isUser && !bubbles) {
@@ -2890,9 +2904,9 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
   /// Timeline tab: one dark card with a header block (title, status
   /// chip + outcome time, and the outcome detail as a separated block
   /// for failed/canceled runs), then MAIN / SUBAGENT NN sections whose
-  /// rows hang off a dashed rail with status glyphs. Rows expand on
-  /// tap. Detail lines only render when they have real content —
-  /// empty strings never produce a line.
+  /// Timeline tab: the shared [SessionTimeline] card (header, MAIN /
+  /// SUBAGENT NN sections, expandable rows) inside the tab's scroll
+  /// container. Retry of a failed turn stays wired here.
   Widget _timeline(PantheonRun run) {
     if (run.timeline.isEmpty) {
       return const EmptyState(
@@ -2905,389 +2919,13 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
       child: StaggerItem(
         index: 0,
-        child: Container(
-          decoration: BoxDecoration(
-            color: P.surface,
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: P.border),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              _timelineHeader(run),
-              ..._timelineBlocks(run),
-            ],
-          ),
+        child: SessionTimeline(
+          run: run,
+          retrying: _retrying,
+          onRetry: _retryRun,
         ),
       ),
     );
-  }
-
-  /// Card header: title, status chip + outcome time, and the outcome
-  /// detail as a separated paragraph when it exists.
-  Widget _timelineHeader(PantheonRun run) {
-    TimelineItem? terminal;
-    for (final e in run.timeline) {
-      if (_isTerminalKind(e.kind)) terminal = e;
-    }
-    final detail = (terminal?.detail ?? '').trim();
-    final outcomeTs = terminal?.tsMs ?? run.createdMs;
-
-    String label;
-    Color color;
-    if (run.status == 'failed') {
-      label = 'Error';
-      color = P.err;
-    } else if (run.status == 'canceled') {
-      label = 'Canceled';
-      color = P.err;
-    } else if (run.status == 'awaiting_approval') {
-      label = 'Awaiting approval';
-      color = P.warn;
-    } else if (run.status == 'running') {
-      label = 'Live';
-      color = P.accent;
-    } else if (run.status == 'completed') {
-      label = 'Completed';
-      color = P.ok;
-    } else {
-      label = run.status;
-      color = P.inkMuted;
-    }
-
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 18, 20, 16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            run.title.trim().isNotEmpty ? run.title.trim() : 'Session',
-            style: PT.cardTitle.copyWith(fontSize: 19),
-          ),
-          const SizedBox(height: 10),
-          Row(
-            children: [
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                decoration: BoxDecoration(
-                  color: color.withValues(alpha: 0.14),
-                  borderRadius: BorderRadius.circular(8),
-                  border:
-                      Border.all(color: color.withValues(alpha: 0.45)),
-                ),
-                child: Text(label,
-                    style: PT.label.copyWith(fontSize: 12, color: color)),
-              ),
-              const SizedBox(width: 10),
-              Text(_clockTime(outcomeTs), style: PT.meta),
-            ],
-          ),
-          if (detail.isNotEmpty) ...[
-            const SizedBox(height: 12),
-             Divider(color: P.divider, height: 1),
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 10),
-              child: SelectableText(detail,
-                  style: PT.body.copyWith(
-                      fontSize: 13.5, color: P.inkSecondary)),
-            ),
-          ],
-          if (run.status == 'failed') ...[
-            const SizedBox(height: 12),
-            SizedBox(
-              width: double.infinity,
-              child: OutlinedButton.icon(
-                onPressed: _retrying ? null : _retryRun,
-                icon: _retrying
-                    ? const SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(Icons.refresh_rounded, size: 18),
-                label: Text(_retrying ? 'Retrying…' : 'Retry turn'),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: P.accent,
-                  side: BorderSide(color: P.accent.withValues(alpha: 0.5)),
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12)),
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                ),
-              ),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-
-  /// Timeline body: section headers plus rows. Subagent spans become
-  /// numbered SUBAGENT sections; everything else is MAIN. A row draws
-  /// its dashed rail only when the next block is a plain row (no
-  /// section header in between).
-  List<Widget> _timelineBlocks(PantheonRun run) {
-    final segments = <_TlSegment>[];
-    var subagents = 0;
-    var inSubagent = false;
-    var mainAdded = false;
-    for (final e in run.timeline) {
-      String? section;
-      String? subtitle;
-      if (_isAgentKind(e.kind)) {
-        if (!inSubagent) {
-          subagents++;
-          final agent = (e.detail ?? '').trim();
-          section =
-              'SUBAGENT ${subagents.toString().padLeft(2, '0')}';
-          subtitle = agent.isNotEmpty ? agent : null;
-          inSubagent = true;
-        }
-      } else {
-        inSubagent = false;
-        if (!mainAdded) {
-          section = 'MAIN';
-          mainAdded = true;
-        }
-      }
-      segments.add(
-          _TlSegment(section: section, subtitle: subtitle, item: e));
-    }
-    final blocks = <Widget>[];
-    for (var i = 0; i < segments.length; i++) {
-      final s = segments[i];
-      if (s.section != null) {
-        blocks.add(_timelineSection(s.section!, subtitle: s.subtitle));
-      }
-      final next = i + 1 < segments.length ? segments[i + 1] : null;
-      blocks.add(_timelineRow(s.item,
-          showRail: next != null && next.section == null));
-    }
-    return blocks;
-  }
-
-  Widget _timelineSection(String label, {String? subtitle}) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-         Divider(color: P.divider, height: 1),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(20, 12, 20, 4),
-          child: Row(
-            children: [
-              Expanded(
-                child: Text(label,
-                    style: PT.label.copyWith(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: 1.1,
-                        color: P.inkSecondary)),
-              ),
-              if (subtitle != null)
-                Flexible(
-                  child: Text(subtitle,
-                      style: PT.meta,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis),
-                ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _timelineRow(TimelineItem item, {required bool showRail}) {
-    final expanded = _expandedTl.contains(item.seq);
-    final detail = (item.detail ?? '').trim();
-    final spec = _tlGlyph(item.kind);
-    final body = IntrinsicHeight(
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Column(
-            children: [
-              const SizedBox(height: 2),
-              _GlyphCircle(icon: spec.icon, color: spec.color),
-              if (showRail) const Expanded(child: _DashedRail()),
-            ],
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Padding(
-              padding: const EdgeInsets.only(bottom: 4),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(_tlTitle(item.kind),
-                      style: PT.body.copyWith(
-                          fontSize: 14.5, fontWeight: FontWeight.w600)),
-                  if (detail.isNotEmpty && !expanded)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 3),
-                      child: Text(detail,
-                          style: PT.meta,
-                          maxLines: 3,
-                          overflow: TextOverflow.ellipsis),
-                    ),
-                  if (expanded) ...[
-                    Padding(
-                      padding: const EdgeInsets.only(top: 6),
-                      child: SelectableText(detail,
-                          style: PT.body.copyWith(
-                              fontSize: 13.5, color: P.inkSecondary)),
-                    ),
-                    Padding(
-                      padding: const EdgeInsets.only(top: 6),
-                      child: Text(timeAgo(item.tsMs), style: PT.faint),
-                    ),
-                  ],
-                ],
-              ),
-            ),
-          ),
-          if (detail.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.only(top: 2),
-              child: Icon(
-                  expanded
-                      ? Icons.keyboard_arrow_up_rounded
-                      : Icons.chevron_right_rounded,
-                  color: P.inkMuted,
-                  size: 20),
-            ),
-        ],
-      ),
-    );
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 10, 14, 10),
-      child: detail.isEmpty
-          ? body
-          : InkWell(
-              onTap: () => setState(() => expanded
-                  ? _expandedTl.remove(item.seq)
-                  : _expandedTl.add(item.seq)),
-              borderRadius: BorderRadius.circular(8),
-              child: body,
-            ),
-    );
-  }
-
-  static bool _isAgentKind(String kind) =>
-      kind == 'agent_spawned' ||
-      kind == 'agent_message' ||
-      kind == 'agent_completed';
-
-  static bool _isTerminalKind(String kind) =>
-      kind == 'run_failed' ||
-      kind == 'run_canceled' ||
-      kind == 'run_completed';
-
-  /// Status glyph for a timeline kind.
-  _GlyphSpec _tlGlyph(String kind) {
-    switch (kind) {
-      case 'run_completed':
-      case 'turn_completed':
-      case 'agent_completed':
-      case 'approval_granted':
-      case 'model_completed':
-        return _GlyphSpec(Icons.check_rounded, P.ok);
-      case 'run_failed':
-      case 'approval_denied':
-        return _GlyphSpec(Icons.close_rounded, P.err);
-      case 'run_canceled':
-        return _GlyphSpec(Icons.close_rounded, P.warn);
-      case 'approval_requested':
-      case 'turn_parked':
-        return _GlyphSpec(Icons.schedule_rounded, P.warn);
-      case 'input_requested':
-        return _GlyphSpec(Icons.question_answer_rounded, P.accent);
-      case 'input_provided':
-        return _GlyphSpec(Icons.check_rounded, P.ok);
-      case 'agent_spawned':
-        return _GlyphSpec(Icons.person_add_alt_rounded, P.info);
-      case 'agent_message':
-        return _GlyphSpec(Icons.chat_bubble_outline_rounded, P.info);
-      case 'titled':
-        return _GlyphSpec(Icons.edit_rounded, P.inkMuted);
-      case 'usage':
-        return _GlyphSpec(Icons.pie_chart_outline_rounded, P.inkMuted);
-      case 'run_started':
-      case 'turn_started':
-      case 'model_requested':
-        return _GlyphSpec(Icons.fiber_manual_record_rounded, P.accent);
-      case 'tool_started':
-        return _GlyphSpec(Icons.build_rounded, P.accent);
-      case 'tool_completed':
-        return _GlyphSpec(Icons.check_rounded, P.ok);
-      case 'model_fallback':
-        return _GlyphSpec(Icons.swap_horiz_rounded, P.warn);
-      default:
-        return _GlyphSpec(Icons.info_outline_rounded, P.inkMuted);
-    }
-  }
-
-  /// Bold row title for a timeline kind. Unknown kinds are humanized;
-  /// raw snake_case never reaches the screen.
-  String _tlTitle(String kind) {
-    switch (kind) {
-      case 'run_started':
-        return 'Session started';
-      case 'run_completed':
-        return 'Run completed';
-      case 'run_failed':
-        return 'Run failed';
-      case 'run_canceled':
-        return 'Run canceled';
-      case 'turn_started':
-        return 'Turn started';
-      case 'turn_completed':
-        return 'Turn completed';
-      case 'turn_parked':
-        return 'Turn parked';
-      case 'model_requested':
-        return 'Model request';
-      case 'model_completed':
-        return 'Model response';
-      case 'usage':
-        return 'Usage';
-      case 'approval_requested':
-        return 'Approval requested';
-      case 'approval_granted':
-        return 'Approval granted';
-      case 'approval_denied':
-        return 'Approval denied';
-      case 'input_requested':
-        return 'Clarification needed';
-      case 'input_provided':
-        return 'Clarification answered';
-      case 'agent_spawned':
-        return 'Subagent started';
-      case 'agent_message':
-        return 'Subagent update';
-      case 'agent_completed':
-        return 'Subagent finished';
-      case 'titled':
-        return 'Session renamed';
-      case 'tool_started':
-        return 'Tool started';
-      case 'tool_completed':
-        return 'Tool finished';
-      case 'model_fallback':
-        return 'Model fallback';
-      default:
-        final words = kind.replaceAll('_', ' ').trim();
-        if (words.isEmpty) return 'Event';
-        return words[0].toUpperCase() + words.substring(1);
-    }
-  }
-
-  /// Clock time like "10:29pm".
-  String _clockTime(int tsMs) {
-    final dt = DateTime.fromMillisecondsSinceEpoch(tsMs);
-    final h12 = dt.hour % 12 == 0 ? 12 : dt.hour % 12;
-    final mm = dt.minute.toString().padLeft(2, '0');
-    return '$h12:$mm${dt.hour < 12 ? 'am' : 'pm'}';
   }
 
   void _jumpToBottom() {
@@ -3437,80 +3075,6 @@ class _SlashSuggestionsState extends State<_SlashSuggestions> {
       ),
     );
   }
-}
-
-/// One timeline row plus the section header (if any) that precedes it.
-class _TlSegment {
-  final String? section;
-  final String? subtitle;
-  final TimelineItem item;
-  const _TlSegment({this.section, this.subtitle, required this.item});
-}
-
-/// Status glyph spec for a timeline kind.
-class _GlyphSpec {
-  final IconData icon;
-  final Color color;
-  const _GlyphSpec(this.icon, this.color);
-}
-
-/// The status glyph: tinted circle with an icon.
-class _GlyphCircle extends StatelessWidget {
-  final IconData icon;
-  final Color color;
-
-  const _GlyphCircle({required this.icon, required this.color});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 26,
-      height: 26,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        color: color.withValues(alpha: 0.13),
-        border: Border.all(color: color.withValues(alpha: 0.55), width: 1.2),
-      ),
-      child: Icon(icon, size: 13, color: color),
-    );
-  }
-}
-
-/// Thin dashed vertical rail connecting timeline glyphs.
-class _DashedRail extends StatelessWidget {
-  const _DashedRail();
-
-  @override
-  Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) => CustomPaint(
-        size: Size(2, constraints.maxHeight),
-        painter: _DashPainter(),
-      ),
-    );
-  }
-}
-
-class _DashPainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = P.borderStrong
-      ..strokeWidth = 2
-      ..strokeCap = StrokeCap.round;
-    const dashH = 5.0;
-    const gapH = 5.0;
-    var y = 2.0;
-    while (y < size.height - 2) {
-      final end = (y + dashH).clamp(0.0, size.height);
-      canvas.drawLine(
-          Offset(size.width / 2, y), Offset(size.width / 2, end), paint);
-      y += dashH + gapH;
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
 /// A reasoning trace as a collapsible block, collapsed by default.
