@@ -142,16 +142,21 @@ void main() {
         'total_tokens': 150,
         'cost_usd': 0.5
       },
-      'by_model': {
-        'opus': {
-          'calls': 10,
-          'input_tokens': 100,
-          'output_tokens': 50,
-          'total_tokens': 150,
-          'cost_usd': 0.5
+      // The dashboard emits sections as arrays of {model|day, totals}
+      // (stats.rs); the model folds them into maps keyed by name.
+      'by_model': [
+        {
+          'model': 'opus',
+          'totals': {
+            'calls': 10,
+            'input_tokens': 100,
+            'output_tokens': 50,
+            'total_tokens': 150,
+            'cost_usd': 0.5
+          }
         }
-      },
-      'by_day': {},
+      ],
+      'by_day': <dynamic>[],
     });
     expect(s.totals.calls, 10);
     expect(s.byModel['opus']!.costUsd, 0.5);
@@ -178,7 +183,7 @@ void scheduledJobTests() {
       'overlap': 'skip',
     });
     expect(cron.kind.type, 'cron');
-    expect(cron.kind.display, '0 9 * * *');
+    expect(cron.kind.display, '0 9 * * * · server time');
     expect(cron.nextFireMs, 1759200000000);
     expect(cron.overlap, 'skip');
 
