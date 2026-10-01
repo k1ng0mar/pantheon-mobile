@@ -1922,14 +1922,16 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
     // message, or the end of the transcript is reached.
     final thoughtItems = <TranscriptItem>[];
     final bufferedIndices = <int>[];
+    final live = _isLive(_run?.status ?? '');
     void flushThoughts() {
       final indices = List<int>.from(bufferedIndices);
       final steps = _stepsFromItems(thoughtItems, indices);
       thoughtItems.clear();
       bufferedIndices.clear();
       if (steps.isNotEmpty) {
-        rows.add(
-            StaggerItem(index: indices.first, child: _thoughtsRow(steps)));
+        rows.add(StaggerItem(
+            index: indices.first,
+            child: _thoughtsRow(steps, live)));
       }
       for (final bi in indices) {
         _maybeSubagentPill(rows, bi);
@@ -2179,29 +2181,42 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
         tsMs: t.tsMs,
       );
 
-  /// The collapsed per-turn row: quiet, monochrome, no bubble, no
-  /// ASSISTANT label. Tapping opens the near-full-screen Thoughts sheet.
-  Widget _thoughtsRow(List<_ThoughtStep> steps) {
+  /// The collapsed per-turn row: a quiet pill in the subagent-pill
+  /// style with a real 44dp tap target. Tapping opens the Thoughts sheet.
+  Widget _thoughtsRow(List<_ThoughtStep> steps, bool live) {
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
-      onTap: () => _openThoughts(steps),
-      child: Padding(
-        padding: const EdgeInsets.only(bottom: 10, top: 2),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text('Thoughts',
-                style: PT.monoEyebrow.copyWith(color: P.inkSecondary)),
-            const SizedBox(width: 2),
-            Icon(Icons.chevron_right_rounded,
-                size: 16, color: P.inkSecondary),
-          ],
+      onTap: () => _openThoughts(steps, live),
+      child: Container(
+        constraints: const BoxConstraints(minHeight: 44),
+        margin: const EdgeInsets.only(bottom: 10, top: 2),
+        alignment: Alignment.centerLeft,
+        child: Container(
+          padding:
+              const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          decoration: BoxDecoration(
+            border: Border.all(color: P.border),
+            borderRadius: BorderRadius.circular(999),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.psychology_outlined,
+                  size: 15, color: P.inkSecondary),
+              const SizedBox(width: 8),
+              Text('Thoughts',
+                  style: PT.small.copyWith(color: P.inkSecondary)),
+              const SizedBox(width: 4),
+              Icon(Icons.chevron_right_rounded,
+                  size: 15, color: P.inkSecondary),
+            ],
+          ),
         ),
       ),
     );
   }
 
-  void _openThoughts(List<_ThoughtStep> steps) {
+  void _openThoughts(List<_ThoughtStep> steps, bool live) {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -2211,7 +2226,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
       ),
       builder: (_) => FractionallySizedBox(
         heightFactor: 0.92,
-        child: _ThoughtsSheet(steps: steps),
+        child: _ThoughtsSheet(steps: steps, live: live),
       ),
     );
   }
@@ -4297,18 +4312,19 @@ class _ThoughtStep {
 
   /// A tool result row with no matching call row: shown as a step with
   /// its output, never as a fake assistant message.
-  _ThoughtStep.orphanResult(this.result, [this.transcriptIndex = -1])
+  _ThoughtStep.orphanResult(TranscriptItem res, [this.transcriptIndex = -1])
       : isReasoning = false,
         reasoningText = null,
         call = null,
+        result = res,
         status = _StepStatus.done,
-        id = result.toolCallId ?? '',
+        id = res.toolCallId ?? '',
         kind = 'tool',
         label = 'Tool result',
         args = '',
-        output = result.content,
+        output = res.content,
         startedAtMs = null,
-        durationMs = result.durationMs,
+        durationMs = res.durationMs,
         agent = null,
         task = null,
         prompt = null;
@@ -4357,39 +4373,6 @@ bool _looksLikeError(String content) =>
 
 String _trunc(String s, int n) =>
     s.length <= n ? s : '${s.substring(0, n).trimRight()}…';
-
-/// One-line summary of a tool call's arguments: the most meaningful
-/// value (command, path, pattern…), truncated.
-String _argSummary(String argsJson) {
-  try {
-    final v = jsonDecode(argsJson);
-    if (v is Map) {
-      const preferred = [
-        'command',
-        'path',
-        'pattern',
-        'query',
-        'url',
-        'file',
-        'prompt'
-      ];
-      for (final k in preferred) {
-        final val = v[k];
-        if (val is String && val.trim().isNotEmpty) {
-          return _trunc(val.trim(), 48);
-        }
-      }
-      for (final val in v.values) {
-        if (val is String && val.trim().isNotEmpty) {
-          return _trunc(val.trim(), 48);
-        }
-      }
-    }
-    return _trunc(v.toString(), 48);
-  } catch (_) {
-    return _trunc(argsJson.trim(), 48);
-  }
-}
 
 String _prettyArgs(String argsJson) {
   try {
@@ -4447,7 +4430,11 @@ List<String> _sourceDomains(String resultText) {
 class _ThoughtsSheet extends StatefulWidget {
   final List<_ThoughtStep> steps;
 
-  const _ThoughtsSheet({required this.steps});
+  /// Whether the turn that produced these steps is still live. A
+  /// finished, non-live turn gets a trailing "Done" row.
+  final bool live;
+
+  const _ThoughtsSheet({required this.steps, required this.live});
 
   @override
   State<_ThoughtsSheet> createState() => _ThoughtsSheetState();
@@ -4455,6 +4442,15 @@ class _ThoughtsSheet extends StatefulWidget {
 
 class _ThoughtsSheetState extends State<_ThoughtsSheet> {
   final Set<int> _open = {};
+
+  /// Rows whose output is expanded to the full selectable text.
+  final Set<int> _fullOutput = {};
+
+  /// Output preview length before the tap-to-expand cutoff.
+  static const _outputPreview = 500;
+
+  /// "Done" row: the turn finished and isn't live.
+  bool get _showDone => !widget.live && widget.steps.isNotEmpty;
 
   @override
   Widget build(BuildContext context) {
@@ -4481,8 +4477,10 @@ class _ThoughtsSheetState extends State<_ThoughtsSheet> {
           Expanded(
             child: ListView.builder(
               padding: const EdgeInsets.only(bottom: 24),
-              itemCount: widget.steps.length,
-              itemBuilder: (_, i) => _stepRow(widget.steps[i], i),
+              itemCount: widget.steps.length + (_showDone ? 1 : 0),
+              itemBuilder: (_, i) => i < widget.steps.length
+                  ? _stepRow(widget.steps[i], i)
+                  : _doneRow(),
             ),
           ),
         ],
@@ -4490,8 +4488,30 @@ class _ThoughtsSheetState extends State<_ThoughtsSheet> {
     );
   }
 
+  /// Final "Done" row when the turn finished and isn't live.
+  Widget _doneRow() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding:
+              const EdgeInsets.symmetric(horizontal: 20, vertical: 13),
+          child: Row(
+            children: [
+              _statusGlyph(_StepStatus.done),
+              const SizedBox(width: 12),
+              Text('Done', style: PT.body.copyWith(fontSize: 14)),
+            ],
+          ),
+        ),
+        const Divider(height: 1, indent: 20, endIndent: 20),
+      ],
+    );
+  }
+
   Widget _stepRow(_ThoughtStep s, int index) {
     final open = _open.contains(index);
+    final dur = _stepDuration(s);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -4506,8 +4526,18 @@ class _ThoughtsSheetState extends State<_ThoughtsSheet> {
                 _statusGlyph(s.status),
                 const SizedBox(width: 12),
                 Expanded(
-                  child: Text(_stepTitle(s),
-                      style: PT.body.copyWith(fontSize: 14)),
+                  child: Text.rich(
+                    TextSpan(
+                      text: _stepTitle(s),
+                      style: PT.body.copyWith(fontSize: 14),
+                      children: [
+                        if (dur != null)
+                          TextSpan(
+                              text: ' \u00b7 $dur',
+                              style: PT.faint.copyWith(fontSize: 12)),
+                      ],
+                    ),
+                  ),
                 ),
                 Icon(
                     open
@@ -4519,7 +4549,7 @@ class _ThoughtsSheetState extends State<_ThoughtsSheet> {
             ),
           ),
         ),
-        if (open) _stepDetail(s),
+        if (open) _stepDetail(s, index),
         const Divider(height: 1, indent: 20, endIndent: 20),
       ],
     );
@@ -4543,35 +4573,7 @@ class _ThoughtsSheetState extends State<_ThoughtsSheet> {
     }
   }
 
-  Widget _stepDetail(_ThoughtStep s) {
-    if (s.isReasoning) {
-      return Container(
-        width: double.infinity,
-        margin: const EdgeInsets.fromLTRB(20, 0, 20, 14),
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: P.tonal,
-          borderRadius: BorderRadius.circular(P.r12),
-          border: Border.all(color: P.border),
-        ),
-        child: SelectableText(
-          s.reasoningText ?? '',
-          style: PT.body.copyWith(fontSize: 13, color: P.inkSecondary),
-        ),
-      );
-    }
-    return _toolDetail(s);
-  }
-
-  Widget _toolDetail(_ThoughtStep s) {
-    final call = s.call;
-    final argsLine = call == null ? '' : _argSummary(call.arguments);
-    final dur = _stepDuration(s);
-    final sources = s.result != null &&
-            (s.kind == 'web-search' || s.kind == 'file-search')
-        ? _sourceDomains(s.result!.content)
-        : const <String>[];
-    final resultText = s.result?.content ?? '';
+  Widget _detailCard({required Widget child}) {
     return Container(
       width: double.infinity,
       margin: const EdgeInsets.fromLTRB(20, 0, 20, 14),
@@ -4581,6 +4583,81 @@ class _ThoughtsSheetState extends State<_ThoughtsSheet> {
         borderRadius: BorderRadius.circular(P.r12),
         border: Border.all(color: P.border),
       ),
+      child: child,
+    );
+  }
+
+  Widget _stepDetail(_ThoughtStep s, int index) {
+    if (s.isReasoning) {
+      return _detailCard(
+        child: SelectableText(
+          s.reasoningText ?? '',
+          style: PT.body.copyWith(fontSize: 13, color: P.inkSecondary),
+        ),
+      );
+    }
+    if (s.isDelegate) return _delegateDetail(s);
+    return _toolDetail(s, index);
+  }
+
+  /// Delegate expansion stays minimal: the agent sheet owns the prompt,
+  /// the result, and the nested steps — this row only identifies the
+  /// delegation so the two never duplicate each other.
+  Widget _delegateDetail(_ThoughtStep s) {
+    final dur = _stepDuration(s);
+    return _detailCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(_detailVerb(s),
+              style: PT.monoEyebrow.copyWith(color: P.inkSecondary)),
+          const SizedBox(height: 8),
+          if (s.agent != null) _delegateLine('Agent', s.agent!),
+          if (s.task != null) _delegateLine('Task', s.task!),
+          if (dur != null) ...[
+            const SizedBox(height: 6),
+            Text('\u00b7 $dur', style: PT.faint),
+          ],
+          const SizedBox(height: 6),
+          Text('Full prompt and result live in the agent view.',
+              style: PT.meta),
+        ],
+      ),
+    );
+  }
+
+  Widget _delegateLine(String k, String v) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 52,
+            child: Text(k,
+                style: PT.monoEyebrow.copyWith(fontSize: 10)),
+          ),
+          Expanded(
+            child: SelectableText(v, style: PT.small),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _toolDetail(_ThoughtStep s, int index) {
+    final dur = _stepDuration(s);
+    final sources = s.result != null &&
+            (s.kind == 'web-search' || s.kind == 'file-search')
+        ? _sourceDomains(s.output)
+        : const <String>[];
+    final resultText = s.output;
+    final showFull = _fullOutput.contains(index);
+    final truncated = resultText.length > _outputPreview;
+    final shown = !truncated || showFull
+        ? resultText
+        : '${resultText.substring(0, _outputPreview).trimRight()}\u2026';
+    return _detailCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -4591,35 +4668,28 @@ class _ThoughtsSheetState extends State<_ThoughtsSheet> {
                     style:
                         PT.monoEyebrow.copyWith(color: P.inkSecondary)),
               ),
-              if (argsLine.isNotEmpty)
-                IconButton(
-                  visualDensity: VisualDensity.compact,
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(),
-                  icon: Icon(Icons.copy_rounded,
-                      size: 15, color: P.inkSecondary),
-                  tooltip: 'Copy',
-                  onPressed: () {
-                    Clipboard.setData(ClipboardData(text: argsLine));
+              if (s.args.trim().isNotEmpty)
+                GestureDetector(
+                  onTap: () {
+                    Clipboard.setData(ClipboardData(text: s.args));
+                    toast(context, 'Arguments copied.');
                     HapticFeedback.lightImpact();
                   },
+                  child: Padding(
+                    padding: const EdgeInsets.all(6),
+                    child: Icon(Icons.copy_rounded,
+                        size: 15, color: P.inkSecondary),
+                  ),
                 ),
             ],
           ),
-          if (argsLine.isNotEmpty) ...[
-            const SizedBox(height: 6),
-            SelectableText(argsLine, style: PT.monoSm),
+          if (s.args.trim().isNotEmpty) ...[
+            const SizedBox(height: 8),
+            _argsCard(s.args),
           ],
           if (dur != null) ...[
-            const SizedBox(height: 4),
-            Text('· $dur', style: PT.faint),
-          ],
-          if (call != null &&
-              _prettyArgs(call.arguments).trim().isNotEmpty &&
-              _prettyArgs(call.arguments).trim() != argsLine) ...[
-            const SizedBox(height: 8),
-            SelectableText(_prettyArgs(call.arguments),
-                style: PT.monoSm.copyWith(color: P.inkSecondary)),
+            const SizedBox(height: 6),
+            Text('\u00b7 $dur', style: PT.faint),
           ],
           if (sources.isNotEmpty) ...[
             const SizedBox(height: 10),
@@ -4630,17 +4700,53 @@ class _ThoughtsSheetState extends State<_ThoughtsSheet> {
           ],
           if (resultText.isNotEmpty) ...[
             const SizedBox(height: 10),
-            Text('RESULT',
-                style: PT.monoEyebrow.copyWith(color: P.inkSecondary)),
+            Text(
+                s.status == _StepStatus.error ? 'ERROR' : 'RESULT',
+                style: PT.monoEyebrow.copyWith(
+                    color: s.status == _StepStatus.error
+                        ? P.err
+                        : P.inkSecondary)),
             const SizedBox(height: 6),
             SelectableText(
-              resultText.length > 4000
-                  ? '${resultText.substring(0, 4000)}\n…truncated'
-                  : resultText,
+              shown,
               style: PT.monoSm.copyWith(color: P.inkSecondary),
             ),
+            if (truncated)
+              GestureDetector(
+                onTap: () => setState(() => showFull
+                    ? _fullOutput.remove(index)
+                    : _fullOutput.add(index)),
+                child: Padding(
+                  padding: const EdgeInsets.only(top: 6),
+                  child: Text(showFull ? 'Show less' : 'Show more',
+                      style: PT.small.copyWith(color: P.accent)),
+                ),
+              ),
           ],
         ],
+      ),
+    );
+  }
+
+  /// Command/args on a dark monospace code card. The header copy button
+  /// copies the FULL arguments, never the summary.
+  Widget _argsCard(String args) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: const Color(0xFF121212),
+        borderRadius: BorderRadius.circular(P.r8),
+        border: Border.all(color: P.border),
+      ),
+      child: SelectableText(
+        args,
+        style: const TextStyle(
+          fontFamily: 'JetBrainsMono',
+          fontSize: 12,
+          height: 1.5,
+          color: Color(0xFFE8E8E8),
+        ),
       ),
     );
   }
