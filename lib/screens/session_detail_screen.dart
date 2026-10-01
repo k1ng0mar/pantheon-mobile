@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:ui' as ui;
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
@@ -30,7 +31,6 @@ import '../widgets/team_run_view.dart';
 import '../widgets/todos_sheet.dart';
 import '../widgets/voice_note_pill.dart';
 import 'agent_activity_screen.dart';
-import 'voice_screen.dart';
 
 /// A session as a real chat: transcript bubbles, live polling while the
 /// run is active, and a composer that sends into the run via
@@ -87,6 +87,16 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
 
   /// Composer emptiness for the send button's dim/disabled state.
   bool _composerEmpty = true;
+
+  /// Find-in-chat state: [_findMatches] are transcript indices whose
+  /// message text contains [_findQuery]; [_findPos] is the current
+  /// match (ringged in the list, jumped to via [_msgKeys]).
+  bool _findOpen = false;
+  String _findQuery = '';
+  int _findPos = 0;
+  final Map<int, GlobalKey> _msgKeys = {};
+  final TextEditingController _findCtrl = TextEditingController();
+  final FocusNode _findFocus = FocusNode();
 
   /// Local-only message votes (thumbs up/down), keyed by [_voteKey].
   /// Persisted in SharedPreferences; there is no backend endpoint for
@@ -271,6 +281,8 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
         } catch (_) {}
       }();
     }
+    _findCtrl.dispose();
+    _findFocus.dispose();
     _composer.removeListener(_onComposerChanged);
     _composer.dispose();
     _composerFocus.dispose();
@@ -1382,7 +1394,6 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
   @override
   Widget build(BuildContext context) {
     final title = _run?.displayTitle ?? 'Session';
-    final running = _run?.status == 'running';
     return Scaffold(
       appBar: AppBar(
         leading: IconButton(
@@ -1390,28 +1401,13 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
               size: 30, color: P.ink, weight: 1.6),
           onPressed: () => Navigator.of(context).pop(),
         ),
-        title: Text(title),
-        actions: [
-          IconButton(
-            icon: Icon(Icons.edit_outlined,
-                color: P.ink, weight: 1.6),
-            tooltip: 'New chat',
-            onPressed: () => showNewChatSheet(context, widget.api),
-          ),
-          IconButton(
-            icon: Icon(Icons.more_horiz_rounded,
-                color: P.ink, weight: 1.6),
-            tooltip: 'Options',
-            onPressed: _optionsSheet,
-          ),
-          if (running)
-            IconButton(
-              icon: const Icon(Icons.stop_rounded,
-                  color: P.err, weight: 1.6),
-              tooltip: 'Stop turn',
-              onPressed: _stopTurn,
-            ),
-        ],
+        // Rename lives on the title now (same /title rename flow). The
+        // old AppBar actions are gone: session actions live in the
+        // floating glass pill + popover at the top-right of the body.
+        title: GestureDetector(
+          onTap: _run == null ? null : () => _slashTitle(''),
+          child: Text(title),
+        ),
       ),
       body: _loading
           ? _skeleton()
@@ -1423,11 +1419,13 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
                   ctaLabel: 'Retry',
                   onCta: () => _load(initial: true),
                 )
-              : DefaultTabController(
-                  length: widget.swarmId != null ? 3 : 2,
-                  child: Column(
-                    children: [
-                      _header(_run!),
+              : Stack(
+                  children: [
+                    DefaultTabController(
+                      length: widget.swarmId != null ? 3 : 2,
+                      child: Column(
+                        children: [
+                          _header(_run!),
                       TabBar(
                         tabs: [
                           const Tab(text: 'Chat'),
@@ -1441,20 +1439,27 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
                         indicatorWeight: 2.5,
                         dividerColor: P.divider,
                       ),
-                      Expanded(
-                        child: TabBarView(
-                          children: [
-                            _chatTab(),
-                            if (widget.swarmId != null)
-                              TeamRunView(
-                                  api: widget.api,
-                                  swarmId: widget.swarmId!),
-                            _timeline(_run!),
-                          ],
-                        ),
+                          Expanded(
+                            child: TabBarView(
+                              children: [
+                                _chatTab(),
+                                if (widget.swarmId != null)
+                                  TeamRunView(
+                                      api: widget.api,
+                                      swarmId: widget.swarmId!),
+                                _timeline(_run!),
+                              ],
+                            ),
+                          ),
+                        ],
                       ),
-                    ],
-                  ),
+                    ),
+                    Positioned(
+                      top: 10,
+                      right: 12,
+                      child: _headerActionsPill(),
+                    ),
+                  ],
                 ),
     );
   }
@@ -1480,9 +1485,13 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
+          // Right padding keeps the chips/chevron clear of the floating
+          // session-actions pill at the top-right.
+          Padding(
+            padding: const EdgeInsets.only(right: 104),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
               Expanded(
                 child: Text(run.displayTitle,
                     style: PT.sectionTitle.copyWith(color: Colors.white)),
@@ -1510,7 +1519,8 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
                   ),
                 ),
               ),
-            ],
+              ],
+            ),
           ),
           if (_headerCollapsed) ...[
             const SizedBox(height: 6),
@@ -1651,6 +1661,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
             _approvalBanner(),
           if (run != null && run.queuedMessages.isNotEmpty)
             _queueSection(run.queuedMessages),
+          if (_findOpen) _findBar(),
           _SlashSuggestions(controller: _composer, onPick: _pickSlash),
           _composerBar(),
         ],
@@ -2000,7 +2011,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
       dividerFor(t);
       if (t.role == 'user') {
         flushThoughts();
-        rows.add(StaggerItem(index: i, child: _bubble(t)));
+        rows.add(StaggerItem(index: i, child: _keyedBubble(i, _bubble(t))));
         i++;
         continue;
       }
@@ -2009,7 +2020,8 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
         // thoughts buffer (mirrors streaming order).
         if (t.content.trim().isNotEmpty) {
           flushThoughts();
-          rows.add(StaggerItem(index: i, child: _bubble(_stripToolCalls(t))));
+          rows.add(StaggerItem(
+              index: i, child: _keyedBubble(i, _bubble(_stripToolCalls(t)))));
           if (turnElapsed.containsKey(i)) {
             rows.add(StaggerItem(
                 index: i,
@@ -2028,7 +2040,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
         continue;
       }
       flushThoughts();
-      rows.add(StaggerItem(index: i, child: _bubble(t)));
+      rows.add(StaggerItem(index: i, child: _keyedBubble(i, _bubble(t))));
       if (turnElapsed.containsKey(i)) {
         rows.add(StaggerItem(
             index: i, child: _turnFooter(_messages[i], turnElapsed[i])));
@@ -2089,6 +2101,168 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
       }
     }
     return steps;
+  }
+
+  /// Transcript indices whose message text contains the find query
+  /// (case-insensitive). Recomputed from the live transcript so poll
+  /// refreshes stay correct.
+  List<int> _computeFindMatches() {
+    final q = _findQuery.trim().toLowerCase();
+    if (q.isEmpty) return const [];
+    final out = <int>[];
+    for (var i = 0; i < _messages.length; i++) {
+      final m = _messages[i];
+      if ((m.role == 'user' || m.role == 'assistant') &&
+          m.content.toLowerCase().contains(q)) {
+        out.add(i);
+      }
+    }
+    return out;
+  }
+
+  void _openFind() {
+    setState(() => _findOpen = true);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _findFocus.requestFocus();
+    });
+  }
+
+  void _closeFind() {
+    _findCtrl.clear();
+    _findFocus.unfocus();
+    setState(() {
+      _findOpen = false;
+      _findQuery = '';
+      _findPos = 0;
+    });
+  }
+
+  void _onFindChanged(String v) {
+    setState(() {
+      _findQuery = v;
+      _findPos = 0;
+    });
+    final matches = _computeFindMatches();
+    if (matches.isNotEmpty) _ensureMatchVisible(matches[0]);
+  }
+
+  void _jumpToMatch(int delta) {
+    final matches = _computeFindMatches();
+    if (matches.isEmpty) return;
+    setState(() => _findPos = (_findPos + delta) % matches.length);
+    _ensureMatchVisible(matches[_findPos]);
+  }
+
+  /// Bring a match into view: GlobalKey + Scrollable.ensureVisible,
+  /// with a proportional jump first when the row isn't built yet.
+  void _ensureMatchVisible(int transcriptIndex) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final ctx = _msgKeys[transcriptIndex]?.currentContext;
+      if (ctx != null) {
+        Scrollable.ensureVisible(ctx,
+            duration: const Duration(milliseconds: 300), alignment: 0.35);
+        return;
+      }
+      if (_scroll.hasClients && _messages.isNotEmpty) {
+        final max = _scroll.position.maxScrollExtent;
+        final frac = transcriptIndex / _messages.length;
+        _scroll.jumpTo((max * frac).clamp(0.0, max).toDouble());
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          final ctx2 = _msgKeys[transcriptIndex]?.currentContext;
+          if (ctx2 != null) {
+            Scrollable.ensureVisible(ctx2,
+                duration: const Duration(milliseconds: 250),
+                alignment: 0.35);
+          }
+        });
+      }
+    });
+  }
+
+  /// A message bubble keyed for find-in-chat, with an accent ring on
+  /// the current match.
+  Widget _keyedBubble(int i, Widget bubble) {
+    final key = _msgKeys.putIfAbsent(i, () => GlobalKey());
+    Widget w = KeyedSubtree(key: key, child: bubble);
+    if (_findOpen) {
+      final matches = _computeFindMatches();
+      final isCurrent = matches.isNotEmpty &&
+          _findPos < matches.length &&
+          matches[_findPos] == i;
+      if (isCurrent) {
+        w = Container(
+          decoration: BoxDecoration(
+            border: Border.all(color: P.accent, width: 2),
+            borderRadius: BorderRadius.circular(22),
+          ),
+          child: w,
+        );
+      }
+    }
+    return w;
+  }
+
+  /// Find-in-chat bar above the composer: query field, match count,
+  /// prev/next jump, close.
+  Widget _findBar() {
+    final matches = _computeFindMatches();
+    final has = matches.isNotEmpty;
+    final pos = has ? _findPos.clamp(0, matches.length - 1) : 0;
+    return Container(
+      decoration: BoxDecoration(
+        color: P.tabBar,
+        border: Border(top: BorderSide(color: P.border, width: 1)),
+      ),
+      padding: const EdgeInsets.fromLTRB(12, 6, 6, 6),
+      child: Row(
+        children: [
+          Icon(Icons.search_rounded, size: 18, color: P.inkSecondary),
+          const SizedBox(width: 8),
+          Expanded(
+            child: TextField(
+              controller: _findCtrl,
+              focusNode: _findFocus,
+              onChanged: _onFindChanged,
+              style: PT.body.copyWith(fontSize: 14),
+              decoration: const InputDecoration(
+                hintText: 'Find in chat',
+                isDense: true,
+                border: InputBorder.none,
+              ),
+            ),
+          ),
+          Text(
+            _findQuery.isEmpty
+                ? ''
+                : (has ? '${pos + 1}/${matches.length}' : '0/0'),
+            style: PT.meta,
+          ),
+          IconButton(
+            icon: Icon(Icons.keyboard_arrow_up_rounded,
+                size: 20, color: has ? P.ink : P.inkFaint),
+            onPressed: has ? () => _jumpToMatch(-1) : null,
+            tooltip: 'Previous match',
+            visualDensity: VisualDensity.compact,
+          ),
+          IconButton(
+            icon: Icon(Icons.keyboard_arrow_down_rounded,
+                size: 20, color: has ? P.ink : P.inkFaint),
+            onPressed: has ? () => _jumpToMatch(1) : null,
+            tooltip: 'Next match',
+            visualDensity: VisualDensity.compact,
+          ),
+          IconButton(
+            icon:
+                Icon(Icons.close_rounded, size: 20, color: P.inkSecondary),
+            onPressed: _closeFind,
+            tooltip: 'Close find',
+            visualDensity: VisualDensity.compact,
+          ),
+        ],
+      ),
+    );
   }
 
   /// Footer under a turn's final assistant message: the turn's
@@ -2800,19 +2974,244 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
     );
   }
 
-  void _openVoice() {
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => VoiceScreen(api: widget.api),
+  /// Floating glass pill at the top-right: compose (new chat) and an
+  /// ellipsis that opens the session-actions popover. This replaces
+  /// the old AppBar actions and options bottom sheet.
+  Widget _headerActionsPill() {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(999),
+      child: BackdropFilter(
+        filter: ui.ImageFilter.blur(sigmaX: 14, sigmaY: 14),
+        child: Container(
+          decoration: BoxDecoration(
+            color: Colors.black.withValues(alpha: 0.35),
+            borderRadius: BorderRadius.circular(999),
+            border: Border.all(
+                color: Colors.white.withValues(alpha: 0.18), width: 1),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _pillBtn(Icons.edit_square, 'New chat',
+                  () => showNewChatSheet(context, widget.api)),
+              _pillBtn(Icons.more_horiz_rounded, 'Session actions',
+                  _openActionsPopover),
+            ],
+          ),
+        ),
       ),
     );
   }
 
-  /// Options bottom sheet (••• in the AppBar): only items wired to real
-  /// functionality. Pin/Archive/Find-in-chat are intentionally absent —
-  /// the backend exposes no pin or archive endpoints and the chat has
-  /// no find UI — so they would be dead buttons.
-  Future<void> _optionsSheet() async {
+  Widget _pillBtn(IconData icon, String tooltip, VoidCallback onTap) {
+    return Tooltip(
+      message: tooltip,
+      child: GestureDetector(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(10),
+          child: Icon(icon, size: 19, color: Colors.white, weight: 1.6),
+        ),
+      ),
+    );
+  }
+
+  /// Session-actions popover, anchored under the glass pill: a glass
+  /// card over a dim backdrop; tapping outside dismisses it. Row order
+  /// is fixed: Share, Pin/Unpin, Add to project, Expand/Collapse
+  /// header, Uploaded files, Find in chat, Archive, Delete.
+  void _openActionsPopover() {
+    final run = _run;
+    showGeneralDialog<void>(
+      context: context,
+      barrierDismissible: true,
+      barrierLabel: 'Dismiss',
+      barrierColor: Colors.black.withValues(alpha: 0.35),
+      transitionDuration: const Duration(milliseconds: 160),
+      transitionBuilder: (_, anim, __, child) =>
+          FadeTransition(opacity: anim, child: child),
+      pageBuilder: (ctx, _, __) {
+        return SafeArea(
+          child: Align(
+            alignment: Alignment.topRight,
+            child: Padding(
+              padding: const EdgeInsets.only(top: 116, right: 12),
+              child: Material(
+                color: Colors.transparent,
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(20),
+                  child: BackdropFilter(
+                    filter:
+                        ui.ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+                    child: Container(
+                      width: 280,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF1C1C22)
+                            .withValues(alpha: 0.85),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(
+                            color:
+                                Colors.white.withValues(alpha: 0.12),
+                            width: 1),
+                      ),
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(
+                                16, 6, 16, 8),
+                            child: Text(
+                              run?.displayTitle ?? 'Session',
+                              style: PT.meta,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          _popRow(ctx, Icons.ios_share_rounded, 'Share',
+                              () => _shareSession()),
+                          _popRow(
+                            ctx,
+                            run?.pinned == true
+                                ? Icons.push_pin_rounded
+                                : Icons.push_pin_outlined,
+                            run?.pinned == true ? 'Unpin' : 'Pin',
+                            () => _togglePin(),
+                          ),
+                          _popRow(
+                            ctx,
+                            Icons.folder_outlined,
+                            'Add to project',
+                            () => _projectPicker(),
+                            trailing: Icons.chevron_right_rounded,
+                          ),
+                          _popRow(
+                            ctx,
+                            _headerCollapsed
+                                ? Icons.expand_more_rounded
+                                : Icons.expand_less_rounded,
+                            _headerCollapsed
+                                ? 'Expand header'
+                                : 'Collapse header',
+                            () => setState(() =>
+                                _headerCollapsed = !_headerCollapsed),
+                          ),
+                          _popRow(
+                            ctx,
+                            Icons.attach_file_rounded,
+                            'Uploaded files',
+                            _uploadedFiles,
+                          ),
+                          _popRow(
+                            ctx,
+                            Icons.search_rounded,
+                            'Find in chat',
+                            _openFind,
+                          ),
+                          _popRow(
+                            ctx,
+                            Icons.archive_outlined,
+                            'Archive',
+                            () => _archiveSession(),
+                          ),
+                          const Divider(
+                            height: 1,
+                            indent: 16,
+                            endIndent: 16,
+                            color: Color(0x22FFFFFF),
+                          ),
+                          _popRow(
+                            ctx,
+                            Icons.delete_outline_rounded,
+                            'Delete',
+                            () => _deleteSession(),
+                            destructive: true,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _popRow(BuildContext ctx, IconData icon, String label,
+      VoidCallback action,
+      {IconData? trailing, bool destructive = false}) {
+    final color =
+        destructive ? P.err : Colors.white.withValues(alpha: 0.92);
+    return InkWell(
+      onTap: () {
+        Navigator.of(ctx).pop();
+        action();
+      },
+      child: Padding(
+        padding:
+            const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
+        child: Row(
+          children: [
+            Icon(icon, size: 19, color: color, weight: 1.6),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(label,
+                  style: PT.rowTitle
+                      .copyWith(fontSize: 14, color: color)),
+            ),
+            if (trailing != null)
+              Icon(trailing,
+                  size: 16, color: Colors.white.withValues(alpha: 0.5)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Pin/unpin via POST /api/runs/:id/pin; the label flips with
+  /// `run.pinned` on the next load.
+  Future<void> _togglePin() async {
+    final run = _run;
+    if (run == null) return;
+    try {
+      await widget.api.pinRun(widget.runId, !run.pinned);
+      if (!mounted) return;
+      await _load();
+      if (!mounted) return;
+      toast(context, run.pinned ? 'Unpinned.' : 'Pinned.');
+    } catch (e) {
+      if (mounted) toastError(context, e);
+    }
+  }
+
+  /// Archive via POST /api/runs/:id/archive, then back to the list.
+  Future<void> _archiveSession() async {
+    try {
+      await widget.api.archiveRun(widget.runId, true);
+      if (!mounted) return;
+      toast(context, 'Session archived.');
+      Navigator.of(context).pop();
+    } catch (e) {
+      if (mounted) toastError(context, e);
+    }
+  }
+
+  /// Project picker: existing projects from GET /api/projects plus a
+  /// "New project…" name prompt; both POST /api/runs/:id/project.
+  Future<void> _projectPicker() async {
+    List<RunProject> projects;
+    try {
+      projects = await widget.api.getProjects();
+    } catch (e) {
+      if (mounted) toastError(context, e);
+      return;
+    }
+    if (!mounted) return;
+    final current = _run?.project;
     final choice = await showPSheet<String>(
       context,
       SafeArea(
@@ -2824,50 +3223,70 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
             children: [
               const SheetHandle(),
               const SizedBox(height: 12),
-              _optionRow(Icons.ios_share_rounded, 'Share',
-                  () => Navigator.pop(context, 'share')),
-              _optionRow(Icons.mic_rounded, 'Live mode',
-                  () => Navigator.pop(context, 'live')),
-              _optionRow(Icons.delete_outline_rounded, 'Delete',
-                  () => Navigator.pop(context, 'delete'),
-                  destructive: true),
+              Text('Add to project', style: PT.sectionTitle),
+              const SizedBox(height: 8),
+              for (final proj in projects)
+                ListTile(
+                  contentPadding:
+                      const EdgeInsets.symmetric(horizontal: 4),
+                  leading: Icon(Icons.folder_outlined,
+                      color: P.inkSecondary),
+                  title: Text(proj.name, style: PT.body),
+                  subtitle: Text(
+                      '${proj.runs.length} session${proj.runs.length == 1 ? '' : 's'}',
+                      style: PT.meta),
+                  trailing: proj.name == current
+                      ? Icon(Icons.check_rounded, color: P.accent)
+                      : null,
+                  onTap: () => Navigator.pop(context, proj.name),
+                ),
+              const Divider(height: 1),
+              ListTile(
+                contentPadding:
+                    const EdgeInsets.symmetric(horizontal: 4),
+                leading: Icon(Icons.create_new_folder_outlined,
+                    color: P.inkSecondary),
+                title: Text('New project…', style: PT.body),
+                onTap: () => Navigator.pop(context, '__new__'),
+              ),
             ],
           ),
         ),
       ),
     );
     if (choice == null || !mounted) return;
-    switch (choice) {
-      case 'share':
-        await _shareSession();
-        break;
-      case 'live':
-        _openVoice();
-        break;
-      case 'delete':
-        await _deleteSession();
-        break;
+    String? name = choice;
+    if (choice == '__new__') {
+      name = await promptText(context,
+          title: 'New project', hint: 'Project name');
+      if (name == null || !mounted) return;
+      name = name.trim();
+      if (name.isEmpty) return;
+    }
+    try {
+      await widget.api.setRunProject(widget.runId, name);
+      if (!mounted) return;
+      toast(context, 'Added to $name.');
+      await _load();
+    } catch (e) {
+      if (mounted) toastError(context, e);
     }
   }
 
-  Widget _optionRow(IconData icon, String label, VoidCallback onTap,
-      {bool destructive = false}) {
-    final color = destructive ? P.err : P.ink;
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(P.r12),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 13),
-        child: Row(
-          children: [
-            Icon(icon, size: 21, color: color, weight: 1.6),
-            const SizedBox(width: 14),
-            Text(label,
-                style: PT.rowTitle.copyWith(fontSize: 15, color: color)),
-          ],
-        ),
-      ),
-    );
+  /// Every attachment parsed from the whole transcript; an empty set
+  /// gets the exact "No uploaded files in this session" toast.
+  void _uploadedFiles() {
+    final all = <_SentAttachment>[];
+    for (final m in _messages) {
+      if (m.role == 'user') {
+        all.addAll(_parseSentAttachments(m.content));
+      }
+    }
+    if (all.isEmpty) {
+      toast(context, 'No uploaded files in this session');
+      return;
+    }
+    _allAttachmentsSheet(all);
   }
 
   /// Share: export the transcript as markdown and open the system share
