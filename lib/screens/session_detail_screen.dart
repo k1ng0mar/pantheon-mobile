@@ -162,7 +162,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
   /// Collapsed header: hides the date/model line, mode/todos/context
   /// row and the stats block; the Chat/Timeline tab bar stays visible.
   /// Toggled from the header chevron or the options sheet.
-  bool _headerCollapsed = false;
+  bool _headerCollapsed = true;
 
   /// Active agent/profile name for chat labels; 'Pantheon' until the
   /// config resolves (best-effort — the label never blocks the chat).
@@ -1359,14 +1359,6 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
     );
   }
 
-  Color _statusColor(String s) => switch (s) {
-        'running' => P.live,
-        'awaiting_approval' => P.warn,
-        'completed' => P.ok,
-        'failed' => P.err,
-        _ => P.inkFaint,
-      };
-
   @override
   Widget build(BuildContext context) {
     final title = _run?.displayTitle ?? 'Session';
@@ -1479,11 +1471,10 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
               if (run.mode == 'plan')
                 const Padding(
                   padding: EdgeInsets.only(right: 6),
-                  child: StatusChip(label: 'PLAN', color: P.warn),
+                  child: _HeaderChip(label: 'PLAN'),
                 ),
-              StatusChip(
+              _HeaderChip(
                 label: run.status.replaceAll('_', ' ').toUpperCase(),
-                color: _statusColor(run.status),
               ),
               GestureDetector(
                 onTap: () => setState(
@@ -1501,51 +1492,60 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
               ),
             ],
           ),
-          if (!_headerCollapsed) ...[
+          if (_headerCollapsed) ...[
+            const SizedBox(height: 6),
+            Text(
+              '${run.turns} turns \u00b7 ${run.toolCalls} tools \u00b7 '
+              '${compactNum(run.totalTokens)} tokens \u00b7 '
+              '${money(run.costUsd)} cost',
+              style: PT.small.copyWith(
+                  color: Colors.white.withValues(alpha: 0.85)),
+            ),
+          ] else ...[
             const SizedBox(height: 6),
             Text(
               '${timeAgo(run.createdMs)}${modelLine.isNotEmpty ? ' · $modelLine' : ''}',
               style: PT.small.copyWith(
-                  color: Colors.white.withValues(alpha: 0.75)),
+                  color: Colors.white.withValues(alpha: 0.85)),
             ),
-            const SizedBox(height: 10),
-            Row(
-              children: [
-                _modeSegment(run.mode),
-                if (_openTodos > 0) ...[
-                  const SizedBox(width: 8),
-                  GestureDetector(
-                    onTap: _openTodosSheet,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 12, vertical: 6),
-                      decoration: BoxDecoration(
-                        color: P.tonal,
-                        borderRadius: BorderRadius.circular(999),
-                        border: Border.all(color: P.border),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                           Icon(Icons.checklist_rounded,
-                              size: 14, color: P.accent),
-                          const SizedBox(width: 6),
-                          Text('$_openTodos todos',
-                              style: PT.label.copyWith(
-                                  fontSize: 12, color: P.inkSecondary)),
-                        ],
+            if (_openTodos > 0 || ctx.total > 0) ...[
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  if (_openTodos > 0)
+                    GestureDetector(
+                      onTap: _openTodosSheet,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: P.tonal,
+                          borderRadius: BorderRadius.circular(999),
+                          border: Border.all(color: P.border),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.checklist_rounded,
+                                size: 14, color: P.accent),
+                            const SizedBox(width: 6),
+                            Text('$_openTodos todos',
+                                style: PT.label.copyWith(
+                                    fontSize: 12,
+                                    color: P.inkSecondary)),
+                          ],
+                        ),
                       ),
                     ),
-                  ),
+                  const Spacer(),
+                  if (ctx.total > 0)
+                    Text('${compactNum(ctx.total)} ctx',
+                        style: PT.mono.copyWith(
+                            fontSize: 11,
+                            color: Colors.white.withValues(alpha: 0.6))),
                 ],
-                const Spacer(),
-                if (ctx.total > 0)
-                  Text('${compactNum(ctx.total)} ctx',
-                      style: PT.mono.copyWith(
-                          fontSize: 11,
-                          color: Colors.white.withValues(alpha: 0.6))),
-              ],
-            ),
+              ),
+            ],
             const SizedBox(height: 14),
             Row(
               children: [
@@ -2221,7 +2221,14 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
                 _attachmentChips(),
                 const SizedBox(height: 8),
               ],
-              _modelPill(),
+              Row(
+                children: [
+                  if (_run != null) _modeSegment(_run!.mode),
+                  const Spacer(),
+                  _modelPill(),
+                ],
+              ),
+              const SizedBox(height: 8),
               _transcribing
                   ? _transcribingRow()
                   : _recordingVoiceNote
@@ -2613,7 +2620,6 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
   /// the backend exposes no pin or archive endpoints and the chat has
   /// no find UI — so they would be dead buttons.
   Future<void> _optionsSheet() async {
-    final collapsed = _headerCollapsed;
     final choice = await showPSheet<String>(
       context,
       SafeArea(
@@ -2627,12 +2633,6 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
               const SizedBox(height: 12),
               _optionRow(Icons.ios_share_rounded, 'Share',
                   () => Navigator.pop(context, 'share')),
-              _optionRow(
-                  collapsed
-                      ? Icons.expand_more_rounded
-                      : Icons.expand_less_rounded,
-                  collapsed ? 'Expand header' : 'Collapse header',
-                  () => Navigator.pop(context, 'collapse')),
               _optionRow(Icons.mic_rounded, 'Live mode',
                   () => Navigator.pop(context, 'live')),
               _optionRow(Icons.delete_outline_rounded, 'Delete',
@@ -2647,9 +2647,6 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
     switch (choice) {
       case 'share':
         await _shareSession();
-        break;
-      case 'collapse':
-        setState(() => _headerCollapsed = !_headerCollapsed);
         break;
       case 'live':
         _openVoice();
@@ -4943,6 +4940,32 @@ class _AgentSheetState extends State<_AgentSheet> {
             ),
           ),
       ],
+    );
+  }
+}
+
+/// Header status chip on the purple gradient: white text on a solid
+/// dark translucent fill, so it passes AA on every gradient stop
+/// (#7223FF / #4B00CD) where tinted status colors don't.
+class _HeaderChip extends StatelessWidget {
+  final String label;
+
+  const _HeaderChip({required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(999),
+        color: Colors.black.withValues(alpha: 0.28),
+        border: Border.all(
+            color: Colors.white.withValues(alpha: 0.25), width: 1),
+      ),
+      child: Text(
+        label,
+        style: PT.monoEyebrow.copyWith(color: Colors.white),
+      ),
     );
   }
 }
