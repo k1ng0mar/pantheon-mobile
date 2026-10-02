@@ -1,4 +1,5 @@
-/// A run project: a named bucket of runs from `GET /api/projects`.
+/// A run project: a named bucket of runs. `GET /api/projects` wraps the
+/// list as `{"projects": [...]}`; [RunProject.fromJson] parses one item.
 class RunProject {
   final String name;
   final List<String> runs;
