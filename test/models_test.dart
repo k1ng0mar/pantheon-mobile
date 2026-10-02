@@ -76,6 +76,40 @@ void main() {
     expect(legacy.childRunId, isNull);
   });
 
+  test('Contract fields tolerate wrong-typed JSON scalars', () {
+    // A backend that sends strings (or junk) for the numeric contract
+    // fields must degrade those fields, never throw a TypeError.
+    final call = ToolCallRef.fromJson({
+      'id': 'call_1',
+      'name': 'shell',
+      'arguments': '{}',
+      'started_ms': '1759000000000',
+      'duration_ms': '4200',
+      'child_run_id': 42,
+    });
+    expect(call.startedMs, 1759000000000);
+    expect(call.durationMs, 4200);
+    expect(call.childRunId, isNull);
+    final item = TranscriptItem.fromJson({
+      'type': 'message',
+      'role': 'tool',
+      'content': 'done',
+      'ts_ms': '1759000001000',
+      'tool_call_id': 'call_1',
+      'duration_ms': true,
+    });
+    expect(item.tsMs, 1759000001000);
+    expect(item.toolCallId, 'call_1');
+    expect(item.durationMs, isNull);
+    final junk = ToolCallRef.fromJson({
+      'id': 'c',
+      'name': 'shell',
+      'arguments': '',
+      'started_ms': 'soon',
+    });
+    expect(junk.startedMs, isNull);
+  });
+
   test('PantheonRun falls back to id prefix when untitled', () {
     final r = PantheonRun.fromJson({
       'id': 'abcdef123456',
