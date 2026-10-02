@@ -19,6 +19,7 @@ export 'plugin.dart';
 export 'run_project.dart';
 export 'schedule_template.dart';
 export 'scheduled_job.dart';
+export 'task_step.dart';
 export 'skill.dart';
 export 'todo_item.dart';
 export 'team.dart';
