@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../models/drafthouse_gate.dart';
 import '../services/pantheon_api.dart';
 import '../theme.dart';
 import 'chat_markdown.dart';
 import 'code_block.dart';
+import 'design_review_card.dart';
 import 'forms.dart';
 import 'link_preview_card.dart';
 
@@ -36,13 +38,23 @@ class MessageContent extends StatelessWidget {
   /// Render long text segments as labeled "Writing" copy cards.
   final bool cards;
 
+  /// Run id the message belongs to. Needed for design-review actions
+  /// (approve / request changes / pick variant). Null = no design card.
+  final String? runId;
+
+  /// True when the run's turn is in flight (`running`/`paused`): design
+  /// actions then queue/steer instead of starting a new turn.
+  final bool isBusy;
+
   const MessageContent(
       {super.key,
       required this.text,
       required this.textStyle,
       this.onQuote,
       this.api,
-      this.cards = false});
+      this.cards = false,
+      this.runId,
+      this.isBusy = false});
 
   static final _fence = RegExp(r'```(\w*)\s*\n([\s\S]*?)```');
 
@@ -63,19 +75,32 @@ class MessageContent extends StatelessWidget {
     return url.isEmpty ? null : url;
   }
 
+  /// First ````drafthouse-gate` fenced block in [text], ignoring fenced
+  /// code blocks (same outside-fence rule as [firstUrl]). Null when
+  /// absent or malformed.
+  static DrafthouseGateBlock? firstGateBlock(String text) =>
+      DrafthouseGateBlock.parseFirst(text);
+
   @override
   Widget build(BuildContext context) {
     final content = _content();
     final api = this.api;
     if (api == null) return content;
     final previewUrl = firstUrl(text);
-    if (previewUrl == null) return content;
+    final gateBlock = firstGateBlock(text);
+    final runId = this.runId;
+    if (previewUrl == null && (gateBlock == null || runId == null)) {
+      return content;
+    }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       mainAxisSize: MainAxisSize.min,
       children: [
         content,
-        LinkPreviewCard(url: previewUrl, api: api),
+        if (previewUrl != null) LinkPreviewCard(url: previewUrl, api: api),
+        if (gateBlock != null && runId != null)
+          DesignReviewCard(
+              block: gateBlock, api: api, runId: runId, isBusy: isBusy),
       ],
     );
   }

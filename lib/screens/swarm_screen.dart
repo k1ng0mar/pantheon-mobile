@@ -18,7 +18,11 @@ import '../widgets/profile_picture.dart';
 class SwarmScreen extends StatefulWidget {
   final PantheonApi api;
 
-  const SwarmScreen({super.key, required this.api});
+  /// When set, the screen opens on this swarm's live view instead of the
+  /// launcher (used by `/swarm <task>` after the launch call returns).
+  final String? initialSwarmId;
+
+  const SwarmScreen({super.key, required this.api, this.initialSwarmId});
 
   @override
   State<SwarmScreen> createState() => _SwarmScreenState();
@@ -119,6 +123,12 @@ class _SwarmScreenState extends State<SwarmScreen> {
   void initState() {
     super.initState();
     _loadProfiles();
+    final seed = widget.initialSwarmId;
+    if (seed != null && seed.isNotEmpty) {
+      _swarmId = seed;
+      _pollOnce();
+      _ensurePolling();
+    }
   }
 
   @override
