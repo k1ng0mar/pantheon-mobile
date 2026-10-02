@@ -5000,6 +5000,37 @@ List<String> _sourceDomains(String resultText) {
   return seen;
 }
 
+/// Command/args on a dark monospace code card, shared by the Thoughts
+/// step detail and the agent sheet's child steps. The caller's copy
+/// button copies the FULL arguments, never the summary.
+class _ArgsCard extends StatelessWidget {
+  final String args;
+
+  const _ArgsCard(this.args);
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: const Color(0xFF121212),
+        borderRadius: BorderRadius.circular(P.r8),
+        border: Border.all(color: P.border),
+      ),
+      child: SelectableText(
+        args,
+        style: const TextStyle(
+          fontFamily: 'JetBrainsMono',
+          fontSize: 12,
+          height: 1.5,
+          color: Color(0xFFE8E8E8),
+        ),
+      ),
+    );
+  }
+}
+
 /// Near-full-screen "Thoughts" sheet: a vertical checklist of one
 /// turn's steps — reasoning summaries and tool calls — each with a
 /// status glyph and a chevron. Tapping a row expands its detail card.
@@ -5298,7 +5329,7 @@ class _ThoughtsSheetState extends State<_ThoughtsSheet> {
           ),
           if (s.args.trim().isNotEmpty) ...[
             const SizedBox(height: 8),
-            _argsCard(s.args),
+            _ArgsCard(s.args),
           ],
           if (dur != null) ...[
             const SizedBox(height: 6),
@@ -5337,29 +5368,6 @@ class _ThoughtsSheetState extends State<_ThoughtsSheet> {
               ),
           ],
         ],
-      ),
-    );
-  }
-
-  /// Command/args on a dark monospace code card. The header copy button
-  /// copies the FULL arguments, never the summary.
-  Widget _argsCard(String args) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(10),
-      decoration: BoxDecoration(
-        color: const Color(0xFF121212),
-        borderRadius: BorderRadius.circular(P.r8),
-        border: Border.all(color: P.border),
-      ),
-      child: SelectableText(
-        args,
-        style: const TextStyle(
-          fontFamily: 'JetBrainsMono',
-          fontSize: 12,
-          height: 1.5,
-          color: Color(0xFFE8E8E8),
-        ),
       ),
     );
   }
@@ -5437,12 +5445,18 @@ class _AgentSheetState extends State<_AgentSheet> {
             padding: const EdgeInsets.fromLTRB(20, 8, 12, 12),
             child: Row(
               children: [
-                Text(
-                    widget.delegates.length == 1
-                        ? 'Agent'
-                        : '${widget.delegates.length} agents',
-                    style: PT.sectionTitle),
-                const Spacer(),
+                Expanded(
+                  child: Text(
+                      // One agent: the sheet is titled by its task
+                      // (the prominent row inside repeats it in full).
+                      widget.delegates.length == 1
+                          ? (widget.delegates.single.task ??
+                              widget.delegates.single.label)
+                          : '${widget.delegates.length} agents',
+                      style: PT.sectionTitle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis),
+                ),
                 IconButton(
                   icon:
                       Icon(Icons.close_rounded, color: P.inkSecondary),
@@ -5467,7 +5481,6 @@ class _AgentSheetState extends State<_AgentSheet> {
 
   Widget _agentBlock(_ThoughtStep s, int index) {
     final open = _open.contains(index);
-    final completed = s.status == _StepStatus.done;
     final dur = _stepDuration(s);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -5492,11 +5505,16 @@ class _AgentSheetState extends State<_AgentSheet> {
                               fontWeight: FontWeight.w600)),
                       const SizedBox(height: 2),
                       Text(
-                        completed
-                            ? (dur != null
-                                ? 'Completed \u00b7 $dur'
-                                : 'Completed')
-                            : 'Running',
+                        // Label derives from the terminal state: a
+                        // failed delegation says so, never "Running".
+                        switch (s.status) {
+                          _StepStatus.done => dur != null
+                              ? 'Completed \u00b7 $dur'
+                              : 'Completed',
+                          _StepStatus.error =>
+                            dur != null ? 'Failed \u00b7 $dur' : 'Failed',
+                          _StepStatus.running => 'Running',
+                        },
                         style: PT.meta,
                       ),
                     ],
@@ -5670,7 +5688,26 @@ class _AgentSheetState extends State<_AgentSheet> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                if (s.args.trim().isNotEmpty) _expandableText(s.args, _fullResult, -1 - stepIndex),
+                if (s.args.trim().isNotEmpty) ...[
+                  // Same args treatment as Thoughts steps: copy
+                  // affordance + the dark monospace card.
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: GestureDetector(
+                      onTap: () {
+                        Clipboard.setData(ClipboardData(text: s.args));
+                        toast(context, 'Arguments copied.');
+                        HapticFeedback.lightImpact();
+                      },
+                      child: Padding(
+                        padding: const EdgeInsets.all(6),
+                        child: Icon(Icons.copy_rounded,
+                            size: 15, color: P.inkSecondary),
+                      ),
+                    ),
+                  ),
+                  _ArgsCard(s.args),
+                ],
                 if (s.output.trim().isNotEmpty) ...[
                   if (s.args.trim().isNotEmpty) const SizedBox(height: 6),
                   _expandableText(s.output, _fullResult, -1000 - stepIndex),
