@@ -25,8 +25,9 @@ import '../widgets/export_sheet.dart';
 import '../widgets/forms.dart';
 import '../widgets/message_content.dart';
 import '../widgets/new_chat_sheet.dart';
-import '../widgets/session_timeline.dart';
 import '../widgets/states.dart';
+import '../widgets/task_list.dart';
+import '../widgets/task_sheet.dart';
 import '../widgets/team_run_view.dart';
 import '../widgets/todos_sheet.dart';
 import '../widgets/voice_note_pill.dart';
@@ -156,9 +157,6 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
   /// Edge detector for the approval-parked notification: the poller
   /// fires it once per parking, not once per tick.
   bool _wasParked = false;
-
-  /// Retry of a failed turn is in flight.
-  bool _retrying = false;
 
   /// The expert-team/expert indicator chip above the composer. Set from
   /// [SessionDetailScreen.attachedName]; dismissing it only hides the
@@ -891,32 +889,6 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
     }
   }
 
-  /// Retry a failed turn from the timeline header. The server replays the
-  /// last user message, so the client never resends text.
-  Future<void> _retryRun() async {
-    if (_retrying) return;
-    setState(() => _retrying = true);
-    try {
-      await widget.api.retryRun(widget.runId);
-      if (!mounted) return;
-      toast(context, 'Retrying turn…');
-      // Back to Chat so the new turn is visible; the poll loop picks it up.
-      DefaultTabController.of(context).animateTo(0);
-      _ensurePolling();
-      await _load();
-    } on PantheonTurnInFlightException {
-      if (mounted) toast(context, 'A turn is already running.');
-    } on PantheonRetryParkedException {
-      if (mounted) {
-        toast(context, 'Parked on approval — grant or deny it first.');
-      }
-    } catch (e) {
-      if (mounted) toastError(context, e);
-    } finally {
-      if (mounted) setState(() => _retrying = false);
-    }
-  }
-
   /// Tap the queue header to send the oldest queued message now. The
   /// server pops the head of its FIFO queue on the idle send, so the
   /// rest stay queued — never clear the whole queue here.
@@ -1447,7 +1419,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
                                   TeamRunView(
                                       api: widget.api,
                                       swarmId: widget.swarmId!),
-                                _timeline(_run!),
+                                SessionTaskList(run: _run!, api: widget.api),
                               ],
                             ),
                           ),
@@ -2409,12 +2381,13 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
 
   /// Compact "N agents used" pill below the turn that delegated
   /// work. Anchored to the delegate step's transcript position (see
-  /// [flushThoughts]). Tapping opens the agent sheet.
+  /// [flushThoughts]). Tapping opens the turn's task sheet, scrolled
+  /// to the matching SUBAGENT section.
   Widget _agentPill(List<_ThoughtStep> delegates) {
     final n = delegates.length;
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
-      onTap: () => _openAgentSheet(delegates),
+      onTap: () => _openTaskSheetForDelegates(delegates),
       child: Padding(
         padding: const EdgeInsets.only(bottom: 10, top: 2),
         child: Align(
@@ -2445,6 +2418,33 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
         ),
       ),
     );
+  }
+
+  /// Open the task sheet for the turn that produced [delegates],
+  /// anchored to the first delegate's SUBAGENT section (matched by
+  /// childRunId / delegation order). The turn is located from the
+  /// delegate step's transcript index via the shared task model —
+  /// never a timestamp scan.
+  void _openTaskSheetForDelegates(List<_ThoughtStep> delegates) {
+    final run = _run;
+    if (run == null || delegates.isEmpty) return;
+    final tasks = sessionTasksForRun(run);
+    if (tasks.isEmpty) return;
+    final idx = delegates.first.transcriptIndex;
+    var task = tasks.first;
+    for (final t in tasks) {
+      if (t.firstItemIndex <= idx) task = t;
+    }
+    String? anchorId;
+    for (final d in delegates) {
+      final id = d.childRunId;
+      if (id != null && task.subagentRunIds.contains(id)) {
+        anchorId = id;
+        break;
+      }
+    }
+    showTaskSheet(context,
+        run: run, task: task, api: widget.api, anchorChildRunId: anchorId);
   }
 
   /// Agent sheet for one turn's delegate steps: task title, status row,
@@ -4204,33 +4204,6 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
     );
   }
 
-  /// Timeline tab: one dark card with a header block (title, status
-  /// chip + outcome time, and the outcome detail as a separated block
-  /// for failed/canceled runs), then MAIN / SUBAGENT NN sections whose
-  /// Timeline tab: the shared [SessionTimeline] card (header, MAIN /
-  /// SUBAGENT NN sections, expandable rows) inside the tab's scroll
-  /// container. Retry of a failed turn stays wired here.
-  Widget _timeline(PantheonRun run) {
-    if (run.timeline.isEmpty) {
-      return const EmptyState(
-        icon: Icons.timeline_rounded,
-        title: 'No timeline events',
-        body: 'Run events will stream in here.',
-      );
-    }
-    return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
-      child: StaggerItem(
-        index: 0,
-        child: SessionTimeline(
-          run: run,
-          retrying: _retrying,
-          onRetry: _retryRun,
-        ),
-      ),
-    );
-  }
-
   void _jumpToBottom() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_scroll.hasClients) {
@@ -4650,99 +4623,22 @@ class _ImageViewerDialog extends StatelessWidget {
 /// is an error, not a clock.
 enum _StepStatus { running, done, error }
 
-/// Tool name → step kind. Covers the contract kinds:
-/// command | tool | delegate | file-search | web-search | read | edit.
-String _stepKind(String name) {
-  final n = name.toLowerCase();
-  if (n.contains('delegate') ||
-      n.contains('subagent') ||
-      n.contains('dispatch') ||
-      n.contains('swarm')) {
-    return 'delegate';
-  }
-  if (n.contains('web') &&
-      (n.contains('search') ||
-          n.contains('lookup') ||
-          n.contains('fetch') ||
-          n.contains('crawl'))) {
-    return 'web-search';
-  }
-  if (n.contains('grep') ||
-      n.contains('glob') ||
-      n.contains('find') ||
-      n.contains('rg') ||
-      n.contains('lookup')) {
-    return 'file-search';
-  }
-  // Rescue order matters: the bare `search` below would otherwise call
-  // file and memory searches web searches. `search_files`,
-  // `code_search`, and `memory_search` are named narrowly on purpose.
-  if (n.contains('search') &&
-      (n.contains('file') || n.contains('code'))) {
-    return 'file-search';
-  }
-  if (n.contains('search') && n.contains('memory')) return 'tool';
-  if (n.contains('search')) return 'web-search';
-  if (n.contains('exec') ||
-      n.contains('command') ||
-      n.contains('shell') ||
-      n.contains('bash') ||
-      n.contains('terminal')) {
-    return 'command';
-  }
-  if (n.contains('edit') ||
-      n.contains('write') ||
-      n.contains('patch') ||
-      n.contains('apply')) {
-    return 'edit';
-  }
-  if (n.contains('read')) return 'read';
-  return 'tool';
-}
+/// Tool name → step kind. Delegates to [stepKindFor] in the task
+/// model (single source of truth, shared with the Timeline task list).
+String _stepKind(String name) => stepKindFor(name);
 
 /// MCP-ish names like `filesystem__read_file` → "Read File".
-String _humanToolName(String name) {
-  var n = name;
-  final sep = n.lastIndexOf('__');
-  if (sep >= 0) n = n.substring(sep + 2);
-  final words = n
-      .split(RegExp(r'[_\-\s]+'))
-      .where((w) => w.isNotEmpty)
-      .map((w) => '${w[0].toUpperCase()}${w.substring(1)}');
-  final label = words.join(' ');
-  return label.isEmpty ? name : label;
-}
+String _humanToolName(String name) => humanToolName(name);
 
-Map<String, dynamic>? _argsMap(String argsJson) {
-  try {
-    final v = jsonDecode(argsJson);
-    if (v is Map) return v.cast<String, dynamic>();
-  } catch (_) {}
-  return null;
-}
-
-String? _nonEmptyArg(dynamic v) =>
-    v is String && v.trim().isNotEmpty ? v.trim() : null;
+Map<String, dynamic>? _argsMap(String argsJson) => argsMapOf(argsJson);
 
 /// Delegate call extras parsed from the call arguments. Key names vary
 /// across backends, so probe the common ones.
-String? _delegateAgent(Map<String, dynamic> args) =>
-    _nonEmptyArg(args['agent']) ??
-    _nonEmptyArg(args['subagent_type']) ??
-    _nonEmptyArg(args['subagent']) ??
-    _nonEmptyArg(args['name']);
+String? _delegateAgent(Map<String, dynamic> args) => delegateAgentOf(args);
 
-String? _delegateTask(Map<String, dynamic> args) =>
-    _nonEmptyArg(args['task']) ??
-    _nonEmptyArg(args['description']) ??
-    _nonEmptyArg(args['summary']) ??
-    _nonEmptyArg(args['title']);
+String? _delegateTask(Map<String, dynamic> args) => delegateTaskOf(args);
 
-String? _delegatePrompt(Map<String, dynamic> args) =>
-    _nonEmptyArg(args['prompt']) ??
-    _nonEmptyArg(args['message']) ??
-    _nonEmptyArg(args['instructions']) ??
-    _nonEmptyArg(args['input']);
+String? _delegatePrompt(Map<String, dynamic> args) => delegatePromptOf(args);
 
 /// One row in the Thoughts sheet / agent sheet: a reasoning summary or
 /// a tool call with its result, derived from the new transcript
@@ -4909,15 +4805,8 @@ class _ThoughtStep {
   /// Backend duration_ms wins (on the call, then on the result row);
   /// otherwise fall back to the owner→result timestamp delta.
   static int? _resolveDuration(
-      ToolCallRef call, TranscriptItem? result, int? ownerTsMs) {
-    final direct = call.durationMs ?? result?.durationMs;
-    if (direct != null && direct >= 0) return direct;
-    if (result?.tsMs != null && ownerTsMs != null) {
-      final ms = result!.tsMs! - ownerTsMs;
-      if (ms >= 0) return ms;
-    }
-    return null;
-  }
+          ToolCallRef call, TranscriptItem? result, int? ownerTsMs) =>
+      resolveToolDurationMs(call, result, ownerTsMs);
 
   /// Self-describing collapsed label, running vs past tense. Delegates
   /// read "Delegate → {agent}: {task}".
@@ -4945,19 +4834,12 @@ class _ThoughtStep {
 
 /// Best-effort error detection: the backend has no machine-readable
 /// error marker on tool results, so match the common "Error…" prefix.
-bool _looksLikeError(String content) =>
-    content.trimLeft().toLowerCase().startsWith('error');
+bool _looksLikeError(String content) => looksLikeToolError(content);
 
 String _trunc(String s, int n) =>
     s.length <= n ? s : '${s.substring(0, n).trimRight()}…';
 
-String _prettyArgs(String argsJson) {
-  try {
-    return const JsonEncoder.withIndent('  ').convert(jsonDecode(argsJson));
-  } catch (_) {
-    return argsJson;
-  }
-}
+String _prettyArgs(String argsJson) => prettyArgsJson(argsJson);
 
 /// "1.1s" / "350ms" from a step's resolved duration.
 String? _stepDuration(_ThoughtStep s) {
