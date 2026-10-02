@@ -49,6 +49,8 @@ class AppPreferences {
   static const _kMutedSessions = 'notif.muted_sessions';
   static const _kNotifSound = 'notif.sound';
 
+  static const _kTaskSeen = 'task.seen_ms'; // per-run: 'task.seen_ms.<runId>'
+
   final themeMode = ValueNotifier<ThemeMode>(ThemeMode.system);
   final textScale = ValueNotifier<double>(1.0);
   final compactDensity = ValueNotifier<bool>(false);
@@ -148,6 +150,17 @@ class AppPreferences {
     notifSoundEnabled.value = p.getBool(_kNotifSound) ?? true;
     _ready = true;
   }
+
+  // Timeline task seen-state: the greatest task updatedMs the user
+  // has opened for a run. A task shows its unseen dot while its own
+  // updatedMs is newer than this value.
+
+  Future<int> taskSeenMs(String runId) async =>
+      (await SharedPreferences.getInstance()).getInt('$_kTaskSeen.$runId') ??
+      0;
+
+  Future<void> setTaskSeenMs(String runId, int ms) async =>
+      (await SharedPreferences.getInstance()).setInt('$_kTaskSeen.$runId', ms);
 
   // Appearance setters (all bump the root rebuild tick).
 
