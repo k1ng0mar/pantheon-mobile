@@ -54,6 +54,28 @@ void main() {
     expect(r.totalTokens, 1500);
   });
 
+  test('ToolCallRef parses the delegate child link', () {
+    final linked = ToolCallRef.fromJson({
+      'id': 'call_9_0',
+      'name': 'delegate',
+      'arguments': '{"agent":"researcher","task":"survey sources"}',
+      'started_ms': 1000,
+      'duration_ms': 4200,
+      'child_run_id': 'run-1-sub-1',
+    });
+    expect(linked.childRunId, 'run-1-sub-1');
+    final plain = ToolCallRef.fromJson({
+      'id': 'call_1_0',
+      'name': 'shell',
+      'arguments': '{}',
+      'child_run_id': null,
+    });
+    expect(plain.childRunId, isNull);
+    final legacy =
+        ToolCallRef.fromJson({'id': 'c', 'name': 'shell', 'arguments': ''});
+    expect(legacy.childRunId, isNull);
+  });
+
   test('PantheonRun falls back to id prefix when untitled', () {
     final r = PantheonRun.fromJson({
       'id': 'abcdef123456',

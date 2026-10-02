@@ -13,12 +13,17 @@ class ToolCallRef {
   /// app falls back to the assistant→result timestamp delta.
   final int? durationMs;
 
+  /// For a delegate call: the child run it spawned. Null for other
+  /// calls and for delegations recorded before the link existed.
+  final String? childRunId;
+
   ToolCallRef(
       {required this.id,
       required this.name,
       required this.arguments,
       this.startedMs,
-      this.durationMs});
+      this.durationMs,
+      this.childRunId});
 
   factory ToolCallRef.fromJson(Map<String, dynamic> j) => ToolCallRef(
         id: j['id'] as String? ?? '',
@@ -26,6 +31,7 @@ class ToolCallRef {
         arguments: j['arguments'] as String? ?? '',
         startedMs: (j['started_ms'] as num?)?.toInt(),
         durationMs: (j['duration_ms'] as num?)?.toInt(),
+        childRunId: j['child_run_id'] as String?,
       );
 }
 
