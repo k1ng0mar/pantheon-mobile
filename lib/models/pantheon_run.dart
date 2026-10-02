@@ -1,5 +1,19 @@
 import 'pending_input.dart';
 
+/// Tolerant int coercion for backend JSON scalars: numbers pass
+/// through, numeric strings parse, anything else is null. The contract
+/// says JSON numbers, but one wrong-typed scalar from any backend must
+/// degrade a field, never throw and take the session screen down.
+int? _intOrNull(Object? v) {
+  if (v is num) return v.toInt();
+  if (v is String) return int.tryParse(v.trim());
+  return null;
+}
+
+/// Tolerant string coercion: strings pass through, anything else is
+/// null rather than a TypeError from `as String?`.
+String? _stringOrNull(Object? v) => v is String ? v : null;
+
 class ToolCallRef {
   final String id;
   final String name;
@@ -29,9 +43,9 @@ class ToolCallRef {
         id: j['id'] as String? ?? '',
         name: j['name'] as String? ?? '',
         arguments: j['arguments'] as String? ?? '',
-        startedMs: (j['started_ms'] as num?)?.toInt(),
-        durationMs: (j['duration_ms'] as num?)?.toInt(),
-        childRunId: j['child_run_id'] as String?,
+        startedMs: _intOrNull(j['started_ms']),
+        durationMs: _intOrNull(j['duration_ms']),
+        childRunId: _stringOrNull(j['child_run_id']),
       );
 }
 
@@ -68,13 +82,13 @@ class TranscriptItem {
         type: j['type'] as String? ?? 'message',
         role: j['role'] as String?,
         content: j['content'] as String? ?? '',
-        tsMs: (j['ts_ms'] as num?)?.toInt(),
+        tsMs: _intOrNull(j['ts_ms']),
         toolCalls: ((j['tool_calls'] as List?) ?? const [])
             .whereType<Map<String, dynamic>>()
             .map(ToolCallRef.fromJson)
             .toList(),
-        toolCallId: j['tool_call_id'] as String?,
-        durationMs: (j['duration_ms'] as num?)?.toInt(),
+        toolCallId: _stringOrNull(j['tool_call_id']),
+        durationMs: _intOrNull(j['duration_ms']),
       );
 }
 
@@ -88,8 +102,8 @@ class TimelineItem {
       {required this.seq, required this.tsMs, required this.kind, this.detail});
 
   factory TimelineItem.fromJson(Map<String, dynamic> j) => TimelineItem(
-        seq: (j['seq'] as num?)?.toInt() ?? 0,
-        tsMs: (j['ts_ms'] as num?)?.toInt() ?? 0,
+        seq: _intOrNull(j['seq']) ?? 0,
+        tsMs: _intOrNull(j['ts_ms']) ?? 0,
         kind: j['kind'] as String? ?? 'other',
         detail: j['detail'] as String?,
       );
