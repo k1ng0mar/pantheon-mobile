@@ -2068,39 +2068,8 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
   /// transcript position.
   List<_ThoughtStep> _stepsFromItems(
       List<TranscriptItem> items, List<int> indices) {
-    final live = _isLive(_run?.status ?? '');
-    final results = <String, TranscriptItem>{};
-    for (final t in items) {
-      if (t.role == 'tool' && t.toolCallId != null) {
-        results.putIfAbsent(t.toolCallId!, () => t);
-      }
-    }
-    final steps = <_ThoughtStep>[];
-    var k = 0;
-    for (final t in items) {
-      final idx = k < indices.length ? indices[k] : -1;
-      k++;
-      if (t.type == 'reasoning') {
-        if (t.content.trim().isNotEmpty) {
-          steps.add(_ThoughtStep.reasoning(t.content, idx));
-        }
-      } else if (t.role == 'assistant' && t.toolCalls.isNotEmpty) {
-        for (final c in t.toolCalls) {
-          steps.add(_ThoughtStep.tool(
-            call: c,
-            result: results[c.id],
-            transcriptIndex: idx,
-            live: live,
-            ownerTsMs: t.tsMs,
-          ));
-        }
-      } else if (t.role == 'tool') {
-        final matched =
-            steps.any((s) => !s.isReasoning && s.id == t.toolCallId);
-        if (!matched) steps.add(_ThoughtStep.orphanResult(t, idx));
-      }
-    }
-    return steps;
+    return _thoughtStepsFromItems(
+        items, indices, _isLive(_run?.status ?? ''));
   }
 
   /// Transcript indices whose message text contains the find query
@@ -2496,7 +2465,9 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
         maxChildSize: delegates.length == 1 ? 0.6 : 0.92,
         expand: false,
         builder: (_, scrollController) => _AgentSheet(
-            delegates: delegates, scrollController: scrollController),
+            delegates: delegates,
+            scrollController: scrollController,
+            api: widget.api),
       ),
     );
   }
@@ -4702,6 +4673,14 @@ String _stepKind(String name) {
       n.contains('lookup')) {
     return 'file-search';
   }
+  // Rescue order matters: the bare `search` below would otherwise call
+  // file and memory searches web searches. `search_files`,
+  // `code_search`, and `memory_search` are named narrowly on purpose.
+  if (n.contains('search') &&
+      (n.contains('file') || n.contains('code'))) {
+    return 'file-search';
+  }
+  if (n.contains('search') && n.contains('memory')) return 'tool';
   if (n.contains('search')) return 'web-search';
   if (n.contains('exec') ||
       n.contains('command') ||
@@ -4768,6 +4747,61 @@ String? _delegatePrompt(Map<String, dynamic> args) =>
 /// a tool call with its result, derived from the new transcript
 /// contract (ts_ms, tool_calls[{id,name,arguments,started_ms,
 /// duration_ms}], tool_call_id, duration_ms on tool results).
+/// Build Thought steps from a run's transcript items: reasoning
+/// summaries and tool calls (with their results). Orphan tool results
+/// with no matching call row become their own step rather than a fake
+/// assistant bubble. [indices] are the transcript indices of [items],
+/// used to anchor subagent pills to the delegate step's transcript
+/// position. Shared by the session Thoughts sheet and the agent sheet,
+/// which walks a child run's transcript with the same rules.
+List<_ThoughtStep> _thoughtStepsFromItems(
+    List<TranscriptItem> items, List<int> indices, bool live) {
+  final results = <String, TranscriptItem>{};
+  for (final t in items) {
+    if (t.role == 'tool' && t.toolCallId != null) {
+      results.putIfAbsent(t.toolCallId!, () => t);
+    }
+  }
+  final steps = <_ThoughtStep>[];
+  var k = 0;
+  for (final t in items) {
+    final idx = k < indices.length ? indices[k] : -1;
+    k++;
+    if (t.type == 'reasoning') {
+      if (t.content.trim().isNotEmpty) {
+        steps.add(_ThoughtStep.reasoning(t.content, idx));
+      }
+    } else if (t.role == 'assistant' && t.toolCalls.isNotEmpty) {
+      for (final c in t.toolCalls) {
+        steps.add(_ThoughtStep.tool(
+          call: c,
+          result: results[c.id],
+          transcriptIndex: idx,
+          live: live,
+          ownerTsMs: t.tsMs,
+        ));
+      }
+    } else if (t.role == 'tool') {
+      final matched =
+          steps.any((s) => !s.isReasoning && s.id == t.toolCallId);
+      if (!matched) steps.add(_ThoughtStep.orphanResult(t, idx));
+    }
+  }
+  return steps;
+}
+
+/// The first user message in a transcript: for a delegated child run
+/// this is the exact prompt the child received (task plus any appended
+/// context), which outranks anything recoverable from the parent args.
+String? _firstUserText(List<TranscriptItem> items) {
+  for (final t in items) {
+    if (t.type == 'message' && t.role == 'user' && t.content.trim().isNotEmpty) {
+      return t.content;
+    }
+  }
+  return null;
+}
+
 class _ThoughtStep {
   final bool isReasoning;
   final String? reasoningText;
@@ -4789,6 +4823,10 @@ class _ThoughtStep {
   final String? task;
   final String? prompt;
 
+  /// For a delegate call: the child run it spawned, when the backend
+  /// recorded the link. The agent sheet fetches this run's steps.
+  final String? childRunId;
+
   /// Transcript index of the assistant item that owns this step — the
   /// subagent pill anchors here, never on a timestamp scan.
   final int transcriptIndex;
@@ -4809,7 +4847,8 @@ class _ThoughtStep {
         durationMs = null,
         agent = null,
         task = null,
-        prompt = null;
+        prompt = null,
+        childRunId = null;
 
   _ThoughtStep.tool({
     required ToolCallRef call,
@@ -4832,6 +4871,7 @@ class _ThoughtStep {
                 ? _StepStatus.error
                 : _StepStatus.done)
             : (live ? _StepStatus.running : _StepStatus.error),
+        childRunId = call.childRunId,
         agent = _stepKind(call.name) == 'delegate'
             ? _delegateAgent(_argsMap(call.arguments) ?? const {})
             : null,
@@ -4850,7 +4890,9 @@ class _ThoughtStep {
         reasoningText = null,
         call = null,
         result = res,
-        status = _StepStatus.done,
+        status = _looksLikeError(res.content)
+            ? _StepStatus.error
+            : _StepStatus.done,
         id = res.toolCallId ?? '',
         kind = 'tool',
         label = 'Tool result',
@@ -4860,7 +4902,8 @@ class _ThoughtStep {
         durationMs = res.durationMs,
         agent = null,
         task = null,
-        prompt = null;
+        prompt = null,
+        childRunId = null;
 
   /// Backend duration_ms wins (on the call, then on the result row);
   /// otherwise fall back to the owner→result timestamp delta.
@@ -5358,7 +5401,12 @@ class _AgentSheet extends StatefulWidget {
   /// Scroll controller owned by the enclosing DraggableScrollableSheet.
   final ScrollController? scrollController;
 
-  const _AgentSheet({required this.delegates, this.scrollController});
+  /// API for fetching a linked child run's transcript. Null renders the
+  /// sheet without child steps (no honest source without the backend).
+  final PantheonApi? api;
+
+  const _AgentSheet(
+      {required this.delegates, this.scrollController, this.api});
 
   @override
   State<_AgentSheet> createState() => _AgentSheetState();
@@ -5368,6 +5416,11 @@ class _AgentSheetState extends State<_AgentSheet> {
   final Set<int> _open = {};
   final Set<int> _fullPrompt = {};
   final Set<int> _fullResult = {};
+  final Set<String> _openSteps = {};
+
+  /// One fetch per expanded delegate block, memoized so sheet rebuilds
+  /// and re-expands never refetch the same child run.
+  final Map<int, Future<PantheonRun>> _childFutures = {};
 
   static const _expandAt = 500;
 
@@ -5478,8 +5531,29 @@ class _AgentSheetState extends State<_AgentSheet> {
     );
   }
 
+  Future<PantheonRun> _childFuture(int index, String childRunId) {
+    return _childFutures.putIfAbsent(
+        index, () => widget.api!.runDetail(childRunId));
+  }
+
   Widget _agentDetail(_ThoughtStep s, int index) {
-    final prompt = (s.prompt ?? '').trim();
+    final childId = s.childRunId;
+    if (childId == null || widget.api == null) {
+      return _agentDetailBody(s, index, null);
+    }
+    return FutureBuilder<PantheonRun>(
+      future: _childFuture(index, childId),
+      builder: (context, snap) => _agentDetailBody(s, index, snap),
+    );
+  }
+
+  Widget _agentDetailBody(
+      _ThoughtStep s, int index, AsyncSnapshot<PantheonRun>? snap) {
+    // The child's own transcript outranks the args-recovered prompt:
+    // it is the exact text the child received, context included.
+    final childPrompt =
+        snap?.data == null ? null : _firstUserText(snap!.data!.transcript);
+    final prompt = (childPrompt ?? s.prompt ?? '').trim();
     final result = s.output.trim();
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 0, 20, 14),
@@ -5506,12 +5580,106 @@ class _AgentSheetState extends State<_AgentSheet> {
                         : P.inkSecondary)),
             const SizedBox(height: 6),
             _expandableText(result, _fullResult, index),
+            const SizedBox(height: 10),
           ],
-          // Child step rows render only when attributable. The backend
-          // exposes no subagent transcripts, so there is nothing honest
-          // to list here today.
+          if (snap != null) _childStepsSection(index, snap),
         ],
       ),
+    );
+  }
+
+  /// The linked child run's own steps, walked with the same rules as
+  /// the parent Thoughts sheet. Honest states: loading, failed, and
+  /// empty say so; nested delegates render as rows (one level deep).
+  Widget _childStepsSection(int index, AsyncSnapshot<PantheonRun> snap) {
+    if (snap.connectionState != ConnectionState.done) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 6),
+        child: Row(children: [
+          const SizedBox(
+            width: 14,
+            height: 14,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+          const SizedBox(width: 10),
+          Text("Loading the agent's work\u2026", style: PT.meta),
+        ]),
+      );
+    }
+    if (snap.hasError || snap.data == null) {
+      return Text("Couldn't load this agent's work.", style: PT.meta);
+    }
+    final detail = snap.data!;
+    final steps = _thoughtStepsFromItems(
+      detail.transcript,
+      [for (var i = 0; i < detail.transcript.length; i++) i],
+      _SessionDetailScreenState._isLive(detail.status),
+    );
+    if (steps.isEmpty) {
+      return Text('Nothing recorded for this agent yet.', style: PT.meta);
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('STEPS',
+            style: PT.monoEyebrow.copyWith(color: P.inkSecondary)),
+        const SizedBox(height: 4),
+        for (var i = 0; i < steps.length; i++) _childStepRow(index, steps[i], i),
+      ],
+    );
+  }
+
+  Widget _childStepRow(int blockIndex, _ThoughtStep s, int stepIndex) {
+    final key = '$blockIndex:$stepIndex';
+    final open = _openSteps.contains(key);
+    final dur = _stepDuration(s);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        InkWell(
+          onTap: () => setState(
+              () => open ? _openSteps.remove(key) : _openSteps.add(key)),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 7),
+            child: Row(
+              children: [
+                _agentStatusGlyph(s),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(_stepTitle(s),
+                      style: PT.small, overflow: TextOverflow.ellipsis),
+                ),
+                if (dur != null) ...[
+                  const SizedBox(width: 8),
+                  Text(dur, style: PT.meta),
+                ],
+                Icon(
+                    open
+                        ? Icons.expand_less_rounded
+                        : Icons.expand_more_rounded,
+                    size: 16,
+                    color: P.inkSecondary),
+              ],
+            ),
+          ),
+        ),
+        if (open)
+          Padding(
+            padding: const EdgeInsets.only(left: 26, bottom: 8),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (s.args.trim().isNotEmpty) _expandableText(s.args, _fullResult, -1 - stepIndex),
+                if (s.output.trim().isNotEmpty) ...[
+                  if (s.args.trim().isNotEmpty) const SizedBox(height: 6),
+                  _expandableText(s.output, _fullResult, -1000 - stepIndex),
+                ],
+                if (s.args.trim().isEmpty && s.output.trim().isEmpty)
+                  Text('No detail recorded.', style: PT.meta),
+              ],
+            ),
+          ),
+      ],
     );
   }
 
