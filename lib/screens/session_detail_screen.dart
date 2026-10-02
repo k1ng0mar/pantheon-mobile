@@ -17,14 +17,17 @@ import '../models/models.dart';
 import '../services/app_preferences.dart';
 import '../services/notification_service.dart';
 import '../services/pantheon_api.dart';
+import '../services/slash_commands.dart';
 import '../theme.dart';
 import '../widgets/active_profile_avatar.dart';
+import '../widgets/approval_actions.dart';
 import '../widgets/buttons.dart';
 import '../widgets/chips.dart';
 import '../widgets/export_sheet.dart';
 import '../widgets/forms.dart';
 import '../widgets/message_content.dart';
 import '../widgets/new_chat_sheet.dart';
+import '../widgets/session_composer.dart';
 import '../widgets/states.dart';
 import '../widgets/task_list.dart';
 import '../widgets/task_sheet.dart';
@@ -32,6 +35,10 @@ import '../widgets/team_run_view.dart';
 import '../widgets/todos_sheet.dart';
 import '../widgets/voice_note_pill.dart';
 import 'agent_activity_screen.dart';
+import 'approvals_screen.dart';
+import 'experts_screen.dart';
+import 'sessions_screen.dart';
+import 'swarm_screen.dart';
 
 /// A session as a real chat: transcript bubbles, live polling while the
 /// run is active, and a composer that sends into the run via
@@ -82,9 +89,18 @@ class SessionDetailScreen extends StatefulWidget {
   State<SessionDetailScreen> createState() => _SessionDetailScreenState();
 }
 
-class _SessionDetailScreenState extends State<SessionDetailScreen> {
+class _SessionDetailScreenState extends State<SessionDetailScreen>
+    implements SlashCommandHost {
   PantheonRun? _run;
   final List<TranscriptItem> _messages = [];
+
+  /// Curated chat slash commands: `GET /api/commands?surface=chat`
+  /// merged with the mobile-only commands, or the hardcoded fallback on
+  /// stale/unreachable backends. Drives /help and slash autocomplete.
+  List<ChatCommand> _slashList = ChatCommand.fallbackChatCommands;
+
+  late final SlashCommandDispatcher _slashDispatcher =
+      SlashCommandDispatcher(this);
 
   /// Composer emptiness for the send button's dim/disabled state.
   bool _composerEmpty = true;
@@ -250,6 +266,23 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
     _composer.addListener(_onComposerChanged);
     _loadVotes();
     _load(initial: true);
+    _loadSlashCommands();
+  }
+
+  /// Chat command catalog: the backend registry (`surface=chat`) merged
+  /// with the mobile-only commands. A stale backend 404s the endpoint —
+  /// fall back to the hardcoded curated list and show the friendly
+  /// upgrade toast (same pattern as the approvals tiers).
+  Future<void> _loadSlashCommands() async {
+    try {
+      final fetched = await widget.api.chatCommands();
+      if (!mounted) return;
+      setState(() => _slashList = ChatCommand.mergeWithMobile(fetched));
+    } on PantheonStaleBackendException catch (e) {
+      if (mounted) toast(context, e.toString());
+    } catch (_) {
+      // Transient failure: keep the hardcoded curated list silently.
+    }
   }
 
   void _onComposerChanged() {
@@ -816,17 +849,24 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
     }
   }
 
-  Future<void> _decideApproval(Approval a, bool grant) async {
+  Future<void> _decideApproval(Approval a, bool grant,
+      {String? mode}) async {
     try {
-      await widget.api.decideApproval(a.id, grant);
+      await widget.api.decideApproval(a.id, grant, mode: mode);
       if (!mounted) return;
-      toast(context, grant ? 'Granted — resuming.' : 'Denied.');
+      toast(context, grant ? _grantToast(mode) : 'Denied.');
       await _refreshApprovalsBadge();
       await _load();
     } catch (e) {
       if (mounted) toastError(context, e);
     }
   }
+
+  String _grantToast(String? mode) => switch (mode) {
+        'session' => 'Granted for this session.',
+        'always' => 'Granted — won\'t ask for this again.',
+        _ => 'Granted — resuming.',
+      };
 
   /// Keep the Approvals tab badge honest after an inline decision: the
   /// badge only refreshes on Home/Approvals screen loads otherwise.
@@ -1078,8 +1118,242 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
         await _slashHelp();
         break;
       default:
-        if (mounted) toast(context, 'Unknown command /$cmd — try /help.');
+        await _slashDispatcher.dispatch(cmd, arg);
     }
+  }
+
+  // ------------------------------------------------------------------
+  // SlashCommandHost: UI effects for the slash-command dispatcher.
+  // ------------------------------------------------------------------
+
+  @override
+  PantheonApi get api => widget.api;
+
+  @override
+  List<ChatCommand> get slashCommands => _slashList;
+
+  @override
+  void showToast(String message) {
+    if (mounted) toast(context, message);
+  }
+
+  @override
+  void showError(Object e) {
+    if (mounted) toastError(context, e);
+  }
+
+  @override
+  Future<void> openApprovals() async {
+    if (!mounted) return;
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => ApprovalsScreen(
+          api: widget.api,
+          pendingApprovals:
+              widget.pendingApprovals ?? ValueNotifier(0),
+        ),
+      ),
+    );
+  }
+
+  @override
+  Future<void> openTeams() async {
+    if (!mounted) return;
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => ExpertsScreen(api: widget.api)),
+    );
+  }
+
+  @override
+  Future<void> openSessions() async {
+    if (!mounted) return;
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => SessionsScreen(
+            api: widget.api, pendingApprovals: widget.pendingApprovals),
+      ),
+    );
+  }
+
+  @override
+  Future<void> openRun(String id) async {
+    if (!mounted) return;
+    _openRun(id);
+  }
+
+  @override
+  Future<void> openSwarm(String swarmId) async {
+    if (!mounted) return;
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) =>
+            SwarmScreen(api: widget.api, initialSwarmId: swarmId),
+      ),
+    );
+  }
+
+  @override
+  Future<void> showStatsSheet(UsageStats stats) async {
+    if (!mounted) return;
+    await showPSheet<void>(context, _SlashStatsSheet(stats: stats));
+  }
+
+  /// `/steer <text>`: redirect the running turn (the same in-app steer
+  /// path as the in-flight sheet); a normal message when idle.
+  @override
+  Future<void> steerSend(String text) async {
+    final run = _run;
+    if (run != null && _isLive(run.status)) {
+      await _queueOrSteer(true, text, const []);
+      return;
+    }
+    _composer.text = text;
+    await _send();
+  }
+
+  @override
+  Future<String?> promptFor(String title, {bool allowEmpty = false}) {
+    if (!mounted) return Future.value();
+    return promptText(context, title: title, allowEmpty: allowEmpty);
+  }
+
+  @override
+  List<SlashChatMessage> get chatMessages => [
+        for (final m in _messages)
+          SlashChatMessage(role: m.role, content: m.content),
+      ];
+
+  @override
+  Future<void> copyText(String text) =>
+      Clipboard.setData(ClipboardData(text: text));
+
+  /// `/team <id> [task]`: `POST /api/teams/:id/use` and open the
+  /// spawned session, with the team chip above the composer.
+  @override
+  Future<void> useTeam(String id, String? task) async {
+    try {
+      final res = await widget.api.useTeamFull(id, task: task);
+      String? pick(List<String> keys) {
+        for (final k in keys) {
+          final v = res[k]?.toString();
+          if (v != null && v.isNotEmpty) return v;
+        }
+        return null;
+      }
+      // run_id is the lead's coordination run — the user-facing session.
+      final sessionId = pick(['run_id', 'swarm_id', 'session_id', 'id']);
+      if (sessionId == null) {
+        if (mounted) {
+          toast(context, 'The team endpoint returned no session id.');
+        }
+        return;
+      }
+      if (!mounted) return;
+      Navigator.of(context).push(
+        buildDetailRoute(SessionDetailScreen(
+          api: widget.api,
+          runId: sessionId,
+          attachedName: id,
+          attachedIcon: Icons.groups_outlined,
+          pendingApprovals: widget.pendingApprovals,
+          swarmId: res['swarm_id']?.toString(),
+        )),
+      );
+    } catch (e) {
+      if (mounted) toastError(context, e);
+    }
+  }
+
+  // ------------------------------------------------------------------
+  // SlashCommandHost: run-control effects for the dispatcher.
+  // ------------------------------------------------------------------
+
+  @override
+  String get runId => widget.runId;
+
+  @override
+  Future<bool> confirm(String title, String body,
+      {String confirmLabel = 'Confirm', bool destructive = false}) {
+    if (!mounted) return Future.value(false);
+    return confirmAction(context,
+        title: title,
+        body: body,
+        confirmLabel: confirmLabel,
+        destructive: destructive);
+  }
+
+  @override
+  void setComposerText(String text) {
+    if (mounted) _composer.text = text;
+  }
+
+  /// Remove the last user turn (the trailing user message and
+  /// everything after it) from the local view. The next poll
+  /// reconciles against the server anyway; this is for immediacy.
+  @override
+  void hideLastTurn() {
+    if (!mounted) return;
+    final i = _messages.lastIndexWhere((m) => m.role == 'user');
+    if (i < 0) return;
+    setState(() {
+      final removed = _messages.sublist(i);
+      _messages.removeRange(i, _messages.length);
+      _pending.removeWhere(removed.contains);
+    });
+  }
+
+  @override
+  void clearTranscriptView() {
+    if (!mounted) return;
+    setState(() {
+      _messages.clear();
+      _pending.clear();
+    });
+  }
+
+  /// Turns are counted by user messages (1-based), matching the
+  /// server's turn numbering. Everything from the (turnNo+1)-th user
+  /// message onward is dropped from the local view.
+  @override
+  void hideTurnsAfter(int turnNo) {
+    if (!mounted) return;
+    var seen = 0;
+    int? cutAt;
+    for (var k = 0; k < _messages.length; k++) {
+      if (_messages[k].role == 'user') {
+        seen++;
+        if (seen > turnNo) {
+          cutAt = k;
+          break;
+        }
+      }
+    }
+    if (cutAt == null) return;
+    setState(() {
+      final removed = _messages.sublist(cutAt!);
+      _messages.removeRange(cutAt!, _messages.length);
+      _pending.removeWhere(removed.contains);
+    });
+  }
+
+  @override
+  Future<void> showCheckpointsSheet(List<Checkpoint> checkpoints) async {
+    if (!mounted) return;
+    await showPSheet<void>(
+        context, _SlashCheckpointsSheet(checkpoints: checkpoints));
+  }
+
+  @override
+  Future<void> showBackgroundTasksSheet(List<BackgroundTask> tasks) async {
+    if (!mounted) return;
+    await showPSheet<void>(
+        context, _SlashBackgroundTasksSheet(tasks: tasks));
+  }
+
+  @override
+  Future<void> showBackgroundTaskSheet(BackgroundTask task) async {
+    if (!mounted) return;
+    await showPSheet<void>(context, _SlashBackgroundTaskSheet(task: task));
   }
 
   /// `/new`: open the shared new-chat sheet, which pushes the created
@@ -1311,7 +1585,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
               const SizedBox(height: 8),
                Text('Slash commands', style: PT.sectionTitle),
               const SizedBox(height: 12),
-              for (final c in _slashCommands)
+              for (final c in _slashList)
                 Padding(
                   padding: const EdgeInsets.only(bottom: 10),
                   child: Row(
@@ -1634,7 +1908,10 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
           if (run != null && run.queuedMessages.isNotEmpty)
             _queueSection(run.queuedMessages),
           if (_findOpen) _findBar(),
-          _SlashSuggestions(controller: _composer, onPick: _pickSlash),
+          _SlashSuggestions(
+              controller: _composer,
+              onPick: _pickSlash,
+              commands: _slashList),
           _composerBar(),
         ],
       ),
@@ -1756,33 +2033,26 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
     );
   }
 
+  /// One parked approval: the tool call plus Deny and the grant tiers
+  /// the backend offered (`ApprovalActions` falls back to a single
+  /// Grant when `available_tiers` is absent).
   Widget _approvalRow(Approval a) {
-    return Row(
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(a.tool ?? 'Approval',
-                  style: PT.rowTitle.copyWith(fontSize: 14)),
-              const SizedBox(height: 2),
-              Text(a.id,
-                  style: PT.monoSm,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis),
-            ],
-          ),
+        Text(a.tool ?? 'Approval',
+            style: PT.rowTitle.copyWith(fontSize: 14)),
+        const SizedBox(height: 2),
+        Text(a.id,
+            style: PT.monoSm,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis),
+        const SizedBox(height: 8),
+        ApprovalActions(
+          tiers: a.availableTiers,
+          onDeny: () => _decideApproval(a, false),
+          onGrant: (mode) => _decideApproval(a, true, mode: mode),
         ),
-        const SizedBox(width: 8),
-        PillButton(
-            label: 'Deny',
-            color: P.err,
-            onTap: () => _decideApproval(a, false)),
-        const SizedBox(width: 8),
-        PillButton(
-            label: 'Grant',
-            color: P.ok,
-            onTap: () => _decideApproval(a, true)),
       ],
     );
   }
@@ -2864,11 +3134,8 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
                 : TextInputAction.newline,
             onSubmitted: returnSends ? (_) => _send() : null,
             style: PT.body.copyWith(fontSize: 14),
-            decoration: InputDecoration(
-              hintText: 'Message $_agentName…',
-              contentPadding:
-                  EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            ),
+            decoration:
+                sessionComposerDecoration(context, agentName: _agentName),
           ),
         ),
         const SizedBox(width: 4),
@@ -3359,6 +3626,17 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
       await File(path).delete();
       if (bytes.isEmpty) {
         if (mounted) toast(context, 'That recording was empty.');
+        return;
+      }
+      // Backend rejects voice uploads over 8 MiB: refuse locally with a
+      // clear message instead of failing mid-upload. A 3-minute WAV at
+      // 16 kHz mono is ~5.6 MB, so this guard should rarely trigger.
+      const maxUploadBytes = 8 * 1024 * 1024;
+      if (bytes.length > maxUploadBytes) {
+        if (mounted) {
+          toast(context,
+              'That recording is too large to upload (8 MB limit).');
+        }
         return;
       }
       final transcript = await widget.api.transcribeAudio(bytes);
@@ -4103,6 +4381,12 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
         // Assistant messages get copyable block cards (Writing/Code);
         // user text keeps the long-press copy menu.
         cards: !isUser && !isTool,
+        // Design-review actions ride the run id; busy (running/paused)
+        // turns queue/steer instead of starting a new turn. The gate block
+        // is an assistant-message contract, so only those get a card.
+        runId: (!isUser && !isTool) ? widget.runId : null,
+        isBusy: _run != null &&
+            (_run!.status == 'running' || _run!.status == 'paused'),
       );
       final body = <Widget>[msg];
       if (sentAtts.isNotEmpty) body.add(_sentAttachmentGrid(sentAtts));
@@ -4238,36 +4522,204 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
   }
 }
 
-/// One slash command: name + one-line description.
-class _SlashCommand {
-  final String name;
-  final String desc;
-  const _SlashCommand(this.name, this.desc);
+/// Small stats sheet for `/stats`: 30-day totals plus top models by cost.
+class _SlashStatsSheet extends StatelessWidget {
+  final UsageStats stats;
+
+  const _SlashStatsSheet({required this.stats});
+
+  @override
+  Widget build(BuildContext context) {
+    final t = stats.totals;
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const SheetHandle(),
+            const SizedBox(height: 8),
+            Text('Usage · 30 days', style: PT.sectionTitle),
+            const SizedBox(height: 12),
+            _row('Calls', '${t.calls}'),
+            _row('Tokens', '${t.totalTokens}'),
+            _row('Cost', '\$${t.costUsd.toStringAsFixed(2)}'),
+            if (stats.byModel.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              Text('Top models', style: PT.label),
+              const SizedBox(height: 6),
+              for (final e in stats.byModel.entries.take(5))
+                _row(e.key, '\$${e.value.costUsd.toStringAsFixed(2)}'),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _row(String k, String v) => Padding(
+        padding: const EdgeInsets.only(bottom: 8),
+        child: Row(
+          children: [
+            Expanded(child: Text(k, style: PT.small)),
+            Text(v, style: PT.mono.copyWith(color: P.accent)),
+          ],
+        ),
+      );
 }
 
-const _slashCommands = [
-  _SlashCommand('new', 'start a new chat'),
-  _SlashCommand('title', 'rename this session: /title <text>'),
-  _SlashCommand('model', 'switch the default model'),
-  _SlashCommand(
-      'reasoning', 'reasoning effort: off|minimal|low|medium|high|xhigh|max'),
-  _SlashCommand('todos', 'session todo list'),
-  _SlashCommand('compress', 'compress context now'),
-  _SlashCommand('export', 'copy transcript as markdown'),
-  _SlashCommand('fork', 'fork session at a turn: /fork [turn]'),
-  _SlashCommand('cancel', 'stop the running turn'),
-  _SlashCommand('mode', 'switch plan/build: /mode [plan|build]'),
-  _SlashCommand('clear', 'clear the queued message'),
-  _SlashCommand('help', 'list slash commands'),
-];
+/// `/checkpoints`: the run's saved checkpoints, each with its turn.
+class _SlashCheckpointsSheet extends StatelessWidget {
+  final List<Checkpoint> checkpoints;
+
+  const _SlashCheckpointsSheet({required this.checkpoints});
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const SheetHandle(),
+            const SizedBox(height: 8),
+            Text('Checkpoints', style: PT.sectionTitle),
+            const SizedBox(height: 12),
+            Flexible(
+              child: SingleChildScrollView(
+                child: Column(
+                  children: [
+                    for (final c in checkpoints)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 8),
+                        child: Row(
+                          children: [
+                            Expanded(child: Text(c.name, style: PT.small)),
+                            Text('turn ${c.turnNo}',
+                                style: PT.mono.copyWith(color: P.accent)),
+                            if (!c.restorable) ...[
+                              const SizedBox(width: 8),
+                              Text('not restorable', style: PT.meta),
+                            ],
+                          ],
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// `/bg`: the run's background tasks (id, status, label).
+class _SlashBackgroundTasksSheet extends StatelessWidget {
+  final List<BackgroundTask> tasks;
+
+  const _SlashBackgroundTasksSheet({required this.tasks});
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const SheetHandle(),
+            const SizedBox(height: 8),
+            Text('Background tasks', style: PT.sectionTitle),
+            const SizedBox(height: 12),
+            Flexible(
+              child: SingleChildScrollView(
+                child: Column(
+                  children: [
+                    for (final t in tasks)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 8),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(t.id,
+                                style: PT.mono.copyWith(color: P.accent)),
+                            const SizedBox(width: 8),
+                            Text(t.status, style: PT.meta),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(t.label,
+                                  style: PT.small,
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis),
+                            ),
+                          ],
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// `/bg <id>`: one background task's full output.
+class _SlashBackgroundTaskSheet extends StatelessWidget {
+  final BackgroundTask task;
+
+  const _SlashBackgroundTaskSheet({required this.task});
+
+  @override
+  Widget build(BuildContext context) {
+    final out = task.output;
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const SheetHandle(),
+            const SizedBox(height: 8),
+            Text(task.id, style: PT.sectionTitle),
+            const SizedBox(height: 4),
+            Text('${task.status} · ${task.label}', style: PT.meta),
+            const SizedBox(height: 12),
+            Flexible(
+              child: SingleChildScrollView(
+                child: SelectableText(
+                  out == null || out.isEmpty ? 'No output.' : out,
+                  style: PT.mono,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
 
 /// Suggestion popup above the composer while the first word starts with `/`.
 /// Own listener, so typing doesn't rebuild the whole screen.
 class _SlashSuggestions extends StatefulWidget {
   final TextEditingController controller;
   final ValueChanged<String> onPick;
+  final List<ChatCommand> commands;
 
-  const _SlashSuggestions({required this.controller, required this.onPick});
+  const _SlashSuggestions(
+      {required this.controller,
+      required this.onPick,
+      required this.commands});
 
   @override
   State<_SlashSuggestions> createState() => _SlashSuggestionsState();
@@ -4307,9 +4759,8 @@ class _SlashSuggestionsState extends State<_SlashSuggestions> {
   @override
   Widget build(BuildContext context) {
     if (!_show) return const SizedBox.shrink();
-    final matches = _slashCommands
-        .where((c) => c.name.startsWith(_query))
-        .toList();
+    final matches =
+        widget.commands.where((c) => c.name.startsWith(_query)).toList();
     if (matches.isEmpty) return const SizedBox.shrink();
     return Container(
       constraints: const BoxConstraints(maxHeight: 220),

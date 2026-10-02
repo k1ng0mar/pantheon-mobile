@@ -9,6 +9,9 @@ import 'states.dart';
 /// Nyx visual language, so every management screen behaves the same.
 
 /// Bottom-sheet text prompt. Returns the entered text, or null on cancel.
+/// With [allowEmpty], saving with an empty field returns '' instead of
+/// null, so callers can distinguish "confirmed empty" from "canceled"
+/// (the checkpoint command uses this: empty = server auto-name).
 Future<String?> promptText(
   BuildContext context, {
   required String title,
@@ -19,6 +22,7 @@ Future<String?> promptText(
   int maxLines = 1,
   TextInputType keyboardType = TextInputType.text,
   String confirmLabel = 'Save',
+  bool allowEmpty = false,
 }) async {
   final ctrl = TextEditingController(text: initial ?? '');
   try {
@@ -70,7 +74,8 @@ Future<String?> promptText(
           ),
         ),
       ),
-    ).then((v) => (v == null || v.isEmpty) ? null : v);
+    ).then((v) =>
+        (v == null || (v.isEmpty && !allowEmpty)) ? null : v);
   } finally {
     ctrl.dispose();
   }

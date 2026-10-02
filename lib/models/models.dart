@@ -16,6 +16,7 @@ export 'overview.dart';
 export 'pantheon_run.dart';
 export 'pending_input.dart';
 export 'plugin.dart';
+export 'run_controls.dart';
 export 'run_project.dart';
 export 'schedule_template.dart';
 export 'scheduled_job.dart';

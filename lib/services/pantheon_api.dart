@@ -22,6 +22,16 @@ class PantheonRetryParkedException extends PantheonApiException {
   String toString() => 'Parked on approval — grant or deny it first.';
 }
 
+/// Thrown when a new turn is refused because the run's goal iteration
+/// cap is exhausted (HTTP 409 with error code GOAL_EXHAUSTED). The
+/// server's message is surfaced verbatim.
+class PantheonGoalExhaustedException extends PantheonApiException {
+  PantheonGoalExhaustedException(String body) : super(409, body);
+  @override
+  String toString() =>
+      body.isEmpty ? 'The goal\'s iteration cap is exhausted.' : body;
+}
+
 class PantheonApiException implements Exception {
   final int status;
   final String body;
@@ -73,6 +83,87 @@ class MessageSendResult {
   bool get sent => outcome == MessageSendOutcome.sent;
   bool get queued => outcome == MessageSendOutcome.queued;
   bool get steered => outcome == MessageSendOutcome.steered;
+}
+
+/// One chat-surface slash command from `GET /api/commands?surface=chat`.
+class ChatCommand {
+  final String name;
+  final String desc;
+  final String? category;
+
+  const ChatCommand({required this.name, required this.desc, this.category});
+
+  factory ChatCommand.fromJson(Map<String, dynamic> j) => ChatCommand(
+        name: j['name']?.toString() ?? '',
+        desc: j['desc']?.toString() ?? '',
+        category: j['category']?.toString(),
+      );
+
+  /// Mobile-only commands that never appear in the backend registry.
+  static const mobileOnly = <ChatCommand>[
+    ChatCommand(name: 'cancel', desc: 'stop the running turn'),
+    ChatCommand(name: 'mode', desc: 'switch plan/build: /mode [plan|build]'),
+  ];
+
+  /// Fallback curated list for dashboards that predate `GET /api/commands`
+  /// (stale backend): the full mobile command set, mobile-only entries
+  /// included.
+  static const fallbackChatCommands = <ChatCommand>[
+    ChatCommand(name: 'new', desc: 'start a new chat'),
+    ChatCommand(name: 'title', desc: 'rename this session: /title <text>'),
+    ChatCommand(name: 'model', desc: 'switch the default model'),
+    ChatCommand(
+        name: 'reasoning',
+        desc: 'reasoning effort: off|minimal|low|medium|high|xhigh|max'),
+    ChatCommand(name: 'todos', desc: 'session todo list'),
+    ChatCommand(name: 'compress', desc: 'compress context now'),
+    ChatCommand(name: 'export', desc: 'copy transcript as markdown'),
+    ChatCommand(name: 'fork', desc: 'fork session at a turn: /fork [turn]'),
+    ChatCommand(name: 'cancel', desc: 'stop the running turn'),
+    ChatCommand(name: 'mode', desc: 'switch plan/build: /mode [plan|build]'),
+    ChatCommand(name: 'clear', desc: 'clear the queued message'),
+    ChatCommand(name: 'help', desc: 'list slash commands'),
+    ChatCommand(name: 'approvals', desc: 'open pending approvals'),
+    ChatCommand(name: 'approve', desc: 'approve a pending approval: /approve <n>'),
+    ChatCommand(name: 'deny', desc: 'deny a pending approval: /deny <n>'),
+    ChatCommand(name: 'steer', desc: 'redirect the running turn: /steer <text>'),
+    ChatCommand(name: 'remember', desc: 'store a memory: /remember <text>'),
+    ChatCommand(
+        name: 'learn', desc: 'save a lesson for future sessions: /learn <text>'),
+    ChatCommand(name: 'team', desc: 'use an agent team: /team <id> [task]'),
+    ChatCommand(name: 'swarm', desc: 'launch a swarm: /swarm <task>'),
+    ChatCommand(
+        name: 'yank',
+        desc: 'copy last answer (or its Nth code block): /yank [n]'),
+    ChatCommand(name: 'history', desc: 'recent sessions'),
+    ChatCommand(name: 'runs', desc: 'recent sessions'),
+    ChatCommand(name: 'stats', desc: 'usage stats'),
+    ChatCommand(name: 'sessions', desc: 'session list'),
+    ChatCommand(name: 'resume', desc: 'resume a session: /resume <id>'),
+    ChatCommand(name: 'undo', desc: 'drop the last turn: /undo'),
+    ChatCommand(name: 'reset', desc: 'reset the session transcript: /reset'),
+    ChatCommand(
+        name: 'checkpoint', desc: 'save a checkpoint: /checkpoint [name]'),
+    ChatCommand(name: 'checkpoints', desc: 'list saved checkpoints'),
+    ChatCommand(
+        name: 'restore', desc: 'restore a checkpoint: /restore <name>'),
+    ChatCommand(
+        name: 'goal',
+        desc: 'run goal: /goal [text] | /goal clear | /goal iterations <n>'),
+    ChatCommand(name: 'btw', desc: 'start a background task: /btw <prompt>'),
+    ChatCommand(name: 'bg', desc: 'background tasks: /bg [id]'),
+  ];
+
+  /// The mobile curated list: the backend's chat commands plus the
+  /// mobile-only ones, deduped by name (a backend entry always wins).
+  static List<ChatCommand> mergeWithMobile(List<ChatCommand> backend) {
+    final seen = <String>{for (final c in backend) c.name};
+    return [
+      ...backend,
+      for (final c in mobileOnly)
+        if (!seen.contains(c.name)) c,
+    ];
+  }
 }
 
 /// HTTP client for the Pantheon dashboard API
@@ -203,6 +294,18 @@ class PantheonApi {
 
   Map<String, dynamic> _decode(http.Response res, String path) {
     if (res.statusCode == 401) throw PantheonAuthException();
+    if (res.statusCode == 404 && _isNewRunEndpoint(path)) {
+      // New run-control endpoints (rewind/reset/checkpoints/restore/
+      // goal/btw/background-tasks): a 404 carrying the dashboard's
+      // machine error code means the resource is missing (unknown run,
+      // unknown checkpoint — CHECKPOINT_NOT_FOUND); a codeless 404
+      // means the backend predates the endpoint.
+      if (_serverCode(res.body) != null) {
+        throw PantheonApiException(res.statusCode, _serverMessage(res.body));
+      }
+      throw PantheonStaleBackendException(
+          res.statusCode, _serverMessage(res.body));
+    }
     if (res.statusCode == 404 && _isNewEndpoint(path)) {
       throw PantheonStaleBackendException(
           res.statusCode, _serverMessage(res.body));
@@ -214,6 +317,8 @@ class PantheonApi {
           throw PantheonTurnInFlightException(msg);
         case 'RUN_PARKED':
           throw PantheonRetryParkedException(msg);
+        case 'GOAL_EXHAUSTED':
+          throw PantheonGoalExhaustedException(msg);
         default:
           throw PantheonApiException(res.statusCode, msg);
       }
@@ -228,8 +333,7 @@ class PantheonApi {
   /// Endpoints added after the app's first release: a 404 from one of
   /// these almost always means the dashboard is older than the app, not
   /// that the resource is missing.
-  static bool _isNewEndpoint(String path) {
-    return path.contains('/api/link-preview') ||
+  static bool _isNewEndpoint(String path) {    return path.contains('/api/link-preview') ||
         path.contains('/api/browser/') ||
         path.contains('/api/logins') ||
         path.contains('/api/plugins/import') ||
@@ -239,7 +343,21 @@ class PantheonApi {
         path.contains('/pin') ||
         path.contains('/archive') ||
         path.contains('/project') ||
+        path.contains('/api/approvals/grants') ||
+        path.contains('/api/commands') ||
         RegExp(r'/api/runs/[^/]+/queue/\d+').hasMatch(path);
+  }
+
+  /// The run-control endpoints (rewind/reset/checkpoints/restore/goal/
+  /// btw/background-tasks). Unlike [_isNewEndpoint], these 404 with a
+  /// machine error code for genuinely missing resources (unknown run,
+  /// CHECKPOINT_NOT_FOUND), so the 404 handler only treats a codeless
+  /// 404 as a stale backend.
+  static bool _isNewRunEndpoint(String path) {
+    return RegExp(r'/api/runs/[^/]+/'
+            r'(rewind|reset|checkpoints|restore|goal|btw|background-tasks)$')
+        .hasMatch(path) ||
+        path.contains('/api/background-tasks/');
   }
 
   /// The dashboard wraps errors as {"ok": false, "error": {"code": "…",
@@ -305,13 +423,57 @@ class PantheonApi {
   }
 
   /// Grant or deny a pending approval. `id` is the scope string from [Approval.id].
-  Future<void> decideApproval(String id, bool grant) async {
-    await _post(
-        '/api/approvals/${Uri.encodeComponent(id)}/${grant ? 'grant' : 'deny'}');
+  /// On grant, `mode` names a tier from the approval's `available_tiers`
+  /// (`once`/`session`/`always`); absent or null sends the plain
+  /// once-grant body, matching the dashboard default.
+  Future<void> decideApproval(String id, bool grant, {String? mode}) async {
+    final path =
+        '/api/approvals/${Uri.encodeComponent(id)}/${grant ? 'grant' : 'deny'}';
+    if (grant && mode != null) {
+      await _post(path, {'mode': mode});
+    } else {
+      await _post(path);
+    }
+  }
+
+  /// Standing ("always") grants: `GET /api/approvals/grants`.
+  /// Throws [PantheonStaleBackendException] on dashboards that predate
+  /// approval tiers.
+  Future<List<StandingGrant>> standingGrants() async {
+    final j = await _get('/api/approvals/grants');
+    final list = (j['grants'] as List?) ?? [];
+    return list
+        .whereType<Map>()
+        .map((e) => StandingGrant.fromJson(e.cast<String, dynamic>()))
+        .toList();
+  }
+
+  /// Revoke one standing grant: `DELETE /api/approvals/grants/:id`.
+  /// Revocation is instant on the server — the next identical call
+  /// parks for approval again.
+  Future<void> revokeGrant(int id) async {
+    await _delete('/api/approvals/grants/$id');
   }
 
   Future<UsageStats> stats({int days = 30}) async =>
       UsageStats.fromJson(await _get('/api/stats', {'days': '$days'}));
+
+  /// Chat-appropriate slash commands: `GET /api/commands?surface=chat` →
+  /// `{"commands": [{name, desc, category}]}` (a bare list is accepted
+  /// too). Throws [PantheonStaleBackendException] on dashboards that
+  /// predate the endpoint.
+  Future<List<ChatCommand>> chatCommands() async {
+    final j = await _get('/api/commands', {'surface': 'chat'});
+    final raw = j['commands'];
+    final list = raw is List
+        ? raw
+        : (j['value'] is List ? j['value'] as List : const []);
+    return list
+        .whereType<Map>()
+        .map((e) => ChatCommand.fromJson(e.cast<String, dynamic>()))
+        .where((c) => c.name.isNotEmpty)
+        .toList();
+  }
 
   Future<List<ScheduledJob>> scheduleJobs() async {
     final j = await _get('/api/schedule/jobs');
@@ -501,6 +663,125 @@ class PantheonApi {
         .whereType<Map>()
         .map((e) => RunProject.fromJson(e.cast<String, dynamic>()))
         .toList();
+  }
+
+  // ------------------------------------------------------------------
+  // Rewind / checkpoints / goal / background tasks: the TUI's
+  // turn-control constructs, exposed over the dashboard API.
+  // ------------------------------------------------------------------
+
+  /// Rewind the last finished turn: `POST /api/runs/:id/rewind` →
+  /// `{"ok": true, "rewound_turn_id", "draft"}`. 409 TURN_IN_FLIGHT
+  /// when a turn is running or an approval is pending; 400 NO_TURN
+  /// when there is nothing to rewind; 404 on an unknown run.
+  Future<RewindResult> rewindRun(String id) async {
+    final j = await _post('/api/runs/${Uri.encodeComponent(id)}/rewind');
+    return RewindResult.fromJson(j);
+  }
+
+  /// Reset the run's transcript: `POST /api/runs/:id/reset` →
+  /// `{"ok": true, "canceled"}`. 409 when the run is already terminal;
+  /// 404 on an unknown run.
+  Future<ResetResult> resetRun(String id) async {
+    final j = await _post('/api/runs/${Uri.encodeComponent(id)}/reset');
+    return ResetResult.fromJson(j);
+  }
+
+  /// `GET /api/runs/:id/checkpoints` →
+  /// `{"checkpoints": [{"name", "turn_no", "restorable"}]}`.
+  Future<List<Checkpoint>> runCheckpoints(String id) async {
+    final j = await _get('/api/runs/${Uri.encodeComponent(id)}/checkpoints');
+    final list = (j['checkpoints'] as List?) ?? [];
+    return list
+        .whereType<Map>()
+        .map((e) => Checkpoint.fromJson(e.cast<String, dynamic>()))
+        .toList();
+  }
+
+  /// Save a checkpoint: `POST /api/runs/:id/checkpoints` with
+  /// `{"name"}` (empty or omitted → the server auto-names) →
+  /// `{"ok": true, "name", "turn_no"}`. 400 on a bad name or no turn;
+  /// 409 CHECKPOINT_EXISTS.
+  Future<Checkpoint> createCheckpoint(String id, {String? name}) async {
+    final body = <String, dynamic>{};
+    final n = name?.trim();
+    if (n != null && n.isNotEmpty) body['name'] = n;
+    final j = await _post(
+        '/api/runs/${Uri.encodeComponent(id)}/checkpoints', body);
+    return Checkpoint.fromJson(j);
+  }
+
+  /// Restore a checkpoint: `POST /api/runs/:id/restore` with
+  /// `{"name"}` → `{"ok": true, "name", "rewound_to_turn"}`.
+  /// 404 CHECKPOINT_NOT_FOUND; 409 TURN_IN_FLIGHT.
+  Future<RestoreResult> restoreCheckpoint(String id, String name) async {
+    final j = await _post('/api/runs/${Uri.encodeComponent(id)}/restore',
+        {'name': name});
+    return RestoreResult.fromJson(j);
+  }
+
+  /// `GET /api/runs/:id/goal` →
+  /// `{"goal": null | {"text", "iterations_used", "max_iterations"}}`.
+  Future<RunGoal?> runGoal(String id) async {
+    final j = await _get('/api/runs/${Uri.encodeComponent(id)}/goal');
+    final g = j['goal'];
+    if (g is! Map) return null;
+    return RunGoal.fromJson(g.cast<String, dynamic>());
+  }
+
+  /// Set, clear, or retune the run goal. Exactly one of [text] (set,
+  /// resets the iteration count), [clear] (clear), [maxIterations]
+  /// (retune) should be given; the response's goal is returned when the
+  /// backend includes one. 404 NO_GOAL when retuning with no goal set.
+  Future<RunGoal?> setRunGoal(String id,
+      {String? text, bool clear = false, int? maxIterations}) async {
+    final body = <String, dynamic>{};
+    if (clear) {
+      body['clear'] = true;
+    } else if (maxIterations != null) {
+      body['max_iterations'] = maxIterations;
+    } else if (text != null) {
+      body['text'] = text;
+    }
+    final j =
+        await _post('/api/runs/${Uri.encodeComponent(id)}/goal', body);
+    final g = j['goal'];
+    if (g is! Map) return null;
+    return RunGoal.fromJson(g.cast<String, dynamic>());
+  }
+
+  /// Start a by-the-way background task: `POST /api/runs/:id/btw`
+  /// with `{"prompt"}` → 202 `{"ok": true, "task": {...}}`.
+  /// 400 on an empty prompt.
+  Future<BackgroundTask> startBackgroundTask(
+      String id, String prompt) async {
+    final j = await _post('/api/runs/${Uri.encodeComponent(id)}/btw',
+        {'prompt': prompt});
+    final t = j['task'];
+    if (t is Map) {
+      return BackgroundTask.fromJson(t.cast<String, dynamic>());
+    }
+    throw PantheonApiException(500, 'Background task start returned no task.');
+  }
+
+  /// `GET /api/runs/:id/background-tasks` →
+  /// `{"tasks": [{"id", "status", "label", "run_id", "elapsed_s"}]}`.
+  Future<List<BackgroundTask>> backgroundTasks(String id) async {
+    final j =
+        await _get('/api/runs/${Uri.encodeComponent(id)}/background-tasks');
+    final list = (j['tasks'] as List?) ?? [];
+    return list
+        .whereType<Map>()
+        .map((e) => BackgroundTask.fromJson(e.cast<String, dynamic>()))
+        .toList();
+  }
+
+  /// `GET /api/background-tasks/:task_id` → the task with `output`
+  /// (null while the task is still running).
+  Future<BackgroundTask> backgroundTask(String taskId) async {
+    final j = await _get(
+        '/api/background-tasks/${Uri.encodeComponent(taskId)}');
+    return BackgroundTask.fromJson(j);
   }
 
   // ------------------------------------------------------------------
