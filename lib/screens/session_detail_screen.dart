@@ -1113,7 +1113,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
   /// `/new`: open the shared new-chat sheet, which pushes the created
   /// session's detail view itself.
   Future<void> _slashNew() async {
-    await showNewChatSheet(context, widget.api);
+    await showNewChatSheet(context, widget.api, agentName: _agentName);
   }
 
   Future<void> _slashTitle(String arg) async {
@@ -2964,7 +2964,8 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
             mainAxisSize: MainAxisSize.min,
             children: [
               _pillBtn(Icons.edit_square, 'New chat',
-                  () => showNewChatSheet(context, widget.api)),
+                  () => showNewChatSheet(context, widget.api,
+                      agentName: _agentName)),
               _pillBtn(Icons.more_horiz_rounded, 'Session actions',
                   _openActionsPopover),
             ],

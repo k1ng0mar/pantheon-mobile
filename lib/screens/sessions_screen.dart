@@ -82,7 +82,7 @@ class _SessionsScreenState extends State<SessionsScreen> {
   /// Start a new chat via the shared sheet, then refresh the list once
   /// the created session's detail view is closed.
   Future<void> _newChat() async {
-    await showNewChatSheet(context, widget.api);
+    await showNewChatSheet(context, widget.api, agentName: _agentName);
     if (mounted) _load();
   }
 

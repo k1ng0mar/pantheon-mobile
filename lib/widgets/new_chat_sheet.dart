@@ -36,7 +36,12 @@ Route<T> buildDetailRoute<T>(Widget page) {
 /// One implementation for both call sites that used to carry their own
 /// near-identical copy: the Sessions tab FAB and the detail screen's
 /// `/new` slash command.
-Future<void> showNewChatSheet(BuildContext context, PantheonApi api) async {
+///
+/// [agentName] is the caller's active agent name (the same `_agentName`
+/// state the chat screens feed from the config's active agent), so the
+/// prompt never hardcodes a product or agent name.
+Future<void> showNewChatSheet(BuildContext context, PantheonApi api,
+    {required String agentName}) async {
   final messageCtrl = TextEditingController();
   final titleCtrl = TextEditingController();
   var busy = false;
@@ -66,8 +71,8 @@ Future<void> showNewChatSheet(BuildContext context, PantheonApi api) async {
                     minLines: 2,
                     maxLines: 5,
                     style: PT.body,
-                    decoration: const InputDecoration(
-                      hintText: 'What should Pantheon do?',
+                    decoration: InputDecoration(
+                      hintText: 'What should $agentName do?',
                     ),
                   ),
                   const SizedBox(height: 12),
