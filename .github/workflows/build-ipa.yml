@@ -33,21 +33,11 @@ jobs:
 
       - name: Build unsigned IPA
         run: |
-          cd ios
-          xcodebuild -workspace Runner.xcworkspace \
-            -scheme Runner \
-            -configuration Release \
-            -destination 'generic/platform=iOS' \
-            -archivePath /tmp/Runner.xcarchive \
-            archive CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO
-          mkdir -p /tmp/Payload
-          cp -r /tmp/Runner.xcarchive/Products/Applications/Runner.app /tmp/Payload/
-          cd /tmp
-          zip -r ${{ github.workspace }}/pantheon-mobile-unsigned.ipa Payload
+          flutter build ipa --release --no-codesign --output build/ios/ipa/
 
       - name: Upload unsigned IPA
         uses: actions/upload-artifact@v4
         with:
           name: pantheon-mobile-unsigned-ipa
-          path: pantheon-mobile-unsigned.ipa
+          path: build/ios/ipa/*.ipa
           retention-days: 7
