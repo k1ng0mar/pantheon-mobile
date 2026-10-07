@@ -45,3 +45,6 @@ app.*.map.json
 
 # Android build outputs
 android/build/
+
+# iOS build outputs
+ios/build/
