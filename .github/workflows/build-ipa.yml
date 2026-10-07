@@ -31,13 +31,30 @@ jobs:
       - name: Install deps
         run: flutter pub get
 
-      - name: Build unsigned app
-        run: flutter build ios --release --no-codesign
+      - name: Prepare iOS project (generate config + Podfile + Pods)
+        run: flutter build ios --release --no-codesign || true
+
+      - name: Archive unsigned (raw xcodebuild, signing off)
+        run: |
+          cd ios
+          xcodebuild -workspace Runner.xcworkspace \
+            -scheme Runner \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -archivePath "$RUNNER_TEMP/Runner.xcarchive" \
+            archive \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            EXPANDED_CODE_SIGN_IDENTITY=""
 
       - name: Package unsigned IPA
         run: |
+          set -e
+          APP="$RUNNER_TEMP/Runner.xcarchive/Products/Applications/Runner.app"
+          test -d "$APP"
           mkdir -p Payload
-          cp -r build/ios/iphoneos/Runner.app Payload/
+          cp -r "$APP" Payload/
           zip -r pantheon-mobile-unsigned.ipa Payload
           ls -lh pantheon-mobile-unsigned.ipa
 
