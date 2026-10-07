@@ -31,13 +31,19 @@ jobs:
       - name: Install deps
         run: flutter pub get
 
-      - name: Build unsigned IPA
+      - name: Build unsigned app
+        run: flutter build ios --release --no-codesign
+
+      - name: Package unsigned IPA
         run: |
-          flutter build ipa --release --no-codesign
+          mkdir -p Payload
+          cp -r build/ios/iphoneos/Runner.app Payload/
+          zip -r pantheon-mobile-unsigned.ipa Payload
+          ls -lh pantheon-mobile-unsigned.ipa
 
       - name: Upload unsigned IPA
         uses: actions/upload-artifact@v4
         with:
           name: pantheon-mobile-unsigned-ipa
-          path: build/ios/ipa/*.ipa
+          path: pantheon-mobile-unsigned.ipa
           retention-days: 7
