@@ -149,7 +149,7 @@ class _ApprovalsScreenState extends State<ApprovalsScreen> {
               children: [
                 const SheetHandle(),
                 const SizedBox(height: 8),
-                const Text('Choose how to grant', style: PT.sectionTitle),
+                Text('Choose how to grant', style: PT.sectionTitle),
                 const SizedBox(height: 8),
                 Text('${a.tool ?? 'tool'} on "${a.displayRun}"',
                     style: PT.small),
@@ -264,16 +264,16 @@ class _ApprovalsScreenState extends State<ApprovalsScreen> {
               children: [
                 const SheetHandle(),
                 const SizedBox(height: 8),
-                const Text('Standing grants', style: PT.sectionTitle),
+                Text('Standing grants', style: PT.sectionTitle),
                 const SizedBox(height: 8),
-                const Text(
+                Text(
                   '"Always allow" decisions live here. Revoke one and the '
                   'next identical request parks for approval again.',
                   style: PT.small,
                 ),
                 const SizedBox(height: 16),
                 if (grants.isEmpty)
-                  const Text('No standing grants yet.', style: PT.small)
+                  Text('No standing grants yet.', style: PT.small)
                 else
                   Flexible(
                     child: ListView.separated(
@@ -361,7 +361,7 @@ class _ApprovalsScreenState extends State<ApprovalsScreen> {
         title: const Text('Approvals'),
         actions: [
           IconButton(
-            icon: const Icon(Icons.key_rounded,
+            icon: Icon(Icons.key_rounded,
                 color: P.inkSecondary, weight: 1.6),
             tooltip: 'Standing grants',
             onPressed: _showGrants,
