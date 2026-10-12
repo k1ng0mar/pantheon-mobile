@@ -22,14 +22,13 @@ import '../theme.dart';
 import '../widgets/active_profile_avatar.dart';
 import '../widgets/approval_actions.dart';
 import '../widgets/buttons.dart';
+import '../widgets/chat_composer.dart';
 import '../widgets/chips.dart';
 import '../widgets/export_sheet.dart';
 import '../widgets/forms.dart';
 import '../widgets/message_content.dart';
 import '../widgets/new_chat_sheet.dart';
-import '../widgets/session_composer.dart';
 import '../widgets/states.dart';
-import '../widgets/task_list.dart';
 import '../widgets/task_sheet.dart';
 import '../widgets/team_run_view.dart';
 import '../widgets/todos_sheet.dart';
@@ -37,6 +36,7 @@ import '../widgets/voice_note_pill.dart';
 import 'agent_activity_screen.dart';
 import 'approvals_screen.dart';
 import 'experts_screen.dart';
+import 'session_overview_screen.dart';
 import 'sessions_screen.dart';
 import 'swarm_screen.dart';
 
@@ -152,9 +152,6 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
   /// Approvals parked on this run (inline banner).
   List<Approval> _runApprovals = [];
 
-  /// Open (non-completed) todo count for the header chip.
-  int _openTodos = 0;
-
   /// `provider · model · effort` from the `[model]` config section.
   String? _modelLine;
 
@@ -192,11 +189,6 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
   /// longer carries one (it now holds new-chat and options actions).
   bool _recordingVoiceNote = false;
 
-  /// Collapsed header: hides the date/model line, mode/todos/context
-  /// row and the stats block; the Chat/Timeline tab bar stays visible.
-  /// Toggled from the header chevron or the options sheet.
-  bool _headerCollapsed = true;
-
   /// Active agent/profile name for chat labels; 'Pantheon' until the
   /// config resolves (best-effort — the label never blocks the chat).
   String _agentName = 'Pantheon';
@@ -219,8 +211,8 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
 
   /// One line of the block: `- name (mime, size[, id: upl_xxx]): /path`.
   /// The `id:` part is new; old lines without it still parse (id null).
-  static final _attachmentLine = RegExp(
-      r'^- (.*) \(([^,()]*), ([^,()]*)(?:, id: ([^()]*))?\): ');
+  static final _attachmentLine =
+      RegExp(r'^- (.*) \(([^,()]*), ([^,()]*)(?:, id: ([^()]*))?\): ');
 
   /// Parse the `[attachments]` block into (name, mime, id) records.
   /// Never throws — unparseable lines are skipped.
@@ -333,7 +325,6 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
     try {
       final run = await widget.api.runDetail(widget.runId);
       if (!mounted) return;
-      final todos = await _safeTodos();
       final modelLine = await _safeModelLine();
       final agentName = await _safeAgentName();
       final approvals = run.status == 'awaiting_approval'
@@ -346,7 +337,6 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
         _messages
           ..clear()
           ..addAll(run.transcript);
-        _openTodos = todos.where((t) => !t.done).length;
         _modelLine = modelLine;
         _agentName = agentName;
         _runApprovals = approvals;
@@ -362,14 +352,6 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
         _error = e.toString();
         _loading = false;
       });
-    }
-  }
-
-  Future<List<TodoItem>> _safeTodos() async {
-    try {
-      return await widget.api.getTodos(widget.runId);
-    } catch (_) {
-      return [];
     }
   }
 
@@ -397,9 +379,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
         final parts = [
           if (p != null && p.isNotEmpty) p,
           if (mod != null && mod.isNotEmpty) mod,
-          if (reasoning != null &&
-              reasoning.isNotEmpty &&
-              reasoning != 'off')
+          if (reasoning != null && reasoning.isNotEmpty && reasoning != 'off')
             reasoning,
         ];
         if (parts.isNotEmpty) return parts.join(' · ');
@@ -519,8 +499,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
     }
   }
 
-  static String _msgKey(TranscriptItem t) =>
-      '${t.role}|${t.type}|${t.content}';
+  static String _msgKey(TranscriptItem t) => '${t.role}|${t.type}|${t.content}';
 
   /// Reconcile [_messages] with the server transcript: drop optimistic
   /// items the server has admitted, keep the rest on top. Returns true
@@ -712,8 +691,8 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
               Text('Task in flight', style: PT.sectionTitle),
               const SizedBox(height: 8),
               Text(
-                'Stop the model, redirect it, or park this message behind it.',
-                style: PT.small),
+                  'Stop the model, redirect it, or park this message behind it.',
+                  style: PT.small),
               const SizedBox(height: 20),
               _DangerSheetButton(
                 label: 'Stop current task',
@@ -724,9 +703,8 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
                 opacity: canQueue ? 1 : 0.4,
                 child: TonalButton(
                   label: 'Steer current task',
-                  onTap: canQueue
-                      ? () => Navigator.pop(context, 'steer')
-                      : null,
+                  onTap:
+                      canQueue ? () => Navigator.pop(context, 'steer') : null,
                 ),
               ),
               const SizedBox(height: 12),
@@ -734,9 +712,8 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
                 opacity: canQueue ? 1 : 0.4,
                 child: TonalButton(
                   label: 'Queue for next turn',
-                  onTap: canQueue
-                      ? () => Navigator.pop(context, 'queue')
-                      : null,
+                  onTap:
+                      canQueue ? () => Navigator.pop(context, 'queue') : null,
                 ),
               ),
               if (!canQueue) ...[
@@ -849,8 +826,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
     }
   }
 
-  Future<void> _decideApproval(Approval a, bool grant,
-      {String? mode}) async {
+  Future<void> _decideApproval(Approval a, bool grant, {String? mode}) async {
     try {
       await widget.api.decideApproval(a.id, grant, mode: mode);
       if (!mounted) return;
@@ -1039,8 +1015,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: P.surface,
-        shape:
-            RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: Text('Delete queued message?', style: PT.cardTitle),
         content: Text('This can\'t be undone.', style: PT.body),
         actions: [
@@ -1149,8 +1124,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
       MaterialPageRoute(
         builder: (_) => ApprovalsScreen(
           api: widget.api,
-          pendingApprovals:
-              widget.pendingApprovals ?? ValueNotifier(0),
+          pendingApprovals: widget.pendingApprovals ?? ValueNotifier(0),
         ),
       ),
     );
@@ -1186,8 +1160,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
     if (!mounted) return;
     Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) =>
-            SwarmScreen(api: widget.api, initialSwarmId: swarmId),
+        builder: (_) => SwarmScreen(api: widget.api, initialSwarmId: swarmId),
       ),
     );
   }
@@ -1240,6 +1213,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
         }
         return null;
       }
+
       // run_id is the lead's coordination run — the user-facing session.
       final sessionId = pick(['run_id', 'swarm_id', 'session_id', 'id']);
       if (sessionId == null) {
@@ -1346,8 +1320,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
   @override
   Future<void> showBackgroundTasksSheet(List<BackgroundTask> tasks) async {
     if (!mounted) return;
-    await showPSheet<void>(
-        context, _SlashBackgroundTasksSheet(tasks: tasks));
+    await showPSheet<void>(context, _SlashBackgroundTasksSheet(tasks: tasks));
   }
 
   @override
@@ -1409,9 +1382,9 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
                   children: [
                     const SheetHandle(),
                     const SizedBox(height: 8),
-                     Text('Default model', style: PT.sectionTitle),
+                    Text('Default model', style: PT.sectionTitle),
                     const SizedBox(height: 4),
-                     Text(
+                    Text(
                         'Switches the global [model] default, like /model in the TUI.',
                         style: PT.meta),
                     const SizedBox(height: 16),
@@ -1499,8 +1472,8 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
     final level = arg.toLowerCase();
     if (!_reasoningLevels.contains(level)) {
       if (mounted) {
-        toast(context,
-            'Usage: /reasoning off|minimal|low|medium|high|xhigh|max');
+        toast(
+            context, 'Usage: /reasoning off|minimal|low|medium|high|xhigh|max');
       }
       return;
     }
@@ -1534,8 +1507,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
     try {
       final bytes = await widget.api.exportRun(widget.runId);
       if (!mounted) return;
-      await showExportSheet(
-          context, _run?.displayTitle ?? 'Session', bytes);
+      await showExportSheet(context, _run?.displayTitle ?? 'Session', bytes);
     } catch (e) {
       if (mounted) toastError(context, e);
     }
@@ -1583,7 +1555,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
             children: [
               const SheetHandle(),
               const SizedBox(height: 8),
-               Text('Slash commands', style: PT.sectionTitle),
+              Text('Slash commands', style: PT.sectionTitle),
               const SizedBox(height: 12),
               for (final c in _slashList)
                 Padding(
@@ -1612,8 +1584,8 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
 
   void _pickSlash(String cmd) {
     _composer.text = '$cmd ';
-    _composer.selection = TextSelection.fromPosition(
-        TextPosition(offset: _composer.text.length));
+    _composer.selection =
+        TextSelection.fromPosition(TextPosition(offset: _composer.text.length));
   }
 
   void _openRun(String id) {
@@ -1640,20 +1612,61 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
   @override
   Widget build(BuildContext context) {
     final title = _run?.displayTitle ?? 'Session';
+    final live = _isLive(_run?.status ?? '');
     return Scaffold(
       appBar: AppBar(
         leading: IconButton(
-          icon:  Icon(Icons.chevron_left_rounded,
+          icon: Icon(Icons.chevron_left_rounded,
               size: 30, color: P.ink, weight: 1.6),
           onPressed: () => Navigator.of(context).pop(),
         ),
-        // Rename lives on the title now (same /title rename flow). The
-        // old AppBar actions are gone: session actions live in the
-        // floating glass pill + popover at the top-right of the body.
-        title: GestureDetector(
-          onTap: _run == null ? null : () => _slashTitle(''),
-          child: Text(title),
+        // Conversation-first header: the title (tap to rename) over a
+        // compact `Mode · model` line (tap for model + Plan/Build
+        // config). Execution metadata lives in Session details, reached
+        // from the actions menu — not in a permanent banner.
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            GestureDetector(
+              onTap: _run == null ? null : () => _slashTitle(''),
+              child: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis),
+            ),
+            GestureDetector(
+              onTap: _run == null ? null : _openConfigSheet,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (live) ...[
+                    const LiveDot(size: 7),
+                    const SizedBox(width: 5),
+                  ],
+                  Flexible(
+                    child: Text(
+                      _configLabel(),
+                      style: PT.small.copyWith(color: P.inkMuted, fontSize: 12),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ),
+        actions: [
+          IconButton(
+            icon: Icon(Icons.edit_square, color: P.ink, weight: 1.6),
+            tooltip: 'New chat',
+            onPressed: () =>
+                showNewChatSheet(context, widget.api, agentName: _agentName),
+          ),
+          IconButton(
+            icon: Icon(Icons.more_horiz_rounded, color: P.ink, weight: 1.6),
+            tooltip: 'Session actions',
+            onPressed: _openActionsPopover,
+          ),
+        ],
       ),
       body: _loading
           ? _skeleton()
@@ -1665,194 +1678,56 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
                   ctaLabel: 'Retry',
                   onCta: () => _load(initial: true),
                 )
-              : Stack(
-                  children: [
-                    DefaultTabController(
-                      length: widget.swarmId != null ? 3 : 2,
-                      child: Column(
-                        children: [
-                          _header(_run!),
-                      TabBar(
-                        tabs: [
-                          const Tab(text: 'Chat'),
-                          if (widget.swarmId != null) const Tab(text: 'Team'),
-                          const Tab(text: 'Timeline')
-                        ],
-                        labelColor: P.ink,
-                        unselectedLabelColor: P.inkMuted,
-                        labelStyle: PT.label,
-                        indicatorColor: P.accent,
-                        indicatorWeight: 2.5,
-                        dividerColor: P.divider,
-                      ),
-                          Expanded(
-                            child: TabBarView(
-                              children: [
-                                _chatTab(),
-                                if (widget.swarmId != null)
-                                  TeamRunView(
-                                      api: widget.api,
-                                      swarmId: widget.swarmId!),
-                                SessionTaskList(run: _run!, api: widget.api),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    Positioned(
-                      top: 10,
-                      right: 12,
-                      child: _headerActionsPill(),
-                    ),
-                  ],
-                ),
+              : _chatTab(),
     );
   }
 
-  Widget _header(PantheonRun run) {
-    final ctx = run.contextTokens;
-    final modelLine = _modelLine ??
-        [
-          if (run.provider != null && run.provider!.isNotEmpty)
-            run.provider!,
-          if (run.model != null && run.model!.isNotEmpty) run.model!,
-        ].join(' · ');
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 20),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [P.accent, P.accentDeep],
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
+  /// Compact `Mode · provider · model` label for the AppBar subtitle and
+  /// the composer pill.
+  String _configLabel() {
+    final mode = _run?.mode == 'plan' ? 'Plan' : 'Build';
+    final m = _modelLine;
+    if (m == null || m.isEmpty) return mode;
+    return '$mode · $m';
+  }
+
+  /// Session details: metadata, execution stats and the Timeline task
+  /// list. The conversation screen stays a pure chat.
+  void _openTimeline() {
+    final run = _run;
+    if (run == null) return;
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => SessionOverviewScreen(
+            api: widget.api, run: run, swarmId: widget.swarmId),
+      ),
+    );
+  }
+
+  /// Team conversation for swarm sessions, wrapped in its own Scaffold
+  /// (the view itself is a bare content widget).
+  void _openTeam() {
+    final swarmId = widget.swarmId;
+    if (swarmId == null) return;
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => Scaffold(
+          appBar: AppBar(
+            leading: IconButton(
+              icon: Icon(Icons.chevron_left_rounded,
+                  size: 30, color: P.ink, weight: 1.6),
+              onPressed: () => Navigator.of(context).pop(),
+            ),
+            title: const Text('Team'),
+          ),
+          body: TeamRunView(api: widget.api, swarmId: swarmId),
         ),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Right padding keeps the chips/chevron clear of the floating
-          // session-actions pill at the top-right.
-          Padding(
-            padding: const EdgeInsets.only(right: 104),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-              Expanded(
-                child: Text(run.displayTitle,
-                    style: PT.sectionTitle.copyWith(color: Colors.white)),
-              ),
-              const SizedBox(width: 8),
-              if (run.mode == 'plan')
-                const Padding(
-                  padding: EdgeInsets.only(right: 6),
-                  child: _HeaderChip(label: 'PLAN'),
-                ),
-              _HeaderChip(
-                label: run.status.replaceAll('_', ' ').toUpperCase(),
-              ),
-              GestureDetector(
-                onTap: () => setState(
-                    () => _headerCollapsed = !_headerCollapsed),
-                child: Padding(
-                  padding: const EdgeInsets.only(left: 6, top: 2),
-                  child: Icon(
-                    _headerCollapsed
-                        ? Icons.expand_more_rounded
-                        : Icons.expand_less_rounded,
-                    color: Colors.white.withValues(alpha: 0.85),
-                    size: 24,
-                  ),
-                ),
-              ),
-              ],
-            ),
-          ),
-          if (_headerCollapsed) ...[
-            const SizedBox(height: 6),
-            Text(
-              '${run.turns} turns \u00b7 ${run.toolCalls} tools \u00b7 '
-              '${compactNum(run.totalTokens)} tokens \u00b7 '
-              '${money(run.costUsd)} cost',
-              style: PT.small.copyWith(
-                  color: Colors.white.withValues(alpha: 0.85)),
-            ),
-          ] else ...[
-            const SizedBox(height: 6),
-            Text(
-              '${timeAgo(run.createdMs)}${modelLine.isNotEmpty ? ' · $modelLine' : ''}',
-              style: PT.small.copyWith(
-                  color: Colors.white.withValues(alpha: 0.85)),
-            ),
-            if (_openTodos > 0 || ctx.total > 0) ...[
-              const SizedBox(height: 10),
-              Row(
-                children: [
-                  if (_openTodos > 0)
-                    GestureDetector(
-                      onTap: _openTodosSheet,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 12, vertical: 6),
-                        decoration: BoxDecoration(
-                          color: P.tonal,
-                          borderRadius: BorderRadius.circular(999),
-                          border: Border.all(color: P.border),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(Icons.checklist_rounded,
-                                size: 14, color: P.accent),
-                            const SizedBox(width: 6),
-                            Text('$_openTodos todos',
-                                style: PT.label.copyWith(
-                                    fontSize: 12,
-                                    color: P.inkSecondary)),
-                          ],
-                        ),
-                      ),
-                    ),
-                  const Spacer(),
-                  if (ctx.total > 0)
-                    Text('${compactNum(ctx.total)} ctx',
-                        style: PT.mono.copyWith(
-                            fontSize: 11,
-                            color: Colors.white.withValues(alpha: 0.6))),
-                ],
-              ),
-            ],
-            const SizedBox(height: 14),
-            Row(
-              children: [
-                _stat('${run.turns}', 'turns'),
-                _stat('${run.toolCalls}', 'tools'),
-                _stat(compactNum(run.totalTokens), 'tokens'),
-                _stat(money(run.costUsd), 'cost'),
-              ],
-            ),
-          ],
-        ],
-      ),
     );
   }
 
-  Widget _stat(String value, String label) {
-    return Expanded(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(value,
-              style: PT.label.copyWith(color: Colors.white, fontSize: 16)),
-          Text(label,
-              style: PT.faint.copyWith(
-                  color: Colors.white.withValues(alpha: 0.6))),
-        ],
-      ),
-    );
-  }
-
-  Widget _modeSegment(String mode) {
+  Widget _modeSegment(String mode, {ValueChanged<String>? onSelect}) {
+    final select = onSelect ?? _setMode;
     return Container(
       decoration: BoxDecoration(
         color: P.tonal,
@@ -1862,8 +1737,8 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          _modePill('Plan', mode == 'plan', () => _setMode('plan')),
-          _modePill('Build', mode != 'plan', () => _setMode('build')),
+          _modePill('Plan', mode == 'plan', () => select('plan')),
+          _modePill('Build', mode != 'plan', () => select('build')),
         ],
       ),
     );
@@ -1881,9 +1756,8 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
               color: selected ? P.accent : Colors.transparent, width: 1),
         ),
         child: Text(label,
-            style: PT.label.copyWith(
-                fontSize: 12,
-                color: selected ? P.ink : P.inkMuted)),
+            style: PT.label
+                .copyWith(fontSize: 12, color: selected ? P.ink : P.inkMuted)),
       ),
     );
   }
@@ -1909,9 +1783,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
             _queueSection(run.queuedMessages),
           if (_findOpen) _findBar(),
           _SlashSuggestions(
-              controller: _composer,
-              onPick: _pickSlash,
-              commands: _slashList),
+              controller: _composer, onPick: _pickSlash, commands: _slashList),
           _composerBar(),
         ],
       ),
@@ -1933,8 +1805,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
         children: [
           Row(
             children: [
-              const Icon(Icons.help_outline_rounded,
-                  size: 18, color: P.warn),
+              const Icon(Icons.help_outline_rounded, size: 18, color: P.warn),
               const SizedBox(width: 8),
               Text('$_agentName is asking',
                   style: PT.label.copyWith(color: P.warn)),
@@ -1971,8 +1842,8 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
                   style: PT.body.copyWith(fontSize: 14),
                   decoration: InputDecoration(
                     hintText: 'Your answer…',
-                    contentPadding: EdgeInsets.symmetric(
-                        horizontal: 16, vertical: 12),
+                    contentPadding:
+                        EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                   ),
                 ),
               ),
@@ -2021,8 +1892,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
           ),
           const SizedBox(height: 10),
           if (_runApprovals.isEmpty)
-             Text('Waiting on an approval decision…',
-                style: PT.small)
+            Text('Waiting on an approval decision…', style: PT.small)
           else
             for (final a in _runApprovals) ...[
               _approvalRow(a),
@@ -2040,13 +1910,10 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(a.tool ?? 'Approval',
-            style: PT.rowTitle.copyWith(fontSize: 14)),
+        Text(a.tool ?? 'Approval', style: PT.rowTitle.copyWith(fontSize: 14)),
         const SizedBox(height: 2),
         Text(a.id,
-            style: PT.monoSm,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis),
+            style: PT.monoSm, maxLines: 2, overflow: TextOverflow.ellipsis),
         const SizedBox(height: 8),
         ApprovalActions(
           tiers: a.availableTiers,
@@ -2091,13 +1958,12 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
                 onTap: _clearQueue,
                 child: Padding(
                   padding: const EdgeInsets.all(4),
-                  child: Text('Clear',
-                      style: PT.small.copyWith(color: P.accent)),
+                  child:
+                      Text('Clear', style: PT.small.copyWith(color: P.accent)),
                 ),
               ),
               GestureDetector(
-                onTap: () =>
-                    setState(() => _queueExpanded = !_queueExpanded),
+                onTap: () => setState(() => _queueExpanded = !_queueExpanded),
                 child: Padding(
                   padding: const EdgeInsets.all(4),
                   child: Icon(
@@ -2205,8 +2071,8 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
         // position (this turn's steps), never a timestamp scan.
         final delegates = steps.where((s) => s.isDelegate).toList();
         if (delegates.isNotEmpty) {
-          rows.add(StaggerItem(
-              index: indices.first, child: _agentPill(delegates)));
+          rows.add(
+              StaggerItem(index: indices.first, child: _agentPill(delegates)));
         }
       }
     }
@@ -2266,8 +2132,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
               index: i, child: _keyedBubble(i, _bubble(_stripToolCalls(t)))));
           if (turnElapsed.containsKey(i)) {
             rows.add(StaggerItem(
-                index: i,
-                child: _turnFooter(_messages[i], turnElapsed[i])));
+                index: i, child: _turnFooter(_messages[i], turnElapsed[i])));
           }
         }
         thoughtItems.add(t);
@@ -2310,8 +2175,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
   /// transcript position.
   List<_ThoughtStep> _stepsFromItems(
       List<TranscriptItem> items, List<int> indices) {
-    return _thoughtStepsFromItems(
-        items, indices, _isLive(_run?.status ?? ''));
+    return _thoughtStepsFromItems(items, indices, _isLive(_run?.status ?? ''));
   }
 
   /// Transcript indices whose message text contains the find query
@@ -2384,8 +2248,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
           final ctx2 = _msgKeys[transcriptIndex]?.currentContext;
           if (ctx2 != null) {
             Scrollable.ensureVisible(ctx2,
-                duration: const Duration(milliseconds: 250),
-                alignment: 0.35);
+                duration: const Duration(milliseconds: 250), alignment: 0.35);
           }
         });
       }
@@ -2465,8 +2328,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
             visualDensity: VisualDensity.compact,
           ),
           IconButton(
-            icon:
-                Icon(Icons.close_rounded, size: 20, color: P.inkSecondary),
+            icon: Icon(Icons.close_rounded, size: 20, color: P.inkSecondary),
             onPressed: _closeFind,
             tooltip: 'Close find',
             visualDensity: VisualDensity.compact,
@@ -2493,8 +2355,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
             const SizedBox(width: 14),
           ],
           _footerBtn(Icons.copy_rounded, 'Copy', () => _copyMessage(t)),
-          _footerBtn(
-              Icons.ios_share_rounded, 'Share', () => _shareMessage(t)),
+          _footerBtn(Icons.ios_share_rounded, 'Share', () => _shareMessage(t)),
           _footerBtn(
             vote == 1 ? Icons.thumb_up_rounded : Icons.thumb_up_outlined,
             'Thumbs up',
@@ -2502,9 +2363,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
             active: vote == 1,
           ),
           _footerBtn(
-            vote == -1
-                ? Icons.thumb_down_rounded
-                : Icons.thumb_down_outlined,
+            vote == -1 ? Icons.thumb_down_rounded : Icons.thumb_down_outlined,
             'Thumbs down',
             () => _toggleVote(t, -1),
             active: vote == -1,
@@ -2522,8 +2381,8 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
         onTap: onTap,
         child: Padding(
           padding: const EdgeInsets.all(6),
-          child: Icon(icon,
-              size: 17, color: active ? P.accent : P.inkSecondary),
+          child:
+              Icon(icon, size: 17, color: active ? P.accent : P.inkSecondary),
         ),
       ),
     );
@@ -2625,8 +2484,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
         margin: const EdgeInsets.only(bottom: 10, top: 2),
         alignment: Alignment.centerLeft,
         child: Container(
-          padding:
-              const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
           decoration: BoxDecoration(
             border: Border.all(color: P.border),
             borderRadius: BorderRadius.circular(999),
@@ -2634,11 +2492,9 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.psychology_outlined,
-                  size: 15, color: P.inkSecondary),
+              Icon(Icons.psychology_outlined, size: 15, color: P.inkSecondary),
               const SizedBox(width: 8),
-              Text('Thoughts',
-                  style: PT.small.copyWith(color: P.inkSecondary)),
+              Text('Thoughts', style: PT.small.copyWith(color: P.inkSecondary)),
               const SizedBox(width: 4),
               Icon(Icons.chevron_right_rounded,
                   size: 15, color: P.inkSecondary),
@@ -2663,8 +2519,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
         child: Align(
           alignment: Alignment.centerLeft,
           child: Container(
-            padding:
-                const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             decoration: BoxDecoration(
               border: Border.all(color: P.border),
               borderRadius: BorderRadius.circular(999),
@@ -2672,8 +2527,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(Icons.hub_outlined,
-                    size: 15, color: P.inkSecondary),
+                Icon(Icons.hub_outlined, size: 15, color: P.inkSecondary),
                 const SizedBox(width: 8),
                 Text(
                   '$n agent${n == 1 ? '' : 's'} used',
@@ -2782,12 +2636,10 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
   /// "Working for 1m 9s": quiet live-turn status row at the end of chat,
   /// ticking each second while the turn runs.
   Widget _workingRow() {
-    final s =
-        ((DateTime.now().millisecondsSinceEpoch - _liveSinceMs!) / 1000)
-            .floor();
-    final label = s >= 60
-        ? 'Working for ${s ~/ 60}m ${s % 60}s'
-        : 'Working for ${s}s';
+    final s = ((DateTime.now().millisecondsSinceEpoch - _liveSinceMs!) / 1000)
+        .floor();
+    final label =
+        s >= 60 ? 'Working for ${s ~/ 60}m ${s % 60}s' : 'Working for ${s}s';
     return Padding(
       padding: const EdgeInsets.only(bottom: 12, top: 2),
       child: Row(
@@ -2804,49 +2656,70 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
     );
   }
 
+  /// Floating composer: staged attachments/chips sit above the pill;
+  /// the pill itself holds the field, attach, model/mode, mic and
+  /// send/stop. Model + Plan/Build moved behind the pill's compact
+  /// label and the AppBar subtitle — no permanent control rows.
   Widget _composerBar() {
-    return Container(
-      decoration: BoxDecoration(
-        color: P.tabBar,
-        border: Border(top: BorderSide(color: P.border, width: 1)),
-      ),
-      child: SafeArea(
-        top: false,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              if (_attachedName != null) ...[
-                _attachedChip(),
-                const SizedBox(height: 8),
-              ],
-              if (_compressing) ...[
-                _compressingRow(),
-                const SizedBox(height: 8),
-              ],
-              if (_attachments.isNotEmpty) ...[
-                _attachmentChips(),
-                const SizedBox(height: 8),
-              ],
-              Row(
-                children: [
-                  if (_run != null) _modeSegment(_run!.mode),
-                  const Spacer(),
-                  _modelPill(),
-                ],
-              ),
-              const SizedBox(height: 8),
-              _transcribing
-                  ? _transcribingRow()
-                  : _recordingVoiceNote
-                      ? _voiceNotePill()
-                      : _composerRow(),
-            ],
-          ),
+    return SafeArea(
+      top: false,
+      child: Padding(
+        padding: const EdgeInsets.only(bottom: 8),
+        child: ChatComposer(
+          controller: _composer,
+          focusNode: _composerFocus,
+          agentName: _agentName,
+          enabled: !_sending,
+          composerEmpty: _composerEmpty,
+          sending: _sending,
+          live: _isLive(_run?.status ?? ''),
+          returnSends: AppPreferences.instance.returnSends.value,
+          reduceMotion: AppPreferences.instance.reduceMotion.value,
+          modelModeLabel: _configLabel(),
+          onSend: _send,
+          onStop: _stopTurn,
+          onStopLongPress: () => _stopSheet(),
+          onAttach: () {
+            _haptic(HapticFeedback.lightImpact);
+            _addSheet();
+          },
+          onMic: () {
+            _haptic(HapticFeedback.lightImpact);
+            _startVoiceNote();
+          },
+          onModelTap: () {
+            _haptic(HapticFeedback.lightImpact);
+            _openConfigSheet();
+          },
+          sendingGlyph: const _SendGlyph(),
+          above: _composerAbove(),
+          replacing: _transcribing
+              ? _transcribingRow()
+              : _recordingVoiceNote
+                  ? _voiceNotePill()
+                  : null,
         ),
       ),
+    );
+  }
+
+  /// Rows staged between the transcript and the composer pill.
+  Widget? _composerAbove() {
+    final rows = <Widget>[
+      if (_attachedName != null) _attachedChip(),
+      if (_compressing) _compressingRow(),
+      if (_attachments.isNotEmpty) _attachmentChips(),
+    ];
+    if (rows.isEmpty) return null;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        for (var i = 0; i < rows.length; i++) ...[
+          if (i > 0) const SizedBox(height: 8),
+          rows[i],
+        ],
+      ],
     );
   }
 
@@ -2859,8 +2732,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
     return Row(
       children: [
         Container(
-          padding:
-              const EdgeInsets.only(left: 12, top: 6, bottom: 6, right: 6),
+          padding: const EdgeInsets.only(left: 12, top: 6, bottom: 6, right: 6),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(999),
             color: P.accentSoft,
@@ -2869,8 +2741,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(widget.attachedIcon,
-                  size: 14, color: P.accent, weight: 1.8),
+              Icon(widget.attachedIcon, size: 14, color: P.accent, weight: 1.8),
               const SizedBox(width: 6),
               Flexible(
                 child: Text(
@@ -2900,55 +2771,12 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
     );
   }
 
-  /// Model pill above the composer: current `provider · model · effort`.
-  /// Tapping opens the model picker (default slot + fallbacks from the
-  /// `[model]` config, with a reasoning-effort selector); writes go
-  /// through `PUT /api/config`.
-  Widget _modelPill() {
-    final label = _modelLine;
-    if (label == null || label.isEmpty) return const SizedBox.shrink();
-    return GestureDetector(
-      onTap: () {
-        _haptic(HapticFeedback.lightImpact);
-        _modelPickerSheet();
-      },
-      child: Container(
-        constraints: BoxConstraints(
-            maxWidth: MediaQuery.sizeOf(context).width * 0.5),
-        padding:
-            const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-        decoration: BoxDecoration(
-          border: Border.all(color: P.border),
-          borderRadius: BorderRadius.circular(999),
-          color: P.tonal,
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.smart_toy_outlined,
-                size: 14, color: P.inkSecondary),
-            const SizedBox(width: 6),
-            Flexible(
-              child: Text(
-                label,
-                style: PT.small.copyWith(color: P.inkSecondary),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-            const SizedBox(width: 4),
-            Icon(Icons.expand_more_rounded,
-                size: 14, color: P.inkSecondary),
-          ],
-        ),
-      ),
-    );
-  }
-
-  /// Model picker sheet: the default `[model]` slot plus its fallback
-  /// chain as tappable options, and a reasoning-effort selector. Both
-  /// write through `PUT /api/config` and refresh the pill label.
-  Future<void> _modelPickerSheet() async {
+  /// Session config sheet: Plan/Build mode, the default `[model]` slot
+  /// plus its fallback chain, and a reasoning-effort selector. Mode
+  /// goes through `setRunMode`; model and effort write through
+  /// `PUT /api/config`. Reached from the AppBar subtitle and the
+  /// composer pill — the old always-visible mode/model rows are gone.
+  Future<void> _openConfigSheet() async {
     ConfigDoc doc;
     try {
       doc = await widget.api.getConfig();
@@ -3002,8 +2830,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
 
           Future<void> applyEffort(String level) async {
             try {
-              await widget.api
-                  .putConfig({'model.reasoning': level});
+              await widget.api.putConfig({'model.reasoning': level});
             } catch (e) {
               if (mounted) toastError(context, e);
               return;
@@ -3024,16 +2851,30 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
                 children: [
                   const SheetHandle(),
                   const SizedBox(height: 12),
-                  Text('Model', style: PT.sectionTitle),
+                  Text('Session setup', style: PT.sectionTitle),
                   const SizedBox(height: 4),
-                  Text('Default model for new turns.',
-                      style: PT.small),
+                  Text('Mode and model for new turns.', style: PT.small),
+                  const SizedBox(height: 12),
+                  Text('Mode', style: PT.rowTitle),
+                  const SizedBox(height: 8),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: _modeSegment(_run?.mode ?? 'build',
+                        onSelect: (m) async {
+                      await _setMode(m);
+                      setSheetState(() {});
+                    }),
+                  ),
+                  const SizedBox(height: 16),
+                  Text('Model', style: PT.rowTitle),
+                  const SizedBox(height: 4),
+                  Text('Default model for new turns.', style: PT.small),
                   const SizedBox(height: 12),
                   for (final opt in options)
                     _modelOptionRow(
                       opt,
-                      selected: opt['provider'] == provider &&
-                          opt['model'] == model,
+                      selected:
+                          opt['provider'] == provider && opt['model'] == model,
                       onTap: () => applyModel(opt),
                     ),
                   const SizedBox(height: 16),
@@ -3054,13 +2895,9 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
                                 horizontal: 14, vertical: 8),
                             decoration: BoxDecoration(
                               borderRadius: BorderRadius.circular(999),
-                              color: reasoning == e
-                                  ? P.accent
-                                  : P.tonal,
+                              color: reasoning == e ? P.accent : P.tonal,
                               border: Border.all(
-                                  color: reasoning == e
-                                      ? P.accent
-                                      : P.border),
+                                  color: reasoning == e ? P.accent : P.border),
                             ),
                             child: Text(
                               e,
@@ -3101,164 +2938,18 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
               child: Text(label.isEmpty ? 'Unset' : label,
                   style: PT.body.copyWith(fontSize: 14)),
             ),
-            if (selected)
-              Icon(Icons.check_rounded, size: 18, color: P.accent),
+            if (selected) Icon(Icons.check_rounded, size: 18, color: P.accent),
           ],
         ),
       ),
     );
   }
 
-  Widget _composerRow() {
-    final returnSends = AppPreferences.instance.returnSends.value;
-    final reduceMotion = AppPreferences.instance.reduceMotion.value;
-    // Send/stop: while a turn is in flight (and we're not mid-send
-    // ourselves) the button is a stop button in the Nyx danger wash —
-    // tap stops at once, long-press opens the in-flight sheet.
-    final stopLive = !_sending && _isLive(_run?.status ?? '');
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.end,
-      children: [
-        _composerIconButton(
-            Icons.add_rounded, 'Add to chat', _addSheet),
-        const SizedBox(width: 4),
-        Expanded(
-          child: TextField(
-            controller: _composer,
-            focusNode: _composerFocus,
-            enabled: !_sending,
-            minLines: 1,
-            maxLines: 5,
-            textInputAction: returnSends
-                ? TextInputAction.send
-                : TextInputAction.newline,
-            onSubmitted: returnSends ? (_) => _send() : null,
-            style: PT.body.copyWith(fontSize: 14),
-            decoration:
-                sessionComposerDecoration(context, agentName: _agentName),
-          ),
-        ),
-        const SizedBox(width: 4),
-        _composerIconButton(
-            Icons.mic_rounded, 'Record voice note', _startVoiceNote),
-        const SizedBox(width: 8),
-        GestureDetector(
-          // Stop state: tap stops the turn at once; long-press opens
-          // the full in-flight sheet (stop / steer / queue). With an
-          // empty composer (and no finished attachment) the button is
-          // dimmed and non-functional — stop excepted.
-          onTap: stopLive ? _stopTurn : (_composerEmpty ? null : _send),
-          onLongPress:
-              stopLive ? () => _stopSheet() : null,
-          child: AnimatedOpacity(
-            duration: Duration(
-                milliseconds: reduceMotion ? 0 : 150),
-            opacity: _sending
-                ? 0.5
-                : (_composerEmpty && !stopLive ? 0.35 : 1),
-            child: Container(
-              width: 48,
-              height: 48,
-              decoration: stopLive
-                  ? BoxDecoration(
-                      color: P.err.withValues(alpha: 0.14),
-                      shape: BoxShape.circle,
-                      border: Border.all(
-                          color: P.err.withValues(alpha: 0.5), width: 1.5),
-                    )
-                  : const BoxDecoration(
-                      gradient: P.gradient,
-                      shape: BoxShape.circle,
-                    ),
-              alignment: Alignment.center,
-              child: _sending
-                  ? const SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: _SendGlyph(),
-                    )
-                  : stopLive
-                      ? const Icon(Icons.stop_rounded,
-                          color: P.err, size: 22)
-                      : const Icon(Icons.arrow_upward_rounded,
-                          color: Colors.white, size: 22),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  /// Round tonal icon button flanking the composer field (`+`, mic).
-  Widget _composerIconButton(
-      IconData icon, String tooltip, VoidCallback onTap) {
-    return GestureDetector(
-      onTap: () {
-        _haptic(HapticFeedback.lightImpact);
-        onTap();
-      },
-      child: Container(
-        width: 44,
-        height: 44,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          color: P.tonal,
-        ),
-        alignment: Alignment.center,
-        child: Icon(icon,
-            size: 22, color: P.inkSecondary, weight: 1.6,
-            semanticLabel: tooltip),
-      ),
-    );
-  }
-
-  /// Floating glass pill at the top-right: compose (new chat) and an
-  /// ellipsis that opens the session-actions popover. This replaces
-  /// the old AppBar actions and options bottom sheet.
-  Widget _headerActionsPill() {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(999),
-      child: BackdropFilter(
-        filter: ui.ImageFilter.blur(sigmaX: 14, sigmaY: 14),
-        child: Container(
-          decoration: BoxDecoration(
-            color: Colors.black.withValues(alpha: 0.35),
-            borderRadius: BorderRadius.circular(999),
-            border: Border.all(
-                color: Colors.white.withValues(alpha: 0.18), width: 1),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              _pillBtn(Icons.edit_square, 'New chat',
-                  () => showNewChatSheet(context, widget.api,
-                      agentName: _agentName)),
-              _pillBtn(Icons.more_horiz_rounded, 'Session actions',
-                  _openActionsPopover),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _pillBtn(IconData icon, String tooltip, VoidCallback onTap) {
-    return Tooltip(
-      message: tooltip,
-      child: GestureDetector(
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.all(10),
-          child: Icon(icon, size: 19, color: Colors.white, weight: 1.6),
-        ),
-      ),
-    );
-  }
-
-  /// Session-actions popover, anchored under the glass pill: a glass
-  /// card over a dim backdrop; tapping outside dismisses it. Row order
-  /// is fixed: Share, Pin/Unpin, Add to project, Expand/Collapse
-  /// header, Uploaded files, Find in chat, Archive, Delete.
+  /// Session-actions popover, anchored under the AppBar's `···` action:
+  /// a glass card over a dim backdrop; tapping outside dismisses it.
+  /// Row order is fixed: Share, Pin/Unpin, Add to project, Timeline,
+  /// Team (swarm sessions), Uploaded files, Find in chat, Archive,
+  /// Delete.
   void _openActionsPopover() {
     final run = _run;
     showGeneralDialog<void>(
@@ -3280,17 +2971,14 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(20),
                   child: BackdropFilter(
-                    filter:
-                        ui.ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+                    filter: ui.ImageFilter.blur(sigmaX: 18, sigmaY: 18),
                     child: Container(
                       width: 280,
                       decoration: BoxDecoration(
-                        color: const Color(0xFF1C1C22)
-                            .withValues(alpha: 0.85),
+                        color: const Color(0xFF1C1C22).withValues(alpha: 0.85),
                         borderRadius: BorderRadius.circular(20),
                         border: Border.all(
-                            color:
-                                Colors.white.withValues(alpha: 0.12),
+                            color: Colors.white.withValues(alpha: 0.12),
                             width: 1),
                       ),
                       padding: const EdgeInsets.symmetric(vertical: 8),
@@ -3299,8 +2987,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
                           Padding(
-                            padding: const EdgeInsets.fromLTRB(
-                                16, 6, 16, 8),
+                            padding: const EdgeInsets.fromLTRB(16, 6, 16, 8),
                             child: Text(
                               run?.displayTitle ?? 'Session',
                               style: PT.meta,
@@ -3327,15 +3014,17 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
                           ),
                           _popRow(
                             ctx,
-                            _headerCollapsed
-                                ? Icons.expand_more_rounded
-                                : Icons.expand_less_rounded,
-                            _headerCollapsed
-                                ? 'Expand header'
-                                : 'Collapse header',
-                            () => setState(() =>
-                                _headerCollapsed = !_headerCollapsed),
+                            Icons.history_rounded,
+                            'Timeline',
+                            _openTimeline,
                           ),
+                          if (widget.swarmId != null)
+                            _popRow(
+                              ctx,
+                              Icons.groups_outlined,
+                              'Team',
+                              _openTeam,
+                            ),
                           _popRow(
                             ctx,
                             Icons.attach_file_rounded,
@@ -3380,27 +3069,24 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
     );
   }
 
-  Widget _popRow(BuildContext ctx, IconData icon, String label,
-      VoidCallback action,
+  Widget _popRow(
+      BuildContext ctx, IconData icon, String label, VoidCallback action,
       {IconData? trailing, bool destructive = false}) {
-    final color =
-        destructive ? P.err : Colors.white.withValues(alpha: 0.92);
+    final color = destructive ? P.err : Colors.white.withValues(alpha: 0.92);
     return InkWell(
       onTap: () {
         Navigator.of(ctx).pop();
         action();
       },
       child: Padding(
-        padding:
-            const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
         child: Row(
           children: [
             Icon(icon, size: 19, color: color, weight: 1.6),
             const SizedBox(width: 12),
             Expanded(
               child: Text(label,
-                  style: PT.rowTitle
-                      .copyWith(fontSize: 14, color: color)),
+                  style: PT.rowTitle.copyWith(fontSize: 14, color: color)),
             ),
             if (trailing != null)
               Icon(trailing,
@@ -3466,10 +3152,8 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
               const SizedBox(height: 8),
               for (final proj in projects)
                 ListTile(
-                  contentPadding:
-                      const EdgeInsets.symmetric(horizontal: 4),
-                  leading: Icon(Icons.folder_outlined,
-                      color: P.inkSecondary),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 4),
+                  leading: Icon(Icons.folder_outlined, color: P.inkSecondary),
                   title: Text(proj.name, style: PT.body),
                   subtitle: Text(
                       '${proj.runs.length} session${proj.runs.length == 1 ? '' : 's'}',
@@ -3481,8 +3165,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
                 ),
               const Divider(height: 1),
               ListTile(
-                contentPadding:
-                    const EdgeInsets.symmetric(horizontal: 4),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 4),
                 leading: Icon(Icons.create_new_folder_outlined,
                     color: P.inkSecondary),
                 title: Text('New project…', style: PT.body),
@@ -3496,8 +3179,8 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
     if (choice == null || !mounted) return;
     String? name = choice;
     if (choice == '__new__') {
-      name = await promptText(context,
-          title: 'New project', hint: 'Project name');
+      name =
+          await promptText(context, title: 'New project', hint: 'Project name');
       if (name == null || !mounted) return;
       name = name.trim();
       if (name.isEmpty) return;
@@ -3534,8 +3217,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
     try {
       final bytes = await widget.api.exportRun(widget.runId);
       if (!mounted) return;
-      await showExportSheet(
-          context, _run?.displayTitle ?? 'Session', bytes);
+      await showExportSheet(context, _run?.displayTitle ?? 'Session', bytes);
     } catch (e) {
       if (mounted) toastError(context, e);
     }
@@ -3587,9 +3269,11 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
     });
   }
 
-  Widget _voiceNotePill() {
+  /// Voice-note recording pill. Null when there is no recorder (the
+  /// composer falls back to the field+toolbar).
+  Widget? _voiceNotePill() {
     final recorder = _voiceRecorder;
-    if (recorder == null) return _composerRow();
+    if (recorder == null) return null;
     return VoiceNotePill(
       recorder: recorder,
       onDiscard: _discardVoiceNote,
@@ -3634,8 +3318,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
       const maxUploadBytes = 8 * 1024 * 1024;
       if (bytes.length > maxUploadBytes) {
         if (mounted) {
-          toast(context,
-              'That recording is too large to upload (8 MB limit).');
+          toast(context, 'That recording is too large to upload (8 MB limit).');
         }
         return;
       }
@@ -3824,8 +3507,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
           await _stageUpload(f.path, await f.readAsBytes());
         }
       } else {
-        final f =
-            await picker.pickImage(source: source, imageQuality: 85);
+        final f = await picker.pickImage(source: source, imageQuality: 85);
         if (f != null) await _stageUpload(f.path, await f.readAsBytes());
       }
     } catch (e) {
@@ -3835,8 +3517,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
 
   Future<void> _pickFiles() async {
     try {
-      final result =
-          await FilePicker.platform.pickFiles(allowMultiple: true);
+      final result = await FilePicker.platform.pickFiles(allowMultiple: true);
       if (result == null) return;
       for (final f in result.files) {
         if (f.path != null) {
@@ -4019,8 +3700,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
           const SizedBox(height: 4),
           Text(
             failed ? 'tap to retry' : a.name,
-            style: PT.faint.copyWith(
-                color: failed ? P.err : P.inkFaint),
+            style: PT.faint.copyWith(color: failed ? P.err : P.inkFaint),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             textAlign: TextAlign.center,
@@ -4071,8 +3751,8 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
       return Container(
         color: P.ink,
         alignment: Alignment.center,
-        child: const Icon(Icons.play_arrow_rounded,
-            size: 28, color: Colors.white),
+        child:
+            const Icon(Icons.play_arrow_rounded, size: 28, color: Colors.white),
       );
     }
     return _extTile(a);
@@ -4086,8 +3766,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
       alignment: Alignment.center,
       child: Text(
         ext,
-        style: PT.monoSm.copyWith(
-            color: P.accent, fontWeight: FontWeight.w700),
+        style: PT.monoSm.copyWith(color: P.accent, fontWeight: FontWeight.w700),
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
       ),
@@ -4121,8 +3800,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
         itemCount: shown.length,
         itemBuilder: (_, i) {
           final a = shown[i];
-          final extra =
-              (i == shown.length - 1 && overflow > 0) ? overflow : 0;
+          final extra = (i == shown.length - 1 && overflow > 0) ? overflow : 0;
           return _sentTile(a, overflowCount: extra, all: atts);
         },
       ),
@@ -4153,8 +3831,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
                 alignment: Alignment.center,
                 child: Text('+$overflowCount',
                     style: PT.body.copyWith(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w700)),
+                        color: Colors.white, fontWeight: FontWeight.w700)),
               ),
           ],
         ),
@@ -4218,11 +3895,9 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
                           style: PT.body,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis),
-                      subtitle: Text(_extLabel(a.name),
-                          style: PT.meta),
+                      subtitle: Text(_extLabel(a.name), style: PT.meta),
                       trailing: a.openable
-                          ? Icon(Icons.open_in_new_rounded,
-                              color: P.inkMuted)
+                          ? Icon(Icons.open_in_new_rounded, color: P.inkMuted)
                           : null,
                       onTap: a.openable
                           ? () {
@@ -4252,8 +3927,8 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
             Icon(icon, size: 32, color: P.accent, weight: 1.6)
           else
             Text(_extLabel(a.name),
-                style: PT.monoSm.copyWith(
-                    color: P.accent, fontWeight: FontWeight.w700)),
+                style: PT.monoSm
+                    .copyWith(color: P.accent, fontWeight: FontWeight.w700)),
           const SizedBox(height: 6),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -4268,8 +3943,8 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 8),
               child: Text('${_extLabel(a.name)} · ${a.size}',
-                  style: PT.monoSm.copyWith(
-                      color: P.inkSecondary, fontSize: 10),
+                  style:
+                      PT.monoSm.copyWith(color: P.inkSecondary, fontSize: 10),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   textAlign: TextAlign.center),
@@ -4281,9 +3956,8 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
   }
 
   /// Memoized thumbnail bytes for a sent image, `GET /api/uploads/:id`.
-  Future<Uint8List> _thumbFuture(String id) =>
-      _thumbFutures.putIfAbsent(id,
-          () => widget.api.downloadUpload(id).then(Uint8List.fromList));
+  Future<Uint8List> _thumbFuture(String id) => _thumbFutures.putIfAbsent(
+      id, () => widget.api.downloadUpload(id).then(Uint8List.fromList));
 
   /// Attachments currently being opened: double-taps on a tile are
   /// ignored instead of opening the viewer twice.
@@ -4337,8 +4011,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
   /// Insert a `> quoted` block at the end of the composer (long-press →
   /// Quote in reply).
   void _quoteInReply(String text) {
-    final quoted =
-        text.trim().split('\n').map((l) => '> $l').join('\n');
+    final quoted = text.trim().split('\n').map((l) => '> $l').join('\n');
     final cur = _composer.text;
     _composer.text = cur.isEmpty ? '$quoted\n\n' : '$cur\n$quoted\n\n';
     _composer.selection =
@@ -4369,9 +4042,8 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
       final isTool = t.role == 'tool';
       // Sent attachments: parsed from the raw block, rendered as the
       // thumbnail grid below the text (the block itself is stripped).
-      final sentAtts = isUser
-          ? _parseSentAttachments(t.content)
-          : const <_SentAttachment>[];
+      final sentAtts =
+          isUser ? _parseSentAttachments(t.content) : const <_SentAttachment>[];
       final msg = MessageContent(
         text: isUser ? t.content.replaceFirst(_attachmentBlock, '') : t.content,
         textStyle: PT.body
@@ -4717,9 +4389,7 @@ class _SlashSuggestions extends StatefulWidget {
   final List<ChatCommand> commands;
 
   const _SlashSuggestions(
-      {required this.controller,
-      required this.onPick,
-      required this.commands});
+      {required this.controller, required this.onPick, required this.commands});
 
   @override
   State<_SlashSuggestions> createState() => _SlashSuggestionsState();
@@ -4744,9 +4414,8 @@ class _SlashSuggestionsState extends State<_SlashSuggestions> {
 
   void _onChange() {
     final text = widget.controller.text;
-    final show = text.startsWith('/') &&
-        !text.contains(' ') &&
-        !text.contains('\n');
+    final show =
+        text.startsWith('/') && !text.contains(' ') && !text.contains('\n');
     final query = show ? text.substring(1).toLowerCase() : '';
     if ((show != _show || query != _query) && mounted) {
       setState(() {
@@ -4779,8 +4448,7 @@ class _SlashSuggestionsState extends State<_SlashSuggestions> {
           return InkWell(
             onTap: () => widget.onPick('/${c.name}'),
             child: Padding(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
               child: Row(
                 children: [
                   SizedBox(
@@ -4860,8 +4528,8 @@ class _ThinkingBlockState extends State<_ThinkingBlock> {
               padding: const EdgeInsets.fromLTRB(4, 2, 4, 8),
               child: MessageContent(
                 text: widget.content,
-                textStyle: PT.small.copyWith(
-                    fontStyle: FontStyle.italic, color: P.inkMuted),
+                textStyle: PT.small
+                    .copyWith(fontStyle: FontStyle.italic, color: P.inkMuted),
               ),
             ),
         ],
@@ -4910,8 +4578,8 @@ class _DangerSheetButton extends StatelessWidget {
           border: Border.all(color: P.err.withValues(alpha: 0.5)),
         ),
         alignment: Alignment.center,
-        child: Text(label,
-            style: PT.label.copyWith(color: P.err, fontSize: 15)),
+        child:
+            Text(label, style: PT.label.copyWith(color: P.err, fontSize: 15)),
       ),
     );
   }
@@ -4943,14 +4611,7 @@ class _PendingAttachment {
       (record?.mime.startsWith('video/') ?? false) ||
       _videoExts.any((e) => name.toLowerCase().endsWith(e));
 
-  static const _imageExts = [
-    '.jpg',
-    '.jpeg',
-    '.png',
-    '.gif',
-    '.webp',
-    '.heic'
-  ];
+  static const _imageExts = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.heic'];
   static const _videoExts = ['.mp4', '.mov', '.m4v'];
 }
 
@@ -4959,11 +4620,11 @@ class _SentAttachment {
   final String name;
   final String mime;
   final String? id;
+
   /// Human size from the `[attachments]` block ("2.4 MB").
   final String? size;
 
-  _SentAttachment(
-      {required this.name, required this.mime, this.id, this.size});
+  _SentAttachment({required this.name, required this.mime, this.id, this.size});
 
   bool get isImage => mime.startsWith('image/');
   bool get isVideo => mime.startsWith('video/');
@@ -4997,8 +4658,7 @@ class _SentThumb extends StatelessWidget {
           child: SizedBox(
             width: 20,
             height: 20,
-            child: CircularProgressIndicator(
-                strokeWidth: 2, color: P.accent),
+            child: CircularProgressIndicator(strokeWidth: 2, color: P.accent),
           ),
         );
       },
@@ -5014,8 +4674,7 @@ class _ThumbError extends StatelessWidget {
     return Container(
       color: P.surface,
       alignment: Alignment.center,
-      child: Icon(Icons.broken_image_outlined,
-          size: 28, color: P.inkFaint),
+      child: Icon(Icons.broken_image_outlined, size: 28, color: P.inkFaint),
     );
   }
 }
@@ -5049,8 +4708,7 @@ class _ImageViewerDialog extends StatelessWidget {
             child: IconButton(
               onPressed: () => Navigator.pop(context),
               icon: const Icon(Icons.close_rounded, color: Colors.white),
-              style:
-                  IconButton.styleFrom(backgroundColor: Colors.black54),
+              style: IconButton.styleFrom(backgroundColor: Colors.black54),
             ),
           ),
           Positioned(
@@ -5130,8 +4788,7 @@ List<_ThoughtStep> _thoughtStepsFromItems(
         ));
       }
     } else if (t.role == 'tool') {
-      final matched =
-          steps.any((s) => !s.isReasoning && s.id == t.toolCallId);
+      final matched = steps.any((s) => !s.isReasoning && s.id == t.toolCallId);
       if (!matched) steps.add(_ThoughtStep.orphanResult(t, idx));
     }
   }
@@ -5143,7 +4800,9 @@ List<_ThoughtStep> _thoughtStepsFromItems(
 /// context), which outranks anything recoverable from the parent args.
 String? _firstUserText(List<TranscriptItem> items) {
   for (final t in items) {
-    if (t.type == 'message' && t.role == 'user' && t.content.trim().isNotEmpty) {
+    if (t.type == 'message' &&
+        t.role == 'user' &&
+        t.content.trim().isNotEmpty) {
       return t.content;
     }
   }
@@ -5238,9 +4897,8 @@ class _ThoughtStep {
         reasoningText = null,
         call = null,
         result = res,
-        status = _looksLikeError(res.content)
-            ? _StepStatus.error
-            : _StepStatus.done,
+        status =
+            _looksLikeError(res.content) ? _StepStatus.error : _StepStatus.done,
         id = res.toolCallId ?? '',
         kind = 'tool',
         label = 'Tool result',
@@ -5447,8 +5105,7 @@ class _ThoughtsSheetState extends State<_ThoughtsSheet> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Padding(
-          padding:
-              const EdgeInsets.symmetric(horizontal: 20, vertical: 13),
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 13),
           child: Row(
             children: [
               _statusGlyph(_StepStatus.done),
@@ -5469,11 +5126,10 @@ class _ThoughtsSheetState extends State<_ThoughtsSheet> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         InkWell(
-          onTap: () => setState(
-              () => open ? _open.remove(index) : _open.add(index)),
+          onTap: () =>
+              setState(() => open ? _open.remove(index) : _open.add(index)),
           child: Padding(
-            padding:
-                const EdgeInsets.symmetric(horizontal: 20, vertical: 13),
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 13),
             child: Row(
               children: [
                 _statusGlyph(s.status),
@@ -5519,8 +5175,7 @@ class _ThoughtsSheetState extends State<_ThoughtsSheet> {
           child: CircularProgressIndicator(strokeWidth: 2),
         );
       case _StepStatus.done:
-        return Icon(Icons.check_rounded,
-            size: 16, color: P.inkSecondary);
+        return Icon(Icons.check_rounded, size: 16, color: P.inkSecondary);
       case _StepStatus.error:
         return const Icon(Icons.close_rounded, size: 16, color: P.err);
     }
@@ -5578,19 +5233,16 @@ class _ThoughtsSheetState extends State<_ThoughtsSheet> {
               widget.onOpenAgent([s]);
             },
             child: Container(
-              padding: const EdgeInsets.symmetric(
-                  horizontal: 14, vertical: 9),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
               decoration: BoxDecoration(
                 color: P.accentSoft,
                 borderRadius: BorderRadius.circular(999),
-                border: Border.all(
-                    color: P.accent.withValues(alpha: 0.4)),
+                border: Border.all(color: P.accent.withValues(alpha: 0.4)),
               ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(Icons.hub_outlined,
-                      size: 14, color: P.accent),
+                  Icon(Icons.hub_outlined, size: 14, color: P.accent),
                   const SizedBox(width: 6),
                   Text('View agent detail',
                       style: PT.small.copyWith(color: P.accent)),
@@ -5611,8 +5263,7 @@ class _ThoughtsSheetState extends State<_ThoughtsSheet> {
         children: [
           SizedBox(
             width: 52,
-            child: Text(k,
-                style: PT.monoEyebrow.copyWith(fontSize: 10)),
+            child: Text(k, style: PT.monoEyebrow.copyWith(fontSize: 10)),
           ),
           Expanded(
             child: SelectableText(v, style: PT.small),
@@ -5624,10 +5275,10 @@ class _ThoughtsSheetState extends State<_ThoughtsSheet> {
 
   Widget _toolDetail(_ThoughtStep s, int index) {
     final dur = _stepDuration(s);
-    final sources = s.result != null &&
-            (s.kind == 'web-search' || s.kind == 'file-search')
-        ? _sourceDomains(s.output)
-        : const <String>[];
+    final sources =
+        s.result != null && (s.kind == 'web-search' || s.kind == 'file-search')
+            ? _sourceDomains(s.output)
+            : const <String>[];
     final resultText = s.output;
     final showFull = _fullOutput.contains(index);
     final truncated = resultText.length > _outputPreview;
@@ -5642,8 +5293,7 @@ class _ThoughtsSheetState extends State<_ThoughtsSheet> {
             children: [
               Expanded(
                 child: Text(_detailVerb(s),
-                    style:
-                        PT.monoEyebrow.copyWith(color: P.inkSecondary)),
+                    style: PT.monoEyebrow.copyWith(color: P.inkSecondary)),
               ),
               if (s.args.trim().isNotEmpty)
                 GestureDetector(
@@ -5677,8 +5327,7 @@ class _ThoughtsSheetState extends State<_ThoughtsSheet> {
           ],
           if (resultText.isNotEmpty) ...[
             const SizedBox(height: 10),
-            Text(
-                s.status == _StepStatus.error ? 'ERROR' : 'RESULT',
+            Text(s.status == _StepStatus.error ? 'ERROR' : 'RESULT',
                 style: PT.monoEyebrow.copyWith(
                     color: s.status == _StepStatus.error
                         ? P.err
@@ -5714,8 +5363,8 @@ class _ThoughtsSheetState extends State<_ThoughtsSheet> {
             'https://www.google.com/s2/favicons?domain=$domain&sz=32',
             width: 16,
             height: 16,
-            errorBuilder: (_, __, ___) => Icon(Icons.public_rounded,
-                size: 16, color: P.inkSecondary),
+            errorBuilder: (_, __, ___) =>
+                Icon(Icons.public_rounded, size: 16, color: P.inkSecondary),
           ),
           const SizedBox(width: 10),
           Expanded(
@@ -5747,8 +5396,7 @@ class _AgentSheet extends StatefulWidget {
   /// sheet without child steps (no honest source without the backend).
   final PantheonApi? api;
 
-  const _AgentSheet(
-      {required this.delegates, this.scrollController, this.api});
+  const _AgentSheet({required this.delegates, this.scrollController, this.api});
 
   @override
   State<_AgentSheet> createState() => _AgentSheetState();
@@ -5791,8 +5439,7 @@ class _AgentSheetState extends State<_AgentSheet> {
                       overflow: TextOverflow.ellipsis),
                 ),
                 IconButton(
-                  icon:
-                      Icon(Icons.close_rounded, color: P.inkSecondary),
+                  icon: Icon(Icons.close_rounded, color: P.inkSecondary),
                   onPressed: () => Navigator.pop(context),
                 ),
               ],
@@ -5819,11 +5466,10 @@ class _AgentSheetState extends State<_AgentSheet> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         InkWell(
-          onTap: () => setState(
-              () => open ? _open.remove(index) : _open.add(index)),
+          onTap: () =>
+              setState(() => open ? _open.remove(index) : _open.add(index)),
           child: Padding(
-            padding:
-                const EdgeInsets.symmetric(horizontal: 20, vertical: 13),
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 13),
             child: Row(
               children: [
                 _agentStatusGlyph(s),
@@ -5834,16 +5480,14 @@ class _AgentSheetState extends State<_AgentSheet> {
                     children: [
                       Text(s.task ?? s.label,
                           style: PT.body.copyWith(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w600)),
+                              fontSize: 14, fontWeight: FontWeight.w600)),
                       const SizedBox(height: 2),
                       Text(
                         // Label derives from the terminal state: a
                         // failed delegation says so, never "Running".
                         switch (s.status) {
-                          _StepStatus.done => dur != null
-                              ? 'Completed \u00b7 $dur'
-                              : 'Completed',
+                          _StepStatus.done =>
+                            dur != null ? 'Completed \u00b7 $dur' : 'Completed',
                           _StepStatus.error =>
                             dur != null ? 'Failed \u00b7 $dur' : 'Failed',
                           _StepStatus.running => 'Running',
@@ -5924,8 +5568,7 @@ class _AgentSheetState extends State<_AgentSheet> {
             const SizedBox(height: 10),
           ],
           if (result.isNotEmpty) ...[
-            Text(
-                s.status == _StepStatus.error ? 'ERROR' : 'RESULT',
+            Text(s.status == _StepStatus.error ? 'ERROR' : 'RESULT',
                 style: PT.monoEyebrow.copyWith(
                     color: s.status == _StepStatus.error
                         ? P.err
@@ -5973,10 +5616,10 @@ class _AgentSheetState extends State<_AgentSheet> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('STEPS',
-            style: PT.monoEyebrow.copyWith(color: P.inkSecondary)),
+        Text('STEPS', style: PT.monoEyebrow.copyWith(color: P.inkSecondary)),
         const SizedBox(height: 4),
-        for (var i = 0; i < steps.length; i++) _childStepRow(index, steps[i], i),
+        for (var i = 0; i < steps.length; i++)
+          _childStepRow(index, steps[i], i),
       ],
     );
   }
@@ -6060,8 +5703,7 @@ class _AgentSheetState extends State<_AgentSheet> {
       children: [
         SizedBox(
           width: 52,
-          child:
-              Text(k, style: PT.monoEyebrow.copyWith(fontSize: 10)),
+          child: Text(k, style: PT.monoEyebrow.copyWith(fontSize: 10)),
         ),
         Expanded(child: SelectableText(v, style: PT.small)),
       ],
@@ -6091,32 +5733,6 @@ class _AgentSheetState extends State<_AgentSheet> {
             ),
           ),
       ],
-    );
-  }
-}
-
-/// Header status chip on the purple gradient: white text on a solid
-/// dark translucent fill, so it passes AA on every gradient stop
-/// (#7223FF / #4B00CD) where tinted status colors don't.
-class _HeaderChip extends StatelessWidget {
-  final String label;
-
-  const _HeaderChip({required this.label});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(999),
-        color: Colors.black.withValues(alpha: 0.28),
-        border: Border.all(
-            color: Colors.white.withValues(alpha: 0.25), width: 1),
-      ),
-      child: Text(
-        label,
-        style: PT.monoEyebrow.copyWith(color: Colors.white),
-      ),
     );
   }
 }
