@@ -204,6 +204,18 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
   static bool _isLive(String status) =>
       status == 'running' || status == 'awaiting_approval';
 
+  /// Subtle terminal-status word for the AppBar subtitle (`· Failed` /
+  /// `· Canceled` / `· Completed`). Null while the run is live or the
+  /// status is unknown — the live dot already covers the in-flight state.
+  /// Keeps settled-run status distinguishable in the conversation without
+  /// restoring the old prominent status banner.
+  static String? _terminalStatusWord(String? status) => switch (status) {
+        'failed' => '· Failed',
+        'canceled' => '· Canceled',
+        'completed' => '· Completed',
+        _ => null,
+      };
+
   /// The `[attachments]` block the server appends to a user message when
   /// files were attached — stripped before rendering the bubble so the
   /// raw file list never shows in chat. The parsed form renders as the
@@ -1616,6 +1628,8 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
   Widget build(BuildContext context) {
     final title = _run?.displayTitle ?? 'Session';
     final live = _isLive(_run?.status ?? '');
+    final statusWord = _terminalStatusWord(_run?.status);
+    final statusFailed = _run?.status == 'failed';
     return Scaffold(
       appBar: AppBar(
         leading: IconButton(
@@ -1652,6 +1666,16 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
+                  if (statusWord != null) ...[
+                    const SizedBox(width: 6),
+                    Text(
+                      statusWord,
+                      style: PT.small.copyWith(
+                        color: statusFailed ? P.err : P.inkMuted,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),
