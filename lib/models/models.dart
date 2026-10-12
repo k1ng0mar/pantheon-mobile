@@ -24,5 +24,6 @@ export 'task_step.dart';
 export 'skill.dart';
 export 'todo_item.dart';
 export 'team.dart';
+export 'ui_protocol.dart';
 export 'upload_record.dart';
 export 'usage_stats.dart';

@@ -32,6 +32,7 @@ import '../widgets/states.dart';
 import '../widgets/task_sheet.dart';
 import '../widgets/team_run_view.dart';
 import '../widgets/todos_sheet.dart';
+import '../widgets/ui_components.dart';
 import '../widgets/voice_note_pill.dart';
 import 'agent_activity_screen.dart';
 import 'approvals_screen.dart';
@@ -529,7 +530,9 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
         Iterable.generate(merged.length).every((i) =>
             merged[i].role == cur[i].role &&
             merged[i].type == cur[i].type &&
-            merged[i].content == cur[i].content);
+            merged[i].content == cur[i].content &&
+            merged[i].uiId == cur[i].uiId &&
+            merged[i].uiRevision == cur[i].uiRevision);
     if (same) return false;
     final grew = merged.length > cur.length;
     setState(() {
@@ -2123,6 +2126,15 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
         i++;
         continue;
       }
+      if (t.isUi) {
+        // Agent-native UI document: rendered by the UI renderer, never
+        // as a text bubble. The revision pinned here is the displayed
+        // revision — submissions from this view use exactly it.
+        flushThoughts();
+        rows.add(StaggerItem(index: i, child: _keyedBubble(i, _uiItem(t))));
+        i++;
+        continue;
+      }
       if (t.role == 'assistant' && t.toolCalls.isNotEmpty) {
         // Text and tool calls in one item: text first, calls into the
         // thoughts buffer (mirrors streaming order).
@@ -2253,6 +2265,57 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
         });
       }
     });
+  }
+
+  /// Render an agent-native UI document transcript item.
+  ///
+  /// The [TranscriptItem.uiRevision] captured at parse time is the
+  /// displayed revision; submissions from this view pin exactly it, so
+  /// a newer server revision can never be submitted from an old view.
+  Widget _uiItem(TranscriptItem t) {
+    final doc = t.uiDocument!;
+    return Container(
+      margin: const EdgeInsets.symmetric(vertical: 4),
+      child: UiDocumentView(
+        document: doc,
+        uiId: t.uiId ?? doc.id,
+        revision: t.uiRevision ?? 0,
+        onAction: (sub) => _handleUiAction(sub),
+      ),
+    );
+  }
+
+  /// Submit a UI action through the authenticated dashboard API.
+  ///
+  /// Stale-revision rejections trigger a transcript refresh so the user
+  /// sees the current document. Timeouts keep the original submission
+  /// identity — the caller must reconcile via polling, not retry.
+  Future<UiSubmitResult> _handleUiAction(UiActionSubmission sub) async {
+    final runId = _run?.id;
+    if (runId == null) {
+      return UiSubmitResult.error('No active run.', null);
+    }
+    UiSubmitResult result;
+    try {
+      result = await widget.api.submitUiAction(runId, sub);
+    } on PantheonApiException catch (e) {
+      return UiSubmitResult.error(
+          e.body.isEmpty ? 'Submission failed (${e.status}).' : e.body,
+          e.status);
+    } on PantheonUnreachableException {
+      // Uncertain outcome: the request may have executed. Do not retry
+      // with a fresh nonce; the poller reconciles the transcript.
+      return UiSubmitResult.error(
+          'Connection timed out — the action may have run. '
+          'Watch the chat for the result.',
+          null);
+    }
+    if (result.outcome == UiSubmitOutcome.stale) {
+      // The document moved under us: refresh and let the poller rebuild
+      // the displayed state from the authoritative transcript.
+      _pollOnce();
+    }
+    return result;
   }
 
   /// A message bubble keyed for find-in-chat, with an accent ring on
