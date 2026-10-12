@@ -1,4 +1,5 @@
 import 'pending_input.dart';
+import 'ui_protocol.dart';
 
 /// Tolerant int coercion for backend JSON scalars: numbers pass
 /// through, numeric strings parse, anything else is null. The contract
@@ -50,7 +51,7 @@ class ToolCallRef {
 }
 
 class TranscriptItem {
-  final String type; // message | reasoning
+  final String type; // message | reasoning | ui
   final String? role;
   final String content;
   /// Milliseconds since epoch when present. The dashboard emits
@@ -69,6 +70,13 @@ class TranscriptItem {
   /// tool-result row. Absent on legacy rows.
   final int? durationMs;
 
+  /// UI-protocol items (`type: 'ui'`). The document id, the displayed
+  /// revision, and the parsed document. Null on non-UI items. A
+  /// submission must use exactly this revision — never a newer one.
+  final String? uiId;
+  final int? uiRevision;
+  final UiDocument? uiDocument;
+
   TranscriptItem(
       {required this.type,
       this.role,
@@ -76,20 +84,60 @@ class TranscriptItem {
       this.tsMs,
       this.toolCalls = const [],
       this.toolCallId,
-      this.durationMs});
+      this.durationMs,
+      this.uiId,
+      this.uiRevision,
+      this.uiDocument});
 
-  factory TranscriptItem.fromJson(Map<String, dynamic> j) => TranscriptItem(
-        type: j['type'] as String? ?? 'message',
-        role: j['role'] as String?,
-        content: j['content'] as String? ?? '',
-        tsMs: _intOrNull(j['ts_ms']),
-        toolCalls: ((j['tool_calls'] as List?) ?? const [])
-            .whereType<Map<String, dynamic>>()
-            .map(ToolCallRef.fromJson)
-            .toList(),
-        toolCallId: _stringOrNull(j['tool_call_id']),
-        durationMs: _intOrNull(j['duration_ms']),
-      );
+  /// True for agent-native UI documents (rendered by the UI renderer,
+  /// not as a text bubble).
+  bool get isUi => type == 'ui' && uiDocument != null;
+
+  factory TranscriptItem.fromJson(Map<String, dynamic> j) {
+    final type = j['type'] as String? ?? 'message';
+    String? uiId;
+    int? uiRevision;
+    UiDocument? uiDocument;
+    if (type == 'ui') {
+      uiId = j['ui_id'] as String? ?? '';
+      final rev = j['revision'];
+      uiRevision = rev is num ? rev.toInt() : 0;
+      final docJson = (j['document'] as Map?)?.cast<String, dynamic>();
+      if (docJson != null) {
+        try {
+          final doc = UiDocument.fromJson(docJson);
+          // A document with no id and no usable root is malformed, not
+          // merely unsupported — explain instead of showing "unknown".
+          final rootEmpty = doc.id.isEmpty &&
+              doc.root.component is UiUnsupported;
+          uiDocument = doc.isSupported && !rootEmpty
+              ? doc
+              : UiDocument.unsupportedVersion(
+                  doc.id.isEmpty ? (uiId ?? '') : doc.id,
+                  doc.isSupported ? -1 : doc.version);
+        } catch (_) {
+          // A malformed document degrades to an explanatory note rather
+          // than breaking the chat screen.
+          uiDocument = UiDocument.unsupportedVersion(uiId ?? '', -1);
+        }
+      }
+    }
+    return TranscriptItem(
+      type: type,
+      role: j['role'] as String?,
+      content: j['content'] as String? ?? '',
+      tsMs: _intOrNull(j['ts_ms']),
+      toolCalls: ((j['tool_calls'] as List?) ?? const [])
+          .whereType<Map<String, dynamic>>()
+          .map(ToolCallRef.fromJson)
+          .toList(),
+      toolCallId: _stringOrNull(j['tool_call_id']),
+      durationMs: _intOrNull(j['duration_ms']),
+      uiId: uiId,
+      uiRevision: uiRevision,
+      uiDocument: uiDocument,
+    );
+  }
 }
 
 class TimelineItem {

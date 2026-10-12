@@ -576,6 +576,78 @@ class PantheonApi {
         {'call_id': callId, 'answer': answer});
   }
 
+  /// Submit an agent-native UI action.
+  ///
+  /// Posts to the existing `POST /api/runs/:id/ui-action` endpoint,
+  /// which delegates to `Session::submit_ui_action`. All authorization,
+  /// revision validation, replay protection, and capability checks stay
+  /// server-side; this method only transports the submission and maps
+  /// the response.
+  ///
+  /// Response contract (`pantheon-dashboard/src/ui_actions.rs`):
+  /// - 200 `{outcome: 'executed', result}` — tool ran.
+  /// - 200 `{outcome: 'decided', approved}` — approval recorded.
+  /// - 409 `{error: {code: UI_STALE|UI_REPLAY|UI_UNKNOWN|UI_BAD_ACTION}}`
+  /// - 422 `{error: {code: UI_TOOL_DENIED}}` — action valid, tool refused.
+  ///
+  /// Timeouts are rethrown as [PantheonUnreachableException] without a
+  /// verdict: the request may already have executed server-side, so
+  /// callers must reconcile via transcript polling rather than
+  /// blindly retrying with a fresh nonce.
+  Future<UiSubmitResult> submitUiAction(
+      String runId, UiActionSubmission sub) async {
+    http.Response res;
+    try {
+      res = await http
+          .post(
+            _uri('/api/runs/${Uri.encodeComponent(runId)}/ui-action'),
+            headers: {..._headers, 'Content-Type': 'application/json'},
+            body: jsonEncode(sub.toJson()),
+          )
+          .timeout(_timeout);
+    } on TimeoutException {
+      throw PantheonUnreachableException('Timed out reaching $baseUrl.');
+    } catch (e) {
+      throw PantheonUnreachableException('Cannot reach $baseUrl ($e).');
+    }
+    if (res.statusCode == 401) throw PantheonAuthException();
+    Map<String, dynamic>? body;
+    try {
+      final v = jsonDecode(res.body);
+      if (v is Map) body = v.cast<String, dynamic>();
+    } catch (_) {}
+    final code = _serverCode(res.body);
+    final message = _serverMessage(res.body);
+    if (res.statusCode == 200 && body != null) {
+      switch (body['outcome']) {
+        case 'executed':
+          return UiSubmitResult.executed(body['result'] as String?);
+        case 'decided':
+          return UiSubmitResult.decided(body['approved'] == true);
+      }
+      return UiSubmitResult.error('Unexpected response.', res.statusCode);
+    }
+    if (res.statusCode == 409) {
+      // UI_STALE: the document moved under the submission — refresh and
+      // re-render. UI_REPLAY: this nonce already executed (idempotent);
+      // refresh to see the result. UI_UNKNOWN/UI_BAD_ACTION: the client
+      // sent a bad reference — surface as an error, not a stale refresh.
+      switch (code) {
+        case 'UI_STALE':
+        case 'UI_REPLAY':
+          return UiSubmitResult.stale(message);
+        default:
+          return UiSubmitResult.error(
+              message.isEmpty ? 'Invalid action.' : message,
+              res.statusCode);
+      }
+    }
+    if (res.statusCode == 422 && code == 'UI_TOOL_DENIED') {
+      return UiSubmitResult.denied(message, res.statusCode);
+    }
+    throw PantheonApiException(res.statusCode, message);
+  }
+
   /// Rename a session.
   Future<void> renameRun(String id, String title) async {
     await _put('/api/runs/${Uri.encodeComponent(id)}/title',
