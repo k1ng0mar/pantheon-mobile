@@ -3,8 +3,8 @@ import 'package:flutter/material.dart';
 import '../models/models.dart';
 import '../theme.dart';
 
-/// The session activity transcript card, shared by the Timeline tab and
-/// the agent activity screen.
+/// The session activity transcript card, used by the agent activity
+/// screen (and reachable from Session details → Timeline).
 ///
 /// One dark rounded card with a header block (title, status chip +
 /// outcome time, outcome detail when it exists), then MAIN / SUBAGENT NN
