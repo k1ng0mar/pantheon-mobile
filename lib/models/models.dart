@@ -2,6 +2,7 @@
 export 'approval.dart';
 export 'browser_status.dart';
 export 'config_doc.dart';
+export 'desktop_status.dart';
 export 'env_key.dart';
 export 'expert.dart';
 export 'gateway_status.dart';
@@ -12,6 +13,7 @@ export 'login_entry.dart';
 export 'mcp_server.dart';
 export 'memory_entry.dart';
 export 'nightly_status.dart';
+export 'oauth_status.dart';
 export 'overview.dart';
 export 'pantheon_run.dart';
 export 'pending_input.dart';
