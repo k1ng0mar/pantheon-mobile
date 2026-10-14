@@ -9,6 +9,7 @@ import 'screens/config_screen.dart';
 import 'screens/connect_screen.dart';
 import 'screens/experts_screen.dart';
 import 'screens/gateway_screen.dart';
+import 'screens/health_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/ideas_screen.dart';
 import 'screens/keys_screen.dart';
@@ -607,6 +608,14 @@ class MoreTab extends StatelessWidget {
             onTap: () => _push(context, VoiceSettingsScreen(api: api)),
           ),
           const _HubSection('System'),
+          _hubCard(
+            context,
+            icon: Icons.monitor_heart_outlined,
+            title: 'Health',
+            subtitle: 'System status and diagnostics',
+            onTap: () => _push(context, HealthScreen(api: api)),
+          ),
+          const SizedBox(height: 12),
           _hubCard(
             context,
             icon: Icons.tune_rounded,
