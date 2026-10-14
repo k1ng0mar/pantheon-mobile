@@ -345,6 +345,7 @@ class PantheonApi {
         path.contains('/project') ||
         path.contains('/api/approvals/grants') ||
         path.contains('/api/commands') ||
+        path.contains('/api/health') ||
         RegExp(r'/api/runs/[^/]+/queue/\d+').hasMatch(path);
   }
 
@@ -396,6 +397,455 @@ class PantheonApi {
 
   Future<GatewayStatus> gatewayStatus() async =>
       GatewayStatus.fromJson(await _get('/api/gateway/status'));
+
+  // ------------------------------------------------------------------
+  // Health
+  // ------------------------------------------------------------------
+
+  /// System health: prefers `GET /api/health` (`pantheon.health/v1`). When
+  /// the dashboard predates the endpoint its 404 surfaces as
+  /// [PantheonStaleBackendException] and a report is composed client-side
+  /// from existing endpoints instead. Anything that cannot actually be
+  /// checked becomes `unknown`/`skipped` — never a fake `healthy`.
+  Future<HealthReport> healthReport() async {
+    try {
+      return HealthReport.fromJson(await _get('/api/health'));
+    } on PantheonStaleBackendException {
+      return _composeHealthFallback();
+    }
+  }
+
+  HealthCheck _hcPass(String id, String summary,
+          {String details = '',
+          String impact = '',
+          String remediation = '',
+          String severity = 'info'}) =>
+      HealthCheck(
+          id: id,
+          status: 'passed',
+          severity: severity,
+          summary: summary,
+          details: details,
+          impact: impact,
+          remediation: remediation,
+          durationNs: 0);
+
+  HealthCheck _hcFail(String id, String summary,
+          {String severity = 'warning',
+          String details = '',
+          String impact = '',
+          String remediation = ''}) =>
+      HealthCheck(
+          id: id,
+          status: 'failed',
+          severity: severity,
+          summary: summary,
+          details: details,
+          impact: impact,
+          remediation: remediation,
+          durationNs: 0);
+
+  HealthCheck _hcSkip(String id, String summary) => HealthCheck(
+      id: id,
+      status: 'skipped',
+      severity: 'info',
+      summary: summary,
+      details: '',
+      impact: '',
+      remediation: '',
+      durationNs: 0);
+
+  HealthIssue _hIssue(
+          {required String id,
+          required String subsystem,
+          required String severity,
+          required String title,
+          required String detail,
+          required String hint}) =>
+      HealthIssue(
+          id: id,
+          subsystem: subsystem,
+          severity: severity,
+          title: title,
+          detail: detail,
+          hint: hint);
+
+  /// critical failure -> down; any failure -> review; a pass and no
+  /// failures -> healthy; otherwise (all skipped / not applicable) ->
+  /// unknown.
+  HealthStatus _rollUp(List<HealthCheck> checks) {
+    if (checks.any((c) => c.failed && c.severity == 'critical')) {
+      return HealthStatus.down;
+    }
+    if (checks.any((c) => c.failed)) return HealthStatus.review;
+    if (checks.any((c) => c.passed)) return HealthStatus.healthy;
+    return HealthStatus.unknown;
+  }
+
+  SubsystemHealth _unknownSubsystem(
+          String id, String title, String subtitle, String reason) =>
+      SubsystemHealth(
+          id: id,
+          title: title,
+          subtitle: subtitle,
+          status: HealthStatus.unknown,
+          checks: [_hcSkip('$id.unreachable', reason)]);
+
+  HealthStatus _overallOf(List<SubsystemHealth> subsystems) {
+    if (subsystems.any((s) => s.status == HealthStatus.down)) {
+      return HealthStatus.down;
+    }
+    if (subsystems.any((s) => s.status == HealthStatus.review)) {
+      return HealthStatus.review;
+    }
+    if (subsystems.any((s) => s.status == HealthStatus.unknown)) {
+      return HealthStatus.unknown;
+    }
+    return HealthStatus.healthy;
+  }
+
+  Future<HealthReport> _composeHealthFallback() async {
+    final issues = <HealthIssue>[];
+    final subsystems = <SubsystemHealth>[
+      await _fbRuntime(issues),
+      await _fbProviders(issues),
+      await _fbMemory(issues),
+      await _fbTools(issues),
+      await _fbSecurity(issues),
+      await _fbConfig(issues),
+    ];
+    final overall = _overallOf(subsystems);
+    final core = subsystems.firstWhere((s) => s.id == 'runtime',
+        orElse: () => _unknownSubsystem(
+            'runtime', 'Runtime & execution', '', 'unreachable'));
+    final n = issues.length;
+    final summary = n == 0
+        ? (overall == HealthStatus.healthy
+            ? 'All subsystems healthy.'
+            : 'Some subsystems could not be checked.')
+        : '$n ${n == 1 ? 'issue needs' : 'issues need'} attention.';
+    return HealthReport(
+      schema: 'pantheon.health/v1',
+      generatedAt: DateTime.now().toUtc().toIso8601String(),
+      overall: overall,
+      summary: summary,
+      coreRuntimeStatus: core.status,
+      coreRuntimeLabel: core.status.label,
+      issueCount: n,
+      subsystems: subsystems,
+      issues: issues,
+    );
+  }
+
+  Future<SubsystemHealth> _fbRuntime(List<HealthIssue> issues) async {
+    const id = 'runtime';
+    final checks = <HealthCheck>[];
+    try {
+      final gw = await gatewayStatus();
+      if (gw.running) {
+        checks.add(_hcPass('$id.gateway', 'Gateway service is running',
+            details: 'Detected: ${gw.detected}'
+                '${gw.installed == null ? '' : ', installed: ${gw.installed}'}'));
+      } else {
+        checks.add(_hcFail('$id.gateway', 'Gateway service is not running',
+            severity: 'critical',
+            impact: 'Scheduled jobs and the always-on service are down.',
+            remediation: 'Restart the gateway from More → Gateway.'));
+        issues.add(_hIssue(
+            id: '$id.gateway',
+            subsystem: id,
+            severity: 'error',
+            title: 'Gateway is not running',
+            detail: 'The always-on gateway service is stopped.',
+            hint: 'Restart it from More → Gateway.'));
+      }
+    } catch (_) {
+      return _unknownSubsystem(id, 'Runtime & execution',
+          'Engine, lifecycle, recovery', 'Gateway status could not be reached.');
+    }
+    try {
+      final o = await overview();
+      checks.add(_hcPass('$id.api', 'Dashboard API is reachable',
+          details: '${o.totalRuns} runs recorded.'));
+    } catch (_) {
+      checks.add(_hcSkip('$id.api', 'Dashboard overview is unreachable.'));
+    }
+    return SubsystemHealth(
+        id: id,
+        title: 'Runtime & execution',
+        subtitle: 'Engine, lifecycle, recovery',
+        status: _rollUp(checks),
+        checks: checks);
+  }
+
+  Future<SubsystemHealth> _fbProviders(List<HealthIssue> issues) async {
+    const id = 'providers';
+    const excluded = {
+      'agents',
+      'mcp',
+      'budget',
+      'policy',
+      'nightly',
+      'consolidation',
+      'gateway',
+      'tools',
+      'permissions',
+      'server',
+    };
+    String? s(Object? v) => v is String && v.isNotEmpty ? v : null;
+    final checks = <HealthCheck>[];
+    late ConfigDoc doc;
+    try {
+      doc = await getConfig();
+    } catch (_) {
+      return _unknownSubsystem(
+          id,
+          'Models & providers',
+          'Authentication, connectivity, routing',
+          'Config could not be loaded.');
+    }
+    Set<String> keySet = {};
+    try {
+      keySet = (await envKeys()).map((k) => k.key).toSet();
+    } catch (_) {
+      // Key presence then degrades to "unknown" per slot below.
+    }
+    final keysLoaded = keySet.isNotEmpty;
+    var slots = 0;
+    for (final entry in doc.values.entries) {
+      if (entry.value is! Map) continue;
+      final section = entry.key.toString();
+      if (excluded.contains(section)) continue;
+      final m = (entry.value as Map).cast<String, dynamic>();
+      final provider = s(m['provider']);
+      final model = s(m['model']);
+      if (provider == null && model == null) continue;
+      slots++;
+      final slotId = section.replaceAll(RegExp(r'[^a-z0-9]+'), '_');
+      final label = section == 'model'
+          ? 'Default'
+          : section.replaceAll('_', ' ').toUpperCase();
+      final env = s(m['api_key_env']);
+      if (env == null) {
+        checks.add(_hcPass('$id.$slotId.key',
+            '$label: no credential required by configuration'));
+      } else if (!keysLoaded) {
+        checks.add(_hcSkip('$id.$slotId.key',
+            '$label: credential $env could not be verified (key list unreachable).'));
+      } else if (keySet.contains(env)) {
+        checks.add(_hcPass(
+            '$id.$slotId.key', '$label: credential $env is configured'));
+      } else {
+        checks.add(_hcFail('$id.$slotId.key',
+            '$label: credential $env is not configured',
+            severity: 'warning',
+            impact: 'Requests through ${provider ?? model} may fail.',
+            remediation: 'Add $env under More → Keys.'));
+        issues.add(_hIssue(
+            id: '$id.$slotId.key',
+            subsystem: id,
+            severity: 'warning',
+            title: 'Provider credential missing',
+            detail: 'The $label model slot expects \$$env, which is not configured.',
+            hint: 'Add it under More → Keys.'));
+      }
+    }
+    if (slots == 0) {
+      checks.add(_hcFail('$id.slots', 'No model providers configured',
+          severity: 'error',
+          impact: 'The agent has no model to run on.',
+          remediation: 'Configure a provider under More → Models.'));
+      issues.add(_hIssue(
+          id: '$id.slots',
+          subsystem: id,
+          severity: 'error',
+          title: 'No model providers configured',
+          detail: 'No model slots with a provider or model were found in config.',
+          hint: 'Configure one under More → Models.'));
+    }
+    checks.add(_hcSkip('$id.auth_probe',
+        'Live authentication probe requires a newer dashboard (GET /api/health).'));
+    return SubsystemHealth(
+        id: id,
+        title: 'Models & providers',
+        subtitle: 'Authentication, connectivity, routing',
+        status: _rollUp(checks),
+        checks: checks);
+  }
+
+  Future<SubsystemHealth> _fbMemory(List<HealthIssue> issues) async {
+    const id = 'memory';
+    try {
+      await memoryEntries(limit: 1);
+      return SubsystemHealth(
+          id: id,
+          title: 'Memory & storage',
+          subtitle: 'SQLite, migrations, retrieval',
+          status: HealthStatus.healthy,
+          checks: [
+            _hcPass('$id.reachable', 'Memory store is reachable'),
+            _hcSkip('$id.migrations',
+                'Migration state requires a newer dashboard (GET /api/health).'),
+          ]);
+    } catch (_) {
+      return _unknownSubsystem(id, 'Memory & storage',
+          'SQLite, migrations, retrieval', 'Memory store could not be reached.');
+    }
+  }
+
+  Future<SubsystemHealth> _fbTools(List<HealthIssue> issues) async {
+    const id = 'tools';
+    final checks = <HealthCheck>[];
+    late List<McpServerGroup> groups;
+    late List<String> pending;
+    try {
+      final res = await mcpServers();
+      groups = res.groups;
+      pending = res.pending;
+    } catch (_) {
+      return _unknownSubsystem(id, 'Tools & integrations',
+          'Availability, dependencies, permissions', 'MCP servers could not be loaded.');
+    }
+    var servers = 0;
+    for (final g in groups) {
+      for (final s in g.servers) {
+        servers++;
+        final sid = '$id.${s.name.replaceAll(RegExp(r'[^a-z0-9]+'), '_')}';
+        if (!s.enabled) {
+          checks.add(HealthCheck(
+              id: '$sid.disabled',
+              status: 'not_applicable',
+              severity: 'info',
+              summary: '${s.name}: disabled',
+              details: '',
+              impact: '',
+              remediation: '',
+              durationNs: 0));
+          continue;
+        }
+        if (!s.approved) {
+          checks.add(_hcFail(sid, '${s.name}: awaiting approval',
+              severity: 'warning',
+              remediation: 'Approve it under More → Tools & MCP.'));
+          issues.add(_hIssue(
+              id: '$sid.approval',
+              subsystem: id,
+              severity: 'warning',
+              title: 'MCP server awaiting approval',
+              detail: '${s.name} is enabled but not approved.',
+              hint: 'Approve it under More → Tools & MCP.'));
+        }
+        if (s.readiness == 'ready') {
+          checks.add(_hcPass(sid, '${s.name}: ready'));
+        } else {
+          checks.add(_hcFail(sid, '${s.name}: readiness ${s.readiness}',
+              severity: 'warning',
+              remediation:
+                  'Check More → Tools & MCP, or reload MCP servers.'));
+          issues.add(_hIssue(
+              id: '$sid.readiness',
+              subsystem: id,
+              severity: 'warning',
+              title: 'MCP server not ready',
+              detail: '${s.name} reports readiness "${s.readiness}".',
+              hint: 'Check More → Tools & MCP.'));
+        }
+      }
+    }
+    for (final p in pending) {
+      issues.add(_hIssue(
+          id: '$id.pending.${p.replaceAll(RegExp(r'[^a-z0-9]+'), '_')}',
+          subsystem: id,
+          severity: 'warning',
+          title: 'MCP server awaiting approval',
+          detail: '$p is pending approval.',
+          hint: 'Approve it under More → Tools & MCP.'));
+    }
+    if (servers == 0) {
+      checks.add(_hcSkip('$id.none', 'No MCP servers configured.'));
+    }
+    return SubsystemHealth(
+        id: id,
+        title: 'Tools & integrations',
+        subtitle: 'Availability, dependencies, permissions',
+        status: _rollUp(checks),
+        checks: checks);
+  }
+
+  Future<SubsystemHealth> _fbSecurity(List<HealthIssue> issues) async {
+    const id = 'security';
+    final checks = <HealthCheck>[];
+    try {
+      final o = await overview();
+      if (o.approvalsPending > 0) {
+        final n = o.approvalsPending;
+        checks.add(_hcPass('$id.approvals',
+            '$n ${n == 1 ? 'approval is' : 'approvals are'} waiting for your decision'));
+        issues.add(_hIssue(
+            id: '$id.approvals',
+            subsystem: id,
+            severity: 'info',
+            title: 'Approvals waiting',
+            detail:
+                '$n ${n == 1 ? 'approval is' : 'approvals are'} waiting for your decision.',
+            hint: 'Review them under More → Approvals.'));
+      } else {
+        checks.add(_hcPass('$id.approvals', 'No approvals pending'));
+      }
+    } catch (_) {
+      checks.add(_hcSkip('$id.approvals', 'Approval queue could not be loaded.'));
+    }
+    try {
+      final doc = await getConfig();
+      final hasPolicy =
+          doc.values['policy'] is Map || doc.values['permissions'] is Map;
+      if (hasPolicy) {
+        checks.add(_hcPass('$id.policy', 'Policy section present in config'));
+      } else {
+        checks.add(_hcFail('$id.policy', 'No policy section in config',
+            severity: 'warning',
+            remediation: 'Review the policy section under More → Configs.'));
+        issues.add(_hIssue(
+            id: '$id.policy',
+            subsystem: id,
+            severity: 'warning',
+            title: 'No policy section',
+            detail: 'config.toml has no [policy] or [permissions] section.',
+            hint: 'Review it under More → Configs.'));
+      }
+    } catch (_) {
+      checks.add(_hcSkip('$id.policy', 'Config could not be loaded.'));
+    }
+    checks.add(_hcSkip('$id.advisories',
+        'Dependency advisories require a newer dashboard (GET /api/health).'));
+    return SubsystemHealth(
+        id: id,
+        title: 'Security',
+        subtitle: 'Policy, permissions, dependencies',
+        status: _rollUp(checks),
+        checks: checks);
+  }
+
+  Future<SubsystemHealth> _fbConfig(List<HealthIssue> issues) async {
+    const id = 'config';
+    try {
+      final doc = await getConfig();
+      return SubsystemHealth(
+          id: id,
+          title: 'Configuration',
+          subtitle: 'Schema, paths, deprecated settings',
+          status: HealthStatus.healthy,
+          checks: [
+            _hcPass('$id.loaded', 'Config document loaded',
+                details: doc.path),
+            _hcSkip('$id.deprecated',
+                'Deprecated-setting scan requires a newer dashboard (GET /api/health).'),
+          ]);
+    } catch (_) {
+      return _unknownSubsystem(id, 'Configuration',
+          'Schema, paths, deprecated settings', 'Config could not be loaded.');
+    }
+  }
 
   Future<List<PantheonRun>> runs(
       {String? q, String? status, int limit = 100}) async {
