@@ -28,7 +28,9 @@ class _NightlyScreenState extends State<NightlyScreen> {
   }
 
   void _load() {
-    setState(() => _future = widget.api.nightlyStatus());
+    setState(() {
+      _future = widget.api.nightlyStatus();
+    });
   }
 
   Future<void> _toggle(bool enable) async {
