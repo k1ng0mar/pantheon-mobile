@@ -4,6 +4,8 @@ import 'package:pantheon_mobile/models/config_doc.dart';
 import 'package:pantheon_mobile/models/env_key.dart';
 import 'package:pantheon_mobile/models/idea.dart';
 import 'package:pantheon_mobile/models/log_tail.dart';
+import 'package:pantheon_mobile/models/oauth_status.dart';
+import 'package:pantheon_mobile/models/desktop_status.dart';
 import 'package:pantheon_mobile/models/mcp_server.dart';
 import 'package:pantheon_mobile/models/memory_entry.dart';
 import 'package:pantheon_mobile/models/overview.dart';
@@ -381,5 +383,87 @@ void scheduledJobTests() {
     });
     expect(l.lines.length, 2);
     expect(l.note, isNull);
+  });
+
+  test('OAuthStatus parses provider list', () {
+    final s = OAuthStatus.fromJson({
+      'providers': [
+        {
+          'id': 'github',
+          'connected': true,
+          'scopes': ['read:user', 'repo'],
+          'expires_at': '2026-12-01T00:00:00Z',
+        },
+        {
+          'id': 'notion',
+          'connected': false,
+          'scopes': [],
+          'expires_at': null,
+        },
+        {
+          'id': 'google',
+          'connected': true,
+          'scopes': ['openid'],
+          'expires_at': '2020-01-01T00:00:00Z',
+        },
+      ],
+    });
+    expect(s.providers.length, 3);
+    // Canonical order: github, google, notion, spotify.
+    expect(s.ordered.map((p) => p.id),
+        ['github', 'google', 'notion']);
+    final gh = s.ordered.first;
+    expect(gh.displayName, 'GitHub');
+    expect(gh.connected, isTrue);
+    expect(gh.expired, isFalse);
+    expect(gh.scopes, ['read:user', 'repo']);
+    final google = s.ordered[1];
+    expect(google.expired, isTrue);
+    final notion = s.ordered[2];
+    expect(notion.connected, isFalse);
+    expect(notion.expiresAt, isNull);
+  });
+
+  test('OAuthStatus tolerates missing providers key', () {
+    final s = OAuthStatus.fromJson({});
+    expect(s.providers, isEmpty);
+    expect(s.ordered, isEmpty);
+  });
+
+  test('DesktopStatus parses status shape', () {
+    final d = DesktopStatus.fromJson({
+      'enabled': true,
+      'driver': 'cua-driver',
+      'controller': null,
+      'viewers': 2,
+      'taken_since': null,
+    });
+    expect(d.enabled, isTrue);
+    expect(d.driver, 'cua-driver');
+    expect(d.taken, isFalse);
+    expect(d.viewers, 2);
+    expect(d.takenSince, isNull);
+  });
+
+  test('DesktopStatus reports a held lease', () {
+    final d = DesktopStatus.fromJson({
+      'enabled': true,
+      'driver': 'cua-driver',
+      'controller': 'phone-1',
+      'viewers': 1,
+      'taken_since': '2026-10-14T20:00:00Z',
+    });
+    expect(d.taken, isTrue);
+    expect(d.controller, 'phone-1');
+    expect(d.takenSince, isNotNull);
+  });
+
+  test('DesktopTakeover parses lease shape', () {
+    final t = DesktopTakeover.fromJson({
+      'lease_id': 'abc123',
+      'expires_in': 300,
+    });
+    expect(t.leaseId, 'abc123');
+    expect(t.expiresIn, 300);
   });
 }

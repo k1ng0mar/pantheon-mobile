@@ -7,6 +7,7 @@ import 'screens/approvals_screen.dart';
 import 'screens/browser_screen.dart';
 import 'screens/config_screen.dart';
 import 'screens/connect_screen.dart';
+import 'screens/desktop_screen.dart';
 import 'screens/experts_screen.dart';
 import 'screens/gateway_screen.dart';
 import 'screens/health_screen.dart';
@@ -20,6 +21,7 @@ import 'screens/memory_screen.dart';
 import 'screens/models_screen.dart';
 import 'screens/nightly_screen.dart';
 import 'screens/notifications_screen.dart';
+import 'screens/oauth_screen.dart';
 import 'screens/plugins_screen.dart';
 import 'screens/profiles_screen.dart';
 import 'screens/sessions_screen.dart';
@@ -598,6 +600,22 @@ class MoreTab extends StatelessWidget {
             title: 'Browser',
             subtitle: 'Live session stream and take-control',
             onTap: () => _push(context, BrowserScreen(api: api)),
+          ),
+          const SizedBox(height: 12),
+          _hubCard(
+            context,
+            icon: Icons.desktop_windows_outlined,
+            title: 'Bot Screen',
+            subtitle: 'Watch the desktop, take over for auth walls',
+            onTap: () => _push(context, DesktopScreen(api: api)),
+          ),
+          const SizedBox(height: 12),
+          _hubCard(
+            context,
+            icon: Icons.apps_outlined,
+            title: 'Connected apps',
+            subtitle: 'OAuth status for GitHub, Google, Notion, Spotify',
+            onTap: () => _push(context, OAuthScreen(api: api)),
           ),
           const SizedBox(height: 12),
           _hubCard(
