@@ -64,6 +64,16 @@ class PantheonUnreachableException implements Exception {
   String toString() => message;
 }
 
+/// `POST /api/desktop/takeover` answered 409: another controller holds
+/// the takeover lease. The body names the holder when known.
+class DesktopHeldException extends PantheonApiException {
+  DesktopHeldException(String body) : super(409, body);
+  @override
+  String toString() => body.isEmpty
+      ? 'Someone else is controlling the desktop right now.'
+      : 'Desktop is controlled by $body.';
+}
+
 /// How `POST /api/runs/:id/message` resolved.
 enum MessageSendOutcome {
   /// The message started (or joined) a turn immediately.
@@ -335,6 +345,8 @@ class PantheonApi {
   /// that the resource is missing.
   static bool _isNewEndpoint(String path) {    return path.contains('/api/link-preview') ||
         path.contains('/api/browser/') ||
+        path.contains('/api/oauth/status') ||
+        path.contains('/api/desktop/') ||
         path.contains('/api/logins') ||
         path.contains('/api/plugins/import') ||
         path.contains('/api/projects') ||
@@ -1812,6 +1824,68 @@ class PantheonApi {
   /// ({url}), `back`, `forward`, `reload`; `session` is optional.
   Future<void> browserInput(Map<String, dynamic> body) async {
     await _post('/api/browser/input', body);
+  }
+
+  // ------------------------------------------------------------------
+  // OAuth connectors: local-first token status (`GET /api/oauth/status`).
+  // The OAuth dance itself stays on the host (`pantheon oauth login
+  // <app>`); the app only reads status and shows login guidance.
+  // ------------------------------------------------------------------
+
+  /// OAuth provider connection states (`GET /api/oauth/status` →
+  /// `{providers: [{id, connected, scopes, expires_at}]}`).
+  Future<OAuthStatus> oauthStatus() async {
+    final j = await _get('/api/oauth/status');
+    return OAuthStatus.fromJson(j);
+  }
+
+  // ------------------------------------------------------------------
+  // Bot Screen: desktop watch + takeover (`pantheon-dashboard/src/
+  // desktop.rs`). Frames stream over WebSocket (see
+  // [DesktopStreamClient]); these are the control endpoints.
+  // ------------------------------------------------------------------
+
+  /// Bot Screen desktop status (`GET /api/desktop/status` →
+  /// `{enabled, driver, controller, viewers, taken_since}`).
+  Future<DesktopStatus> desktopStatus() async {
+    final j = await _get('/api/desktop/status');
+    return DesktopStatus.fromJson(j);
+  }
+
+  /// Take over the desktop (`POST /api/desktop/takeover` →
+  /// `{lease_id, expires_in}`). Throws [DesktopHeldException] when
+  /// another controller holds the lease (HTTP 409).
+  Future<DesktopTakeover> desktopTakeover() async {
+    try {
+      final j = await _post('/api/desktop/takeover');
+      return DesktopTakeover.fromJson(j);
+    } on PantheonApiException catch (e) {
+      if (e.status == 409) throw DesktopHeldException(e.body);
+      rethrow;
+    }
+  }
+
+  /// Extend a takeover lease (`POST /api/desktop/heartbeat`).
+  /// Call roughly every 10s while controlling; a lapsed heartbeat
+  /// lets someone else claim the lease.
+  Future<void> desktopHeartbeat(String leaseId) async {
+    await _post('/api/desktop/heartbeat', {'lease_id': leaseId});
+  }
+
+  /// Forward one input action under a live lease
+  /// (`POST /api/desktop/input`). `action` is one of `click` ({x, y}),
+  /// `type` ({text}), `press` ({key}), `scroll` ({dx, dy}),
+  /// `drag` ({x1, y1, x2, y2}); the lease id rides in `lease_id`.
+  Future<void> desktopInput(Map<String, dynamic> body) async {
+    await _post('/api/desktop/input', body);
+  }
+
+  /// Release the takeover lease (`POST /api/desktop/release` →
+  /// `{summary}`): the human's actions narrated back into the run.
+  /// Returns the summary text (may be empty).
+  Future<String> desktopRelease(String leaseId) async {
+    final j = await _post('/api/desktop/release', {'lease_id': leaseId});
+    return j['summary'] as String? ?? '';
   }
 
   // ------------------------------------------------------------------
