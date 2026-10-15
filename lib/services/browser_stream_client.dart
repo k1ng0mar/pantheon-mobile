@@ -10,8 +10,7 @@ import 'dart:typed_data';
 /// bytes) at up to the requested fps; text frames, if any, are ignored.
 ///
 /// Auth uses the same token as the dashboard HTTP API, sent as the
-/// `x-pantheon-token` handshake header — the same convention as
-/// [LiveVoiceClient], keeping the token out of URLs and logs.
+/// `x-pantheon-token` handshake header, keeping the token out of URLs and logs.
 class BrowserStreamClient {
   BrowserStreamClient({
     required this.baseUrl,
