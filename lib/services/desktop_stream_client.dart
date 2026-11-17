@@ -12,7 +12,7 @@ import 'dart:typed_data';
 /// stream keeps going.
 ///
 /// Auth uses the same token as the dashboard HTTP API, sent as the
-/// `x-pantheon-token` handshake header — the same convention as
+/// `x-pantheon-token` handshake header, the same convention as
 /// [BrowserStreamClient], keeping the token out of URLs and logs.
 enum DesktopStreamState { connecting, live, error, closed }
 

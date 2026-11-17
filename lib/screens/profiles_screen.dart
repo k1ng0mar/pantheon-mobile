@@ -17,7 +17,7 @@ import '../widgets/states.dart';
 /// Agent profiles: the `[agents]` table of the runtime config.
 ///
 /// Circular avatars (six bundled presets or a custom upload), profile
-/// switching, and profile creation — all through `PUT /api/config`.
+/// switching, and profile creation, all through `PUT /api/config`.
 class ProfilesScreen extends StatefulWidget {
   final PantheonApi api;
 
@@ -51,11 +51,14 @@ class _ProfilesScreenState extends State<ProfilesScreen> {
                 color: P.accent, weight: 1.6),
             tooltip: 'New profile',
             onPressed: () async {
+              final ctx = context;
               final names = (await _future)?.agents.keys.toSet() ?? {};
+              if (!ctx.mounted) return;
               final created = await showPSheet<bool>(
-                context,
+                ctx,
                 _CreateProfileSheet(api: widget.api, existing: names),
               );
+              if (!ctx.mounted) return;
               if (created == true && mounted) _load();
             },
           ),
@@ -381,18 +384,18 @@ class _ProfileDetailSheetState extends State<_ProfileDetailSheet> {
               ],
             ),
             const SizedBox(height: 16),
-            KvRow('display name', p['display_name']?.toString() ?? '—'),
-            KvRow('inherits', p['inherits']?.toString() ?? '—'),
-            KvRow('policy', p['policy']?.toString() ?? '—'),
+            KvRow('display name', p['display_name']?.toString() ?? ','),
+            KvRow('inherits', p['inherits']?.toString() ?? ','),
+            KvRow('policy', p['policy']?.toString() ?? ','),
             KvRow('model', p['model']?.toString() ?? 'runtime default'),
             KvRow('provider', p['provider']?.toString() ?? 'runtime default'),
-            KvRow('memory namespace', p['memory_namespace']?.toString() ?? '—',
+            KvRow('memory namespace', p['memory_namespace']?.toString() ?? ',',
                 mono: true),
-            KvRow('persona file', p['soul_file']?.toString() ?? '—',
+            KvRow('persona file', p['soul_file']?.toString() ?? ',',
                 mono: true),
-            KvRow('instructions file', p['agents_file']?.toString() ?? '—',
+            KvRow('instructions file', p['agents_file']?.toString() ?? ',',
                 mono: true),
-            KvRow('picture', _avatar ?? '—', mono: true),
+            KvRow('picture', _avatar ?? ',', mono: true),
             const SizedBox(height: 12),
             Text('User file', style: PT.meta),
             const SizedBox(height: 6),
@@ -407,12 +410,12 @@ class _ProfileDetailSheetState extends State<_ProfileDetailSheet> {
             ),
             const SizedBox(height: 8),
             TonalButton(
-              label: _busy ? 'Working…' : 'Save user file',
+              label: _busy ? 'Working...' : 'Save user file',
               onTap: _busy ? null : _saveUserFile,
             ),
             const SizedBox(height: 16),
             TonalButton(
-              label: _busy ? 'Working…' : 'Change picture',
+              label: _busy ? 'Working...' : 'Change picture',
               onTap: _busy ? null : _changePicture,
             ),
             const SizedBox(height: 16),
@@ -428,7 +431,7 @@ class _ProfileDetailSheetState extends State<_ProfileDetailSheet> {
               profileName: widget.name,
               file: 'soul',
               title: 'SOUL',
-              subtitle: 'Persona — who this agent is',
+              subtitle: 'Persona, who this agent is',
               onSaved: widget.onChanged,
             ),
             const SizedBox(height: 8),
@@ -437,7 +440,7 @@ class _ProfileDetailSheetState extends State<_ProfileDetailSheet> {
               profileName: widget.name,
               file: 'user',
               title: 'USER',
-              subtitle: 'User context — who it serves',
+              subtitle: 'User context, who it serves',
               onSaved: widget.onChanged,
             ),
             const SizedBox(height: 8),
@@ -446,13 +449,13 @@ class _ProfileDetailSheetState extends State<_ProfileDetailSheet> {
               profileName: widget.name,
               file: 'agents',
               title: 'AGENTS',
-              subtitle: 'Instructions — how it works',
+              subtitle: 'Instructions, how it works',
               onSaved: widget.onChanged,
             ),
             const SizedBox(height: 12),
             if (!widget.active) ...[
               GradientButton(
-                label: _busy ? 'Working…' : 'Set as active',
+                label: _busy ? 'Working...' : 'Set as active',
                 onTap: _busy ? null : _setActive,
               ),
               const SizedBox(height: 12),
@@ -483,7 +486,7 @@ class _ProfileDetailSheetState extends State<_ProfileDetailSheet> {
               Padding(
                 padding: const EdgeInsets.only(top: 4),
                 child: Text(
-                  "Active profile can't be deleted — switch to another "
+                  "Active profile can't be deleted, switch to another "
                   'profile first.',
                   style: PT.meta.copyWith(color: P.inkFaint),
                   textAlign: TextAlign.center,
@@ -755,11 +758,11 @@ class _CreateProfileSheetState extends State<_CreateProfileSheet> {
           Text(label, style: PT.meta),
           const SizedBox(height: 6),
           DropdownButtonFormField<String>(
-            value: value,
+            initialValue: value,
             items: options
                 .map((o) => DropdownMenuItem(
                     value: o.isEmpty ? null : o,
-                    child: Text(o.isEmpty ? '—' : o)))
+                    child: Text(o.isEmpty ? ',' : o)))
                 .toList(),
             onChanged: onChanged,
             style: PT.body.copyWith(fontSize: 14),
@@ -803,15 +806,15 @@ class _CreateProfileSheetState extends State<_CreateProfileSheet> {
                   child: Text(
                     _avatar == null
                         ? 'Tap the circle to pick a picture.'
-                        : 'Picture selected — tap to change.',
+                        : 'Picture selected, tap to change.',
                     style: PT.meta.copyWith(color: P.inkFaint),
                   ),
                 ),
               ],
             ),
             const SizedBox(height: 16),
-            _field(_name, 'Name', 'e.g. nyx — the [agents.<name>] key'),
-            _field(_display, 'Display name', 'e.g. Nyx'),
+            _field(_name, 'Name', 'e.g. assistant, the [agents.<name>] key'),
+            _field(_display, 'Display name', 'e.g. Assistant'),
             _dropdown('Inherits', _inherits, inheritsOptions,
                 (v) => setState(() => _inherits = v)),
             _dropdown('Policy', _policy,
@@ -833,7 +836,7 @@ class _CreateProfileSheetState extends State<_CreateProfileSheet> {
                 'path to AGENTS.md equivalent'),
             const SizedBox(height: 4),
             GradientButton(
-              label: _saving ? 'Creating…' : 'Create profile',
+              label: _saving ? 'Creating...' : 'Create profile',
               onTap: _saving ? null : _save,
             ),
           ],
@@ -930,9 +933,9 @@ class _PersonaFileCardState extends State<_PersonaFileCard> {
                   _failed
                       ? 'Could not load'
                       : preview == null
-                          ? 'Loading…'
+                          ? 'Loading...'
                           : preview.isEmpty
-                              ? 'Empty — tap to write'
+                              ? 'Empty, tap to write'
                               : preview.split('\n').take(2).join('\n'),
                   style: PT.monoSm.copyWith(
                     fontSize: 11,
@@ -1073,7 +1076,7 @@ class _PersonaFileEditorState extends State<_PersonaFileEditor> {
             TextButton(
               onPressed: _saving || _loading || !_dirty ? null : _save,
               child: Text(
-                _saving ? 'Saving…' : 'Save',
+                _saving ? 'Saving...' : 'Save',
                 style: TextStyle(
                   color: _dirty && !_saving ? P.accent : P.inkFaint,
                   fontWeight: FontWeight.w600,
@@ -1107,7 +1110,7 @@ class _PersonaFileEditorState extends State<_PersonaFileEditor> {
                         textAlignVertical: TextAlignVertical.top,
                         style: PT.monoSm.copyWith(fontSize: 13, height: 1.6),
                         decoration: const InputDecoration(
-                          hintText: 'Write the file contents…',
+                          hintText: 'Write the file contents...',
                           contentPadding: EdgeInsets.all(14),
                         ),
                       ),

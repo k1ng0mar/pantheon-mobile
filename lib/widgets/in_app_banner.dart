@@ -5,7 +5,7 @@ import 'package:flutter/material.dart';
 import '../services/notification_service.dart';
 import '../theme.dart';
 
-/// One in-app notice: banner/overlay only, local only — no push.
+/// One in-app notice: banner/overlay only, local only, no push.
 class InAppNotice {
   final String title;
   final String body;

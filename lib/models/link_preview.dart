@@ -1,5 +1,5 @@
 /// Open Graph / page metadata for a URL, from
-/// `GET /api/link-preview?url=`. Every field is nullable — the backend
+/// `GET /api/link-preview?url=`. Every field is nullable, the backend
 /// only fills what the page actually exposes.
 class LinkPreview {
   final String? title;

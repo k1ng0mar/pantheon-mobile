@@ -37,7 +37,7 @@ class _StatsScreenState extends State<StatsScreen> {
         title: const Text('Usage'),
         actions: [
           IconButton(
-            icon:  Icon(Icons.refresh_rounded,
+            icon: Icon(Icons.refresh_rounded,
                 color: P.inkSecondary, weight: 1.6),
             onPressed: _load,
           ),

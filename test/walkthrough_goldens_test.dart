@@ -1,4 +1,4 @@
-/// Walkthrough screenshots as golden tests — CURRENTLY SKIPPED.
+/// Walkthrough screenshots as golden tests, CURRENTLY SKIPPED.
 ///
 /// The box's browser cannot reach local servers (Meta-hardened Chromium
 /// blocks local network access), so screenshots were attempted headlessly:
@@ -8,12 +8,12 @@
 /// BLOCKED (verified 2026-10-01, Flutter 3.47.5) by two engine/test-harness
 /// issues, each bisected with minimal probes:
 /// 1. `FontLoader.load()` never completes under flutter_tester (hangs even
-///    after pumpWidget + pumps, with valid TTFs) — screenshots would render
+///    after pumpWidget + pumps, with valid TTFs), screenshots would render
 ///    in the Ahem test font, which defeats their purpose.
 /// 2. `TestWidgetsFlutterBinding` replaces HttpClient with a mock returning
 ///    400 for every request (documented in the failure output), so the real
 ///    mock backend is unreachable from widget tests. (Workaround exists:
-///    `HttpOverrides.runZoned` with a real client — pointless until (1)
+///    `HttpOverrides.runZoned` with a real client, pointless until (1)
 ///    is fixed.)
 ///
 /// Re-enable when either is fixed: set `skip: false` below and run

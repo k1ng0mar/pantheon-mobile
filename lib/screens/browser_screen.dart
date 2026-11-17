@@ -49,8 +49,8 @@ class _BrowserScreenState extends State<BrowserScreen> {
   bool _sending = false;
 
   /// True once a live session's stream has ended (error or disconnect).
-  /// Drives the "Completed · <session>" panel: the browser session may
-  /// still be open server-side (there is no server-side stop endpoint —
+  /// Drives the `Completed · session` panel: the browser session may
+  /// still be open server-side (there is no server-side stop endpoint ,
   /// only GET status, GET stream, POST input), so this panel offers
   /// take-control or a plain disconnect of the local stream.
   bool _sessionEnded = false;
@@ -102,39 +102,39 @@ class _BrowserScreenState extends State<BrowserScreen> {
     final d = a.detail;
     switch (a.action) {
       case 'tap':
-        return 'Tapping…';
+        return 'Tapping...';
       case 'type':
       case 'fill-ref':
-        return 'Typing…';
+        return 'Typing...';
       case 'scroll':
-        return 'Scrolling…';
+        return 'Scrolling...';
       case 'navigate':
-        return 'Opening ${d.isEmpty ? 'page' : d}…';
+        return 'Opening ${d.isEmpty ? 'page' : d}...';
       case 'press':
-        return 'Pressing ${d.isEmpty ? 'key' : d}…';
+        return 'Pressing ${d.isEmpty ? 'key' : d}...';
       case 'snapshot':
-        return 'Reading the page…';
+        return 'Reading the page...';
       case 'click':
       case 'click-ref':
-        return 'Clicking…';
+        return 'Clicking...';
       case 'hover-ref':
-        return 'Hovering…';
+        return 'Hovering...';
       case 'back':
-        return 'Going back…';
+        return 'Going back...';
       case 'forward':
-        return 'Going forward…';
+        return 'Going forward...';
       case 'reload':
-        return 'Reloading…';
+        return 'Reloading...';
       case 'wait-for':
-        return 'Waiting…';
+        return 'Waiting...';
       case 'extract':
-        return 'Extracting…';
+        return 'Extracting...';
       case 'act':
-        return 'Acting…';
+        return 'Acting...';
       case 'screenshot':
-        return 'Capturing…';
+        return 'Capturing...';
       default:
-        return '${a.action[0].toUpperCase()}${a.action.substring(1)}…';
+        return '${a.action[0].toUpperCase()}${a.action.substring(1)}...';
     }
   }
 
@@ -342,7 +342,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      live ? 'Live · ${_session}' : 'Session',
+                      live ? 'Live · $_session' : 'Session',
                       style: PT.cardTitle.copyWith(fontSize: 15),
                     ),
                   ),
@@ -388,7 +388,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
                 const SizedBox(height: 8),
                 GradientButton(
                   label: _streamState == BrowserStreamState.connecting
-                      ? 'Connecting…'
+                      ? 'Connecting...'
                       : 'Connect',
                   icon: Icons.play_arrow_rounded,
                   onTap: _streamState == BrowserStreamState.connecting
@@ -430,7 +430,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
                 Text(
                   'The stream ended, but the browser session may '
                   'still be open server-side. Take control to keep '
-                  'watching it, or disconnect — disconnecting only '
+                  'watching it, or disconnect, disconnecting only '
                   'closes this view, not the session.',
                   style: PT.small
                       .copyWith(color: P.inkSecondary),
@@ -533,13 +533,13 @@ class _BrowserScreenState extends State<BrowserScreen> {
                               CircularProgressIndicator(
                                   color: P.accent),
                               const SizedBox(height: 12),
-                              Text('Getting control…',
+                              Text('Getting control...',
                                   style: PT.label),
                               const SizedBox(height: 4),
                               Text(_session, style: PT.meta),
                             ],
                           )
-                        : Text('Waiting for frames…',
+                        : Text('Waiting for frames...',
                             style: PT.meta),
                   ),
                 ),
@@ -563,7 +563,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
                           Icon(Icons.warning_amber_rounded,
                               size: 16, color: P.warn),
                           const SizedBox(width: 8),
-                          Text('Stale — stream dropped',
+                          Text('Stale, stream dropped',
                               style: PT.small.copyWith(color: P.warn)),
                         ],
                       ),
@@ -588,7 +588,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
               textInputAction: TextInputAction.send,
               onSubmitted: (_) => _sendType(),
               decoration:
-                  _fieldDecoration('Type into the page…'),
+                  _fieldDecoration('Type into the page...'),
             ),
           ),
           const SizedBox(width: 10),
@@ -640,7 +640,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
                   keyboardType: TextInputType.url,
                   textInputAction: TextInputAction.go,
                   onSubmitted: (_) => _navigate(),
-                  decoration: _fieldDecoration('https://…'),
+                  decoration: _fieldDecoration('https://...'),
                 ),
               ),
               const SizedBox(width: 10),

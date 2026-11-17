@@ -9,7 +9,7 @@ import '../widgets/forms.dart';
 import '../widgets/pantheon_card.dart';
 import '../widgets/states.dart';
 
-/// Plugins: tool plugins and hook extensions — approve or disable.
+/// Plugins: tool plugins and hook extensions, approve or disable.
 class PluginsScreen extends StatefulWidget {
   final PantheonApi api;
 
@@ -39,7 +39,7 @@ class _PluginsScreenState extends State<PluginsScreen> {
     final ok = await confirmAction(
       context,
       title: 'Approve this ${p.kind}?',
-      body: '“${p.name}” will be trusted to run on the runtime.',
+      body: '"${p.name}" will be trusted to run on the runtime.',
       confirmLabel: 'Approve',
     );
     if (!ok || !mounted) return;
@@ -47,7 +47,7 @@ class _PluginsScreenState extends State<PluginsScreen> {
     try {
       await widget.api.approvePlugin(p.kind, p.name);
       if (!mounted) return;
-      toast(context, '“${p.name}” approved.');
+      toast(context, '"${p.name}" approved.');
       _load();
     } catch (e) {
       if (mounted) toastError(context, e);
@@ -60,7 +60,7 @@ class _PluginsScreenState extends State<PluginsScreen> {
     final ok = await confirmAction(
       context,
       title: 'Disable this ${p.kind}?',
-      body: '“${p.name}” will stop loading on the runtime.',
+      body: '"${p.name}" will stop loading on the runtime.',
       confirmLabel: 'Disable',
       destructive: true,
     );
@@ -69,7 +69,7 @@ class _PluginsScreenState extends State<PluginsScreen> {
     try {
       await widget.api.disablePlugin(p.kind, p.name);
       if (!mounted) return;
-      toast(context, '“${p.name}” disabled.');
+      toast(context, '"${p.name}" disabled.');
       _load();
     } catch (e) {
       if (mounted) toastError(context, e);
@@ -106,7 +106,7 @@ class _PluginsScreenState extends State<PluginsScreen> {
                     keyboardType: TextInputType.url,
                     decoration: InputDecoration(
                       labelText: 'Plugin URL',
-                      hintText: 'https://github.com/…',
+                      hintText: 'https://github.com/...',
                       errorText: urlError,
                     ),
                     onChanged: (_) {
@@ -135,7 +135,7 @@ class _PluginsScreenState extends State<PluginsScreen> {
                       const SizedBox(width: 12),
                       Expanded(
                         child: PillButton(
-                          label: busy ? 'Importing…' : 'Import',
+                          label: busy ? 'Importing...' : 'Import',
                           onTap: busy
                               ? null
                               : () async {
@@ -190,7 +190,7 @@ class _PluginsScreenState extends State<PluginsScreen> {
   }
 
   /// Review sheet after a successful import: scan verdict, detected
-  /// capabilities, then approval — imported plugins stay unapproved until
+  /// capabilities, then approval, imported plugins stay unapproved until
   /// then. `malicious` blocks approval outright; `suspicious` needs an
   /// explicit risk acknowledgement; a missing `scan_report` renders as
   /// "scan unavailable" (amber, non-blocking).
@@ -224,7 +224,7 @@ class _PluginsScreenState extends State<PluginsScreen> {
       scanColor = P.warn;
       scanIcon = Icons.warning_amber_rounded;
       scanLabel =
-          'Suspicious — ${findings.length} finding${findings.length == 1 ? '' : 's'}';
+          'Suspicious, ${findings.length} finding${findings.length == 1 ? '' : 's'}';
     } else if (isMalicious) {
       scanColor = P.err;
       scanIcon = Icons.block_rounded;
@@ -254,7 +254,7 @@ class _PluginsScreenState extends State<PluginsScreen> {
                 Text('Plugin imported', style: PT.sectionTitle),
                 const SizedBox(height: 6),
                 Text(
-                  'Review before approving — it won’t load until you approve it.',
+                  'Review before approving, it won\'t load until you approve it.',
                   style: PT.meta,
                 ),
                 const SizedBox(height: 16),
@@ -491,7 +491,7 @@ class _PluginsScreenState extends State<PluginsScreen> {
             onPressed: _import,
           ),
           IconButton(
-            icon:  Icon(Icons.refresh_rounded,
+            icon: Icon(Icons.refresh_rounded,
                 color: P.inkSecondary, weight: 1.6),
             onPressed: _load,
           ),

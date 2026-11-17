@@ -206,7 +206,7 @@ class _IdeasScreenState extends State<IdeasScreen> {
   }
 }
 
-/// The per-idea three-dot menu, as a Nyx action sheet:
+/// The per-idea three-dot menu, as an action sheet:
 /// accept ("Let's do it"), positive feedback ("More like this"), or
 /// dismiss + negative feedback ("Not interested"). Shared by the list
 /// and detail screens.
@@ -256,7 +256,7 @@ Future<void> showIdeaActions(
         break;
       case 'more':
         await api.feedbackIdea(idea.id, 'more');
-        if (context.mounted) toast(context, 'Noted — more like this.');
+        if (context.mounted) toast(context, 'Noted, more like this.');
         break;
       case 'less':
         await api.dismissIdea(idea.id);

@@ -9,7 +9,7 @@ import '../theme.dart';
 /// One dark rounded card with a header block (title, status chip +
 /// outcome time, outcome detail when it exists), then MAIN / SUBAGENT NN
 /// sections whose rows hang off a dashed rail with status glyphs. Rows
-/// expand on tap. Detail lines only render when they have real content —
+/// expand on tap. Detail lines only render when they have real content ,
 /// empty strings never produce a line.
 class SessionTimeline extends StatefulWidget {
   final PantheonRun run;
@@ -18,7 +18,7 @@ class SessionTimeline extends StatefulWidget {
   /// button's spinner and disables double-taps).
   final bool retrying;
 
-  /// Retry callback for a failed run. Null hides the retry button —
+  /// Retry callback for a failed run. Null hides the retry button ,
   /// the agent activity screen passes nothing.
   final VoidCallback? onRetry;
 
@@ -118,7 +118,7 @@ class _SessionTimelineState extends State<SessionTimeline> {
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
                     : const Icon(Icons.refresh_rounded, size: 18),
-                label: Text(widget.retrying ? 'Retrying…' : 'Retry turn'),
+                label: Text(widget.retrying ? 'Retrying...' : 'Retry turn'),
                 style: OutlinedButton.styleFrom(
                   foregroundColor: P.accent,
                   side: BorderSide(color: P.accent.withValues(alpha: 0.5)),

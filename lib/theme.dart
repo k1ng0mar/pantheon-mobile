@@ -4,7 +4,7 @@ import 'services/app_preferences.dart';
 
 /// Pantheon design tokens.
 ///
-/// Nyx's discipline, re-inked: deep purple-navy surfaces, hairline borders
+/// Design tokens: deep purple-navy surfaces, hairline borders
 /// instead of shadows, one purple reserved for interactive/live elements.
 /// Brand gradient: #7223FF → #4B00CD → #0C0046.
 ///
@@ -13,7 +13,7 @@ import 'services/app_preferences.dart';
 /// the dynamic colors are exposed as static getters so every existing
 /// `P.surface` / `PT.small` reference follows the active theme without
 /// being rewritten. Brand, status, radii and font families stay `static
-/// const` — they are identical in both modes.
+/// const`, they are identical in both modes.
 class _Palette {
   final Color bg;
   final Color surface;
@@ -127,7 +127,7 @@ class P {
   static const info = Color(0xFF7DD3FC);
   static const live = Color(0xFF8B5CFF);
 
-  // Shape (Nyx radii)
+  // Shape
   static const r4 = 4.0;
   static const r8 = 8.0;
   static const r12 = 12.0;
@@ -225,7 +225,7 @@ class PT {
         color: P.inkFaint,
       );
 
-  /// The Nyx overline: 11sp uppercase, letterspaced group headers.
+  /// The overline: 11sp uppercase, letterspaced group headers.
   static TextStyle get overline => TextStyle(
         fontFamily: _bodyFont,
         fontSize: 11,
@@ -258,7 +258,7 @@ class PT {
 /// Build the Pantheon [ThemeData] for [brightness]. Applies the matching
 /// palette first so every `P.*` reference captured below belongs to it
 /// (colors are immutable, so this is safe to call for both modes in one
-/// frame — the caller re-applies the live brightness afterwards).
+/// frame, the caller re-applies the live brightness afterwards).
 ThemeData pantheonTheme(Brightness brightness, {bool compact = false}) {
   P.apply(brightness);
   final dark = brightness == Brightness.dark;

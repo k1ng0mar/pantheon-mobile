@@ -6,7 +6,7 @@ import 'buttons.dart';
 import 'states.dart';
 
 /// Shared admin-form helpers: text prompts and confirm sheets in the
-/// Nyx visual language, so every management screen behaves the same.
+/// The shared visual language, so every management screen behaves the same.
 
 /// Bottom-sheet text prompt. Returns the entered text, or null on cancel.
 /// With [allowEmpty], saving with an empty field returns '' instead of
@@ -129,7 +129,7 @@ Future<bool> confirmAction(
   return ok == true;
 }
 
-/// Press feedback matching the Nyx button language (0.88 opacity while
+/// Press feedback matching the button language (0.88 opacity while
 /// pressed). Mirrors the private `_Pressable` in buttons.dart, which this
 /// file cannot import.
 class _Pressable extends StatefulWidget {

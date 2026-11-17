@@ -32,7 +32,7 @@ class UsageStats {
 
   factory UsageStats.fromJson(Map<String, dynamic> j) {
     // The dashboard returns these as arrays of {model|day, totals} objects
-    // (sorted, highest cost first) — the same shape the web UI consumes.
+    // (sorted, highest cost first), the same shape the web UI consumes.
     Map<String, UsageTotals> section(String key, String nameKey) {
       final out = <String, UsageTotals>{};
       final list = j[key];

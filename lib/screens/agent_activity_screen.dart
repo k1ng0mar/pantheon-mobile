@@ -12,9 +12,9 @@ import '../widgets/states.dart';
 /// provider · model, compact stats) above this session's activity
 /// transcript.
 ///
-/// Unlike Muse's day-grouped profile feed, this is scoped to one
+/// Unlike a day-grouped profile feed, this is scoped to one
 /// session only. The status line is derived purely from the run's real
-/// state — never invented.
+/// state, never invented.
 class AgentActivityScreen extends StatefulWidget {
   final PantheonRun run;
   final PantheonApi api;

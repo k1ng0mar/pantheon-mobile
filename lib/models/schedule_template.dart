@@ -1,5 +1,5 @@
 /// A schedule template from `GET /api/schedule/templates`:
-/// {"name","description","schedule":{"type","expr"|"duration"},"vars":[…]}.
+/// {"name","description","schedule":{"type","expr"|"duration"},"vars":[...]}.
 class TemplateVar {
   final String name;
   final String? question;

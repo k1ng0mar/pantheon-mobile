@@ -191,7 +191,7 @@ class _DesktopScreenState extends State<DesktopScreen> {
       if (!mounted) return;
       _heartbeatTimer?.cancel();
       setState(() {
-        _heartbeatError = 'Heartbeat failed — control may be lost. '
+        _heartbeatError = 'Heartbeat failed, control may be lost. '
             'Release and take over again.';
         _leaseId = null;
       });
@@ -217,7 +217,7 @@ class _DesktopScreenState extends State<DesktopScreen> {
     } catch (e) {
       if (mounted) {
         // The lease stays ours locally; the server may already have
-        // expired it — either way the next status poll tells the truth.
+        // expired it, either way the next status poll tells the truth.
         toastError(context, e);
         _reloadStatus();
       }
@@ -343,13 +343,13 @@ class _DesktopScreenState extends State<DesktopScreen> {
               ),
               if (controlling)
                 PillButton(
-                  label: _releasing ? 'Releasing…' : 'Release',
+                  label: _releasing ? 'Releasing...' : 'Release',
                   onTap: _releasing ? null : _release,
                   color: P.warn,
                 )
               else
                 PillButton(
-                  label: _takingOver ? 'Taking over…' : 'Take over',
+                  label: _takingOver ? 'Taking over...' : 'Take over',
                   onTap: (_takingOver || heldElsewhere) ? null : _takeOver,
                 ),
             ],
@@ -412,7 +412,7 @@ class _DesktopScreenState extends State<DesktopScreen> {
                 ? Center(
                     child: live
                         ? CircularProgressIndicator(color: P.accent)
-                        : Text('Connecting…',
+                        : Text('Connecting...',
                             style: TextStyle(color: P.inkSecondary)),
                   )
                 : LayoutBuilder(
@@ -435,7 +435,7 @@ class _DesktopScreenState extends State<DesktopScreen> {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Text(
-              live ? 'Live' : 'Connecting…',
+              live ? 'Live' : 'Connecting...',
               style: TextStyle(fontSize: 12, color: P.inkSecondary),
             ),
             const SizedBox(width: 12),
@@ -491,7 +491,7 @@ class _DesktopScreenState extends State<DesktopScreen> {
                 child: TextField(
                   controller: _typeCtrl,
                   decoration: const InputDecoration(
-                    hintText: 'Type text…',
+                    hintText: 'Type text...',
                     border: OutlineInputBorder(),
                     isDense: true,
                   ),
@@ -509,7 +509,7 @@ class _DesktopScreenState extends State<DesktopScreen> {
                 child: TextField(
                   controller: _keyCtrl,
                   decoration: const InputDecoration(
-                    hintText: 'Key (Enter, Tab, Escape…)',
+                    hintText: 'Key (Enter, Tab, Escape...)',
                     border: OutlineInputBorder(),
                     isDense: true,
                   ),

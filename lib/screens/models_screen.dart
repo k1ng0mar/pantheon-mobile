@@ -207,7 +207,7 @@ class _ModelsScreenState extends State<ModelsScreen> {
         title: const Text('Models'),
         actions: [
           IconButton(
-            icon:  Icon(Icons.refresh_rounded,
+            icon: Icon(Icons.refresh_rounded,
                 color: P.inkSecondary, weight: 1.6),
             onPressed: _load,
           ),
@@ -431,7 +431,7 @@ class _ModelsScreenState extends State<ModelsScreen> {
     final text = _childBudgetCtrl.text.trim();
     if (text.isEmpty) {
       _childBudgetFocus.unfocus();
-      toast(context, 'No value entered — budget unchanged.');
+      toast(context, 'No value entered, budget unchanged.');
       return;
     }
     final value = int.tryParse(text);

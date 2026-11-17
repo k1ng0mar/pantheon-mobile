@@ -58,7 +58,7 @@ class _HomeScreenState extends State<HomeScreen> {
         title: const Text('Overview'),
         actions: [
           IconButton(
-            icon:  Icon(Icons.refresh_rounded,
+            icon: Icon(Icons.refresh_rounded,
                 color: P.inkSecondary, weight: 1.6),
             onPressed: _load,
           ),

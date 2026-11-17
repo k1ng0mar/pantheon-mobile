@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../theme.dart';
 
-/// Hairline card: 16dp radius, 1dp border, zero shadow. The Nyx rule.
+/// Hairline card: 16dp radius, 1dp border, zero shadow. The card rule.
 class PCard extends StatelessWidget {
   final Widget child;
   final EdgeInsetsGeometry padding;
@@ -44,7 +44,7 @@ class PCard extends StatelessWidget {
   }
 }
 
-/// 7dp status dot, top-aligned to the first text line (Nyx rule).
+/// 7dp status dot, top-aligned to the first text line (card rule).
 class StatusDot extends StatelessWidget {
   final Color color;
   final bool hollow;
@@ -66,7 +66,7 @@ class StatusDot extends StatelessWidget {
   }
 }
 
-/// Nyx ListItem: 56dp min row, 15/500 title, 12 muted subtitle,
+/// List item: 56dp min row, 15/500 title, 12 muted subtitle,
 /// right-aligned mono supporting text, status dot, chevron.
 class PRow extends StatelessWidget {
   final String title;

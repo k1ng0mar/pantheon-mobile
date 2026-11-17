@@ -12,7 +12,7 @@ import '../widgets/forms.dart';
 /// Full-screen design-round viewer: swipeable [PageView], one page per
 /// variant, with a gate-report bottom sheet and an action bar.
 ///
-/// v1 renders round stills from `GET /api/uploads/:id` (memoized bytes —
+/// v1 renders round stills from `GET /api/uploads/:id` (memoized bytes ,
 /// no live stream; P5b swaps the substrate later). Actions ride the
 /// verified `PantheonApi.sendRunMessage` channel:
 ///
@@ -80,14 +80,14 @@ class _DesignViewerScreenState extends State<DesignViewerScreen> {
       toast(
         context,
         result.steered
-            ? 'Steering the running turn…'
+            ? 'Steering the running turn...'
             : (result.queued
-                ? 'Queued — sends when the turn settles.'
+                ? 'Queued, sends when the turn settles.'
                 : 'Sent.'),
       );
     } on PantheonTurnInFlightException {
       // Lost the idle→busy race between open and send.
-      if (mounted) toast(context, 'A turn is already in flight — try again.');
+      if (mounted) toast(context, 'A turn is already in flight, try again.');
     } catch (e) {
       if (mounted) toastError(context, e);
     } finally {
@@ -178,7 +178,7 @@ class _DesignViewerScreenState extends State<DesignViewerScreen> {
               ),
               const SizedBox(height: 12),
               GradientButton(
-                label: _sending ? 'Sending…' : 'Send feedback',
+                label: _sending ? 'Sending...' : 'Send feedback',
                 onTap: _sending
                     ? null
                     : () => Navigator.of(sheetContext).pop(controller.text),
@@ -245,7 +245,7 @@ class _DesignViewerScreenState extends State<DesignViewerScreen> {
                   ),
                   const SizedBox(width: 8),
                   PillButton(
-                    label: _sending ? 'Sending…' : 'Confirm',
+                    label: _sending ? 'Sending...' : 'Confirm',
                     onTap: _sending ? null : _pickVariant,
                     color: P.warn,
                   ),
@@ -261,7 +261,7 @@ class _DesignViewerScreenState extends State<DesignViewerScreen> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   GradientButton(
-                    label: _sending ? 'Sending…' : 'Approve',
+                    label: _sending ? 'Sending...' : 'Approve',
                     onTap: _sending ? null : _approve,
                   ),
                   const SizedBox(height: 8),

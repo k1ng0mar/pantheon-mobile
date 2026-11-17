@@ -12,7 +12,7 @@ import '../widgets/states.dart';
 /// Backend: `GET /api/oauth/status` (local-first OAuth tokens in the
 /// secrets vault). The OAuth dance itself needs the host browser
 /// (loopback flow), so a disconnected provider shows guidance to run
-/// `pantheon oauth login <app>` on the host — the phone never attempts
+/// `pantheon oauth login <app>` on the host, the phone never attempts
 /// the flow.
 class OAuthScreen extends StatefulWidget {
   final PantheonApi api;
@@ -38,7 +38,7 @@ class _OAuthScreenState extends State<OAuthScreen> {
 
   String _expiryText(OAuthProviderStatus p) {
     if (!p.connected) return 'Not connected';
-    if (p.expired) return 'Token expired — re-login on the host';
+    if (p.expired) return 'Token expired, re-login on the host';
     final e = p.expiresAt;
     if (e == null) return 'Connected · no expiry';
     final diff = e.difference(DateTime.now());

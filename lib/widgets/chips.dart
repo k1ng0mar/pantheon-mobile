@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../theme.dart';
 
-/// The Nyx overline: 11sp uppercase, letterspaced group header.
+/// The overline: 11sp uppercase, letterspaced group header.
 class Overline extends StatelessWidget {
   final String text;
 
@@ -91,7 +91,7 @@ class StatusChip extends StatelessWidget {
   }
 }
 
-/// Pulsing live indicator (Nyx mic-dot pulse language).
+/// Pulsing live indicator (mic-dot pulse language).
 class LiveDot extends StatefulWidget {
   final Color? color;
   final double size;

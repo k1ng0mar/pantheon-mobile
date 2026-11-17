@@ -7,7 +7,7 @@ import '../theme.dart';
 import '../widgets/buttons.dart';
 
 /// First-run (and re-connect) screen: dashboard URL + token.
-/// Hero: slow-drifting gradient orbs — the fun bit.
+/// Hero: slow-drifting gradient orbs, the fun bit.
 class ConnectScreen extends StatefulWidget {
   final String initialBaseUrl;
   final String initialToken;
@@ -97,7 +97,7 @@ class _ConnectScreenState extends State<ConnectScreen>
               children: [
                 _Delayed(
                     index: 0,
-                    child:  Text('Pantheon', style: PT.screenTitle)),
+                    child: Text('Pantheon', style: PT.screenTitle)),
                 _Delayed(
                     index: 1,
                     child: Padding(
@@ -120,7 +120,7 @@ class _ConnectScreenState extends State<ConnectScreen>
                           keyboardType: TextInputType.url,
                           autocorrect: false,
                           style: PT.body,
-                          decoration:  InputDecoration(
+                          decoration: InputDecoration(
                             hintText: 'http://192.168.1.10:7171',
                             prefixIcon: Icon(Icons.link_rounded,
                                 color: P.inkFaint, weight: 1.6),
@@ -143,7 +143,7 @@ class _ConnectScreenState extends State<ConnectScreen>
                           style: PT.mono,
                           decoration: InputDecoration(
                             hintText: 'paste the dashboard token',
-                            prefixIcon:  Icon(Icons.key_outlined,
+                            prefixIcon: Icon(Icons.key_outlined,
                                 color: P.inkFaint, weight: 1.6),
                             suffixIcon: IconButton(
                               icon: Icon(

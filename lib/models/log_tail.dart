@@ -1,5 +1,5 @@
 /// Tail of a log from `GET /api/logs`:
-/// {"source": "agent", "lines": […], "note"?}.
+/// {"source": "agent", "lines": [...], "note"?}.
 class LogTail {
   final String source;
   final List<String> lines;

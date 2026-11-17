@@ -2,12 +2,11 @@
 ///
 /// FIXTURE-BASED: these tests exercise fenced-block parsing, card/viewer
 /// rendering, and action payload strings against a canned
-/// `drafthouse-gate` block — they are NOT run against a live session or a
+/// `drafthouse-gate` block, they are NOT run against a live session or a
 /// real backend. Still bytes come from a fake [PantheonApi] override.
 library;
 
 import 'dart:convert';
-import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -21,7 +20,7 @@ import 'package:pantheon_mobile/widgets/design_review_shared.dart';
 import 'package:pantheon_mobile/widgets/message_content.dart';
 
 const _fixtureText = '''
-Here's round 3 — the judge picked B.
+Here's round 3, the judge picked B.
 
 ```drafthouse-gate
 {"artifact":"landing-v3.html","round":3,
@@ -44,7 +43,7 @@ const _shipText = '''
 ```
 ''';
 
-/// 1x1 transparent PNG — decodable by the test engine.
+/// 1x1 transparent PNG, decodable by the test engine.
 final _pngBytes = base64Decode(
     'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==');
 
@@ -162,7 +161,7 @@ Here's the contract:
 
   group('action payloads', () {
     test('approve message is the exact skill-contract trigger', () {
-      expect(drafthouseApproveMessage(), 'Approved — proceed to handoff.');
+      expect(drafthouseApproveMessage(), 'Approved, proceed to handoff.');
     });
 
     test('request-changes message carries round, variant, text', () {
@@ -219,11 +218,13 @@ Here's the contract:
         (tester) async {
       await _pump(
         tester,
-        MessageContent(
-          text: _fixtureText,
-          textStyle: PT.body,
-          api: _FakeApi(),
-          runId: 'run-1',
+        SingleChildScrollView(
+          child: MessageContent(
+            text: _fixtureText,
+            textStyle: PT.body,
+            api: _FakeApi(),
+            runId: 'run-1',
+          ),
         ),
       );
       expect(find.byType(DesignReviewCard), findsOneWidget);
@@ -280,7 +281,11 @@ Here's the contract:
       expect(find.text('Philosophy'), findsOneWidget);
       expect(find.text('Execution · min'), findsOneWidget);
       expect(find.text('P0 blocking'), findsOneWidget);
+      await tester.drag(find.byType(ListView).last, const Offset(0, -420));
+      await tester.pumpAndSettle();
       expect(find.text('Tokens'), findsOneWidget);
+      await tester.drag(find.byType(ListView).last, const Offset(0, -160));
+      await tester.pumpAndSettle();
       expect(find.text('Vision composite'), findsOneWidget);
     });
   });

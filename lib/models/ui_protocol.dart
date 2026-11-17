@@ -14,7 +14,7 @@
 //
 // Version policy: this client speaks v1 only. Documents with any other
 // version degrade to an explanatory note (mirrors `degrade_for` in the
-// Rust protocol) — a newer version is never assumed compatible.
+// Rust protocol), a newer version is never assumed compatible.
 //
 // Parsing is total: missing, malformed, or unknown data degrades to a
 // fallback component instead of throwing, so a bad document can never
@@ -90,7 +90,7 @@ class UiNode {
 /// Base for all components. Unknown `type` tags become [UiUnsupported]
 /// carrying the raw payload for diagnostics (never rendered raw).
 sealed class UiComponent {
-  /// The wire tag (`markdown`, `form`, …).
+  /// The wire tag (`markdown`, `form`, ...).
   String get type;
 
   static UiComponent parse(String type, Map<String, dynamic> j,
@@ -160,7 +160,7 @@ class UiMarkdown extends UiComponent {
       );
 }
 
-/// `table {headers, rows, title?}` — `align` is display-only; ignored.
+/// `table {headers, rows, title?}`, `align` is display-only; ignored.
 class UiTable extends UiComponent {
   @override
   String get type => 'table';
@@ -177,7 +177,7 @@ class UiTable extends UiComponent {
       );
 }
 
-/// `chart {chart_type, labels, series, title?}` — values may be long;
+/// `chart {chart_type, labels, series, title?}`, values may be long;
 /// renderers should cap what they draw.
 class UiChart extends UiComponent {
   @override
@@ -529,7 +529,7 @@ class UiLayout extends UiComponent {
       );
 }
 
-/// `custom {name, version, payload, fallback}` — always render `fallback`.
+/// `custom {name, version, payload, fallback}`, always render `fallback`.
 class UiCustom extends UiComponent {
   @override
   String get type => 'custom';

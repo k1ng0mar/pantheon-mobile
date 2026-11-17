@@ -8,7 +8,7 @@ import 'forms.dart';
 
 /// Rich link preview card rendered under a chat message's text.
 ///
-/// Fetches `GET /api/link-preview?url=` once per URL — results are held
+/// Fetches `GET /api/link-preview?url=` once per URL, results are held
 /// in a static in-memory cache so rebuilds and repeated messages never
 /// refetch within the session. While loading (or when the lookup fails
 /// / returns nothing usable) this renders nothing, so the plain URL

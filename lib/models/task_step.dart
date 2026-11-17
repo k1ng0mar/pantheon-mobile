@@ -2,8 +2,8 @@
 //
 // A **task** is one turn of a session: the transcript segmented at
 // user messages. A **step** is one tool call inside a turn. Everything
-// here is derived app-side from the existing run-detail contract — no
-// API change — and all titles, summaries, and detail prose come from
+// here is derived app-side from the existing run-detail contract, no
+// API change, and all titles, summaries, and detail prose come from
 // deterministic templates over real fields (tool name, arguments,
 // output, timestamps). Nothing is fabricated: a step with no recorded
 // output renders no summary line, and the detail prose only states
@@ -114,7 +114,7 @@ String? delegatePromptOf(Map<String, dynamic> args) =>
     nonEmptyArgValue(args['input']);
 
 /// Best-effort error detection: the backend has no machine-readable
-/// error marker on tool results, so match the common "Error…" prefix.
+/// error marker on tool results, so match the common "Error..." prefix.
 bool looksLikeToolError(String content) =>
     content.trimLeft().toLowerCase().startsWith('error');
 
@@ -127,7 +127,7 @@ String prettyArgsJson(String argsJson) {
 }
 
 String truncateTo(String s, int n) =>
-    s.length <= n ? s : '${s.substring(0, n).trimRight()}…';
+    s.length <= n ? s : '${s.substring(0, n).trimRight()}...';
 
 /// "64 ms" / "1.1 s" / "2m 5s" from a millisecond duration.
 String formatDurationMs(int ms) {
@@ -288,7 +288,7 @@ String? salientArg(Map<String, dynamic> args,
   return null;
 }
 
-/// Whether this command lists a directory (`ls …`, `find …`, `dir …`
+/// Whether this command lists a directory (`ls ...`, `find ...`, `dir ...`
 /// as the first token).
 bool isListCommand(String command) {
   final first = command.trim().split(RegExp(r'\s+')).first.toLowerCase();
@@ -375,7 +375,7 @@ int? parseExitCode(String output) {
 }
 
 /// Deterministic one-line outcome summary. Empty when there is
-/// nothing factual to say — callers hide empty summaries, never
+/// nothing factual to say, callers hide empty summaries, never
 /// render them.
 String deriveStepSummary({
   required ToolCallRef call,

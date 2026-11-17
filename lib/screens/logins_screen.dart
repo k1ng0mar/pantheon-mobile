@@ -9,7 +9,7 @@ import '../widgets/pantheon_card.dart';
 import '../widgets/states.dart';
 
 /// Website logins: credentials the browser tool can use to sign in to
-/// sites. Passwords are stored server-side and never returned by the API —
+/// sites. Passwords are stored server-side and never returned by the API ,
 /// the app only ever shows the masked placeholder, never the secret.
 class LoginsScreen extends StatefulWidget {
   final PantheonApi api;
@@ -70,7 +70,7 @@ class _LoginsScreenState extends State<LoginsScreen> {
     final ok = await confirmAction(
       context,
       title: 'Delete this login?',
-      body: '“${entry.username} @ ${entry.site}” will be removed. '
+      body: '"${entry.username} @ ${entry.site}" will be removed. '
           'The browser tool will no longer be able to sign in there.',
       confirmLabel: 'Delete',
       destructive: true,

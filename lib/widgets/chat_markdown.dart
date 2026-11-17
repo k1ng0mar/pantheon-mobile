@@ -5,7 +5,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../theme.dart';
 
 /// Compact markdown renderer for chat messages: headings, bold/italic,
-/// inline code, lists, and real tables — not monospace dumps.
+/// inline code, lists, and real tables, not monospace dumps.
 ///
 /// Fenced code blocks never reach this widget: [MessageContent] splits
 /// them out first and renders them as [CodeBlock] (which owns its copy

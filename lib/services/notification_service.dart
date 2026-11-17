@@ -14,7 +14,7 @@ import 'app_preferences.dart';
 /// the session detail screen (run completed / failed, approval parked)
 /// and the approvals screen poller (new parked approvals). Schedule and
 /// nightly events expose the same toggles but have no polling ingress
-/// point yet, so they have no call sites — wiring them needs a
+/// point yet, so they have no call sites, wiring them needs a
 /// background poller.
 class NotificationService {
   NotificationService._();

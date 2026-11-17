@@ -47,7 +47,7 @@ class _VoiceNotePillState extends State<VoiceNotePill> {
   int _seconds = 0;
   final List<double> _levels = List.filled(_barCount, 0.0);
 
-  /// True while stopping/cancelling — the buttons lock so a double tap
+  /// True while stopping/cancelling, the buttons lock so a double tap
   /// can't race the recorder.
   bool _busy = false;
 
@@ -85,11 +85,12 @@ class _VoiceNotePillState extends State<VoiceNotePill> {
         if (_seconds >= VoiceNotePill.maxSeconds) _send();
       });
     } catch (_) {
-      // Recorder failed to start (e.g. mic in use elsewhere): bail out
-      // cleanly instead of trapping the user in a dead pill.
+      // Recorder failed to start (e.g. mic in use elsewhere): tell the
+      // parent first, then show the toast. A broken toast must not leave
+      // the composer stuck with a dead pill.
+      widget.onDiscard();
       if (!mounted) return;
       toast(context, 'Could not start recording.');
-      widget.onDiscard();
     }
   }
 

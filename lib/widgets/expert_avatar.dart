@@ -34,8 +34,8 @@ String initialsOf(String name) {
   return '$first$second'.toUpperCase();
 }
 
-/// Colored avatar circle with initials (Nyx: tonal fill, colored ring).
-/// Member/expert `icon` strings are not mapped to Material icons here —
+/// Colored avatar circle with initials (tonal fill, colored ring).
+/// Member/expert `icon` strings are not mapped to Material icons here ,
 /// their format is backend-defined, so initials are always reliable.
 class MemberAvatar extends StatelessWidget {
   final String name;

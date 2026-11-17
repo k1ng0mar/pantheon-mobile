@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../theme.dart';
 
-/// Nyx buttons: 52dp tall, 20dp radius. Pressed = 0.88 opacity.
+/// Buttons: 52dp tall, 20dp radius. Pressed = 0.88 opacity.
 class _Pressable extends StatefulWidget {
   final Widget child;
   final VoidCallback? onTap;

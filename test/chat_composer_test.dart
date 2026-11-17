@@ -1,6 +1,6 @@
 /// Widget tests for the floating [ChatComposer].
 ///
-/// These exercise the composer's presentation contract in isolation —
+/// These exercise the composer's presentation contract in isolation ,
 /// the owning screen keeps all behavior (send, stop, attachments,
 /// voice notes, model picking) and passes it in as callbacks:
 ///
@@ -117,7 +117,7 @@ void main() {
     await tester.pumpWidget(_harness(agentName: longName));
     await tester.pumpAndSettle();
 
-    final hintFinder = find.text('Message $longName…');
+    final hintFinder = find.text('Message $longName...');
     expect(hintFinder, findsOneWidget);
     final hint = tester.widget<Text>(hintFinder);
     expect(hint.maxLines, 1);
@@ -209,11 +209,11 @@ void main() {
 
   testWidgets('replacing swaps field+toolbar inside the pill', (tester) async {
     await tester.pumpWidget(_harness(
-      replacing: const Text('transcribing…'),
+      replacing: const Text('transcribing...'),
     ));
     await tester.pumpAndSettle();
 
-    expect(find.text('transcribing…'), findsOneWidget);
+    expect(find.text('transcribing...'), findsOneWidget);
     expect(find.byType(TextField), findsNothing);
     expect(find.byIcon(Icons.add_rounded), findsNothing);
   });

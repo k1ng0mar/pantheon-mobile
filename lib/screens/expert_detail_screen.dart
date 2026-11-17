@@ -27,7 +27,7 @@ Future<bool> useTeamAndOpenSession(
       }
       return null;
     }
-    // run_id is the lead's coordination run — the user-facing session.
+    // run_id is the lead's coordination run, the user-facing session.
     final sessionId = pick(['run_id', 'swarm_id', 'session_id', 'id']);
     if (sessionId == null) {
       throw Exception('The /use endpoint returned no session id.');
@@ -140,7 +140,7 @@ class _ExpertDetailScreenState extends State<ExpertDetailScreen> {
                         padding:
                             const EdgeInsets.fromLTRB(16, 8, 16, 16),
                         child: GradientButton(
-                          label: _using ? 'Starting…' : 'Use team',
+                          label: _using ? 'Starting...' : 'Use team',
                           onTap: _using ? null : _use,
                         ),
                       ),
@@ -423,7 +423,7 @@ class _ExpertDetailScreenState extends State<ExpertDetailScreen> {
                   Text(m.name, style: PT.rowTitle),
                   if (m.unresolved) ...[
                     const SizedBox(height: 2),
-                    Text('Expert deleted — unresolved.',
+                    Text('Expert deleted, unresolved.',
                         style: PT.meta.copyWith(color: P.warn)),
                   ] else if (m.role.isNotEmpty) ...[
                     const SizedBox(height: 2),

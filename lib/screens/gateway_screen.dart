@@ -65,7 +65,7 @@ class _GatewayScreenState extends State<GatewayScreen> {
         title: const Text('Gateway'),
         actions: [
           IconButton(
-            icon:  Icon(Icons.refresh_rounded,
+            icon: Icon(Icons.refresh_rounded,
                 color: P.inkSecondary, weight: 1.6),
             onPressed: _load,
           ),
@@ -170,7 +170,7 @@ class _GatewayScreenState extends State<GatewayScreen> {
                 SizedBox(
                   width: double.infinity,
                   child: GradientButton(
-                    label: _restarting ? 'Restarting…' : 'Restart gateway',
+                    label: _restarting ? 'Restarting...' : 'Restart gateway',
                     icon: Icons.refresh_rounded,
                     onTap: _restarting ? null : _restart,
                   ),

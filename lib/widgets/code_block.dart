@@ -75,7 +75,7 @@ class _CodeBlockState extends State<CodeBlock> {
             CodeHighlight.themeBackgrounds[themeId] ?? const Color(0xFF282A36);
         final fg =
             CodeHighlight.themeForegrounds[themeId] ?? const Color(0xFFF8F8F2);
-        final dim = fg.withOpacity(0.62);
+        final dim = fg.withValues(alpha: 0.62);
         return Container(
           margin: const EdgeInsets.only(top: 6),
           decoration: BoxDecoration(
@@ -114,7 +114,7 @@ class _CodeBlockState extends State<CodeBlock> {
                   ],
                 ),
               ),
-              Divider(height: 1, color: fg.withOpacity(0.12)),
+              Divider(height: 1, color: fg.withValues(alpha: 0.12)),
               FutureBuilder<TextSpan>(
                 future: _highlighted,
                 builder: (_, snap) {

@@ -5,7 +5,7 @@ import 'package:flutter/material.dart';
 import '../services/app_preferences.dart';
 import '../theme.dart';
 
-/// Nyx empty state: centered thin icon, title, body, CTA.
+/// Empty state: centered thin icon, title, body, CTA.
 class EmptyState extends StatelessWidget {
   final IconData icon;
   final String title;
@@ -65,7 +65,7 @@ class EmptyState extends StatelessWidget {
 class LoadingState extends StatelessWidget {
   final String label;
 
-  const LoadingState({super.key, this.label = 'Loading…'});
+  const LoadingState({super.key, this.label = 'Loading...'});
 
   @override
   Widget build(BuildContext context) {
@@ -137,7 +137,7 @@ class _ShimmerState extends State<Shimmer> with SingleTickerProviderStateMixin {
       animation: _c,
       builder: (_, __) => ShaderMask(
         shaderCallback: (bounds) => LinearGradient(
-          colors:  [P.tonal, P.borderStrong, P.tonal],
+          colors: [P.tonal, P.borderStrong, P.tonal],
           stops: [0.0, _c.value, 1.0],
           begin: Alignment.centerLeft,
           end: Alignment.centerRight,
@@ -224,7 +224,7 @@ class CountUp extends StatelessWidget {
   }
 }
 
-/// Nyx-style bottom sheet: 28dp top radius, drag handle, 90% max height.
+/// Bottom sheet: 28dp top radius, drag handle, 90% max height.
 Future<T?> showPSheet<T>(BuildContext context, Widget child) {
   return showModalBottomSheet<T>(
     context: context,

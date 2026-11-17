@@ -21,7 +21,7 @@ class DesignReviewCard extends StatefulWidget {
   final PantheonApi api;
   final String runId;
 
-  /// True when the run's turn is in flight (`running`/`paused`) — design
+  /// True when the run's turn is in flight (`running`/`paused`), design
   /// actions then queue/steer instead of starting a new turn.
   final bool isBusy;
 

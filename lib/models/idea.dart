@@ -2,14 +2,14 @@
 ///
 /// ```json
 /// {"ideas":[{
-///   "id": "…",
-///   "title": "…",
-///   "description": "…",
+///   "id": "...",
+///   "title": "...",
+///   "description": "...",
 ///   "includes": ["step one", "step two"],
 ///   "kind": "general" | "scheduled_task",
 ///   "status": "pending",
 ///   "created_day": "2026-09-30",
-///   "schedule": {…}          // scheduled_task only
+///   "schedule": {...}          // scheduled_task only
 /// }]}
 /// ```
 enum IdeaKind { general, scheduledTask }

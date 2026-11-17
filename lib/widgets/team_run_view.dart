@@ -207,7 +207,7 @@ class _HandoffRow extends StatelessWidget {
 /// and the multi-agent transcript with per-expert attribution.
 ///
 /// Members' messages render as team activity here; the lead's messages
-/// are the primary thread (the Chat tab — the lead's run is the only
+/// are the primary thread (the Chat tab, the lead's run is the only
 /// user-facing run).
 class TeamRunView extends StatefulWidget {
   final PantheonApi api;
@@ -437,7 +437,7 @@ class _TeamRunViewState extends State<TeamRunView> {
     final widgets = <Widget>[];
     final claimed = <String>{};
 
-    // The lead's message is the primary thread — first.
+    // The lead's message is the primary thread, first.
     _TBlock? leadBlock;
     for (final b in byName.values) {
       if (b.role.toLowerCase().contains('lead')) {

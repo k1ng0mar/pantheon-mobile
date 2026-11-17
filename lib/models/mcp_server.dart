@@ -42,14 +42,14 @@ class McpServer {
   String get describe {
     if (transport == 'stdio') {
       final a = args.isEmpty ? '' : ' ${args.join(' ')}';
-      return '${command ?? '—'}$a';
+      return '${command ?? ','}$a';
     }
     return url ?? transport;
   }
 }
 
 /// One source group from `GET /api/mcp/servers`:
-/// {"source","origin","servers":[…]}.
+/// {"source","origin","servers":[...]}.
 class McpServerGroup {
   final String source;
   final String origin;

@@ -39,7 +39,7 @@ class _McpScreenState extends State<McpScreen> {
     try {
       await widget.api.setMcpServerEnabled(s.name, !s.enabled);
       if (!mounted) return;
-      toast(context, '“${s.name}” ${s.enabled ? 'disabled' : 'enabled'}.');
+      toast(context, '"${s.name}" ${s.enabled ? 'disabled' : 'enabled'}.');
       _load();
     } catch (e) {
       if (mounted) toastError(context, e);
@@ -54,7 +54,7 @@ class _McpScreenState extends State<McpScreen> {
       final res = await widget.api.testMcpServer(s.name);
       if (!mounted) return;
       final ok = res['ok'] == true;
-      toast(context, ok ? '“${s.name}” reachable.' : 'Test: ${res['error'] ?? res}');
+      toast(context, ok ? '"${s.name}" reachable.' : 'Test: ${res['error'] ?? res}');
     } catch (e) {
       if (mounted) toastError(context, e);
     } finally {
@@ -66,7 +66,7 @@ class _McpScreenState extends State<McpScreen> {
     final ok = await confirmAction(
       context,
       title: 'Delete server?',
-      body: '“${s.name}” will be removed from its declaration file.',
+      body: '"${s.name}" will be removed from its declaration file.',
       confirmLabel: 'Delete',
       destructive: true,
     );
@@ -97,7 +97,7 @@ class _McpScreenState extends State<McpScreen> {
     try {
       await widget.api.approveMcpServer(name);
       if (!mounted) return;
-      toast(context, '“$name” approved.');
+      toast(context, '"$name" approved.');
       _load();
     } catch (e) {
       if (mounted) toastError(context, e);
@@ -181,7 +181,7 @@ class _McpScreenState extends State<McpScreen> {
                       keyboardType: TextInputType.url,
                       decoration: const InputDecoration(
                         labelText: 'URL',
-                        hintText: 'https://…',
+                        hintText: 'https://...',
                       ),
                     ),
                   ],
@@ -252,12 +252,12 @@ class _McpScreenState extends State<McpScreen> {
         actions: [
           IconButton(
             tooltip: 'Reload MCP',
-            icon:  Icon(Icons.cached_rounded,
+            icon: Icon(Icons.cached_rounded,
                 color: P.inkSecondary, weight: 1.6),
             onPressed: _reload,
           ),
           IconButton(
-            icon:  Icon(Icons.refresh_rounded,
+            icon: Icon(Icons.refresh_rounded,
                 color: P.inkSecondary, weight: 1.6),
             onPressed: _load,
           ),

@@ -9,7 +9,7 @@ import '../widgets/forms.dart';
 import '../widgets/pantheon_card.dart';
 import '../widgets/states.dart';
 
-/// Keys: the runtime `.env` key manager. Values are redacted server-side —
+/// Keys: the runtime `.env` key manager. Values are redacted server-side ,
 /// the app only ever shows the masked form, never the secret itself.
 class KeysScreen extends StatefulWidget {
   final PantheonApi api;
@@ -50,7 +50,7 @@ class _KeysScreenState extends State<KeysScreen> {
       context,
       title: 'Value for $key',
       label: 'Value',
-      hint: 'Paste the secret — it is stored, never shown',
+      hint: 'Paste the secret, it is stored, never shown',
       obscure: true,
       confirmLabel: 'Save',
     );
@@ -58,7 +58,7 @@ class _KeysScreenState extends State<KeysScreen> {
     final ok = await confirmAction(
       context,
       title: 'Save this key?',
-      body: '“$key” will be written to the runtime .env file.',
+      body: '"$key" will be written to the runtime .env file.',
       confirmLabel: 'Save',
     );
     if (!ok || !mounted) return;
@@ -76,7 +76,7 @@ class _KeysScreenState extends State<KeysScreen> {
     final ok = await confirmAction(
       context,
       title: 'Delete this key?',
-      body: '“${k.key}” will be removed from the runtime .env file.',
+      body: '"${k.key}" will be removed from the runtime .env file.',
       confirmLabel: 'Delete',
       destructive: true,
     );
@@ -98,7 +98,7 @@ class _KeysScreenState extends State<KeysScreen> {
         title: const Text('Keys'),
         actions: [
           IconButton(
-            icon:  Icon(Icons.refresh_rounded,
+            icon: Icon(Icons.refresh_rounded,
                 color: P.inkSecondary, weight: 1.6),
             onPressed: _load,
           ),

@@ -1,21 +1,54 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:record/record.dart';
 
+import 'package:pantheon_mobile/services/app_preferences.dart';
 import 'package:pantheon_mobile/widgets/voice_note_pill.dart';
 
-/// Widget tests for the voice-note composer pill. These exercise the
-/// pill's own states only — no platform recorder exists under
-/// flutter_test, so recording start fails and the pill must take its
-/// fail-safe path (toast + onDiscard) instead of trapping the user.
+class _FailingRecorder extends AudioRecorder {
+  @override
+  Future<void> start(RecordConfig config, {required String path}) async {
+    throw StateError('no recorder in widget tests');
+  }
+
+  @override
+  Future<String?> stop() async => null;
+
+  @override
+  Future<void> dispose() async {}
+
+  @override
+  Future<void> cancel() async {}
+}
+
+/// Widget tests for the voice-note composer pill. They use a recorder
+/// stub that fails on start, so the pill always takes its fail-safe path
+/// instead of depending on which platform plugins happen to be installed.
 /// The send→upload→transcript-into-composer path lives in
 /// SessionDetailScreen._finishVoiceNote and is not covered here: pumping
 /// the full session screen needs fixtures this env can't run.
 void main() {
+  const channel = MethodChannel('plugins.flutter.io/path_provider');
+
+  setUp(() {
+    AppPreferences.instance.hapticsEnabled.value = false;
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+      if (call.method == 'getTemporaryDirectory') return '/tmp';
+      return null;
+    });
+  });
+
+  tearDown(() {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, null);
+  });
+
   testWidgets('pill renders trash, running timer, waveform and send',
       (tester) async {
     var discarded = 0;
-    final recorder = AudioRecorder();
+    final recorder = _FailingRecorder();
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
@@ -44,7 +77,7 @@ void main() {
   testWidgets('trash discards without confirmation', (tester) async {
     var discarded = 0;
     var finished = 0;
-    final recorder = AudioRecorder();
+    final recorder = _FailingRecorder();
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
@@ -74,7 +107,7 @@ void main() {
       (tester) async {
     var discarded = 0;
     var finished = 0;
-    final recorder = AudioRecorder();
+    final recorder = _FailingRecorder();
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
@@ -89,9 +122,10 @@ void main() {
     await tester.pumpAndSettle();
 
     await tester.tap(find.byIcon(Icons.arrow_upward_rounded));
-    await tester.pumpAndSettle();
-    // stop() throws without a platform plugin, so the pill discards
-    // instead of handing a nonexistent file to the uploader.
+    await tester.pump();
+    await tester.pump();
+    // stop() gives back no path, so the pill discards instead of handing a
+    // nonexistent file to the uploader.
     expect(finished, 0);
     expect(discarded, greaterThanOrEqualTo(1));
 

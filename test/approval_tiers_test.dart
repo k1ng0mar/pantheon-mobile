@@ -40,12 +40,12 @@ void main() {
       final g = StandingGrant.fromJson({
         'id': 3,
         'tool': 'exec',
-        'args_preview': 'ls …',
+        'args_preview': 'ls ...',
         'created_ms': 42,
       });
       expect(g.id, 3);
       expect(g.tool, 'exec');
-      expect(g.argsPreview, 'ls …');
+      expect(g.argsPreview, 'ls ...');
       expect(g.createdMs, 42);
     });
   });

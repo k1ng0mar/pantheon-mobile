@@ -5,7 +5,7 @@ import '../theme.dart';
 /// Floating chat composer: a single tonal pill holding the message field
 /// and a compact toolbar (attach, model/mode, mic, send/stop).
 ///
-/// This is presentation only — all behavior (send, stop, attachments,
+/// This is presentation only, all behavior (send, stop, attachments,
 /// voice notes, model picking) lives in the owning screen and arrives
 /// here as callbacks. [above] renders staged attachments, chips and
 /// similar rows between the transcript and the pill; [replacing] swaps
@@ -45,7 +45,7 @@ class ChatComposer extends StatelessWidget {
   final VoidCallback onMic;
   final VoidCallback onModelTap;
 
-  /// Rows rendered above the pill (attachments, chips, find bar…).
+  /// Rows rendered above the pill (attachments, chips, find bar...).
   final Widget? above;
 
   /// Replaces field+toolbar inside the pill (voice note, transcribing).
@@ -158,7 +158,7 @@ class ChatComposer extends StatelessWidget {
   InputDecoration _pillDecoration(BuildContext context) {
     final themeHint = Theme.of(context).inputDecorationTheme.hintStyle;
     return InputDecoration(
-      hintText: 'Message $agentName…',
+      hintText: 'Message $agentName...',
       hintMaxLines: 1,
       hintStyle: (themeHint ?? const TextStyle())
           .copyWith(overflow: TextOverflow.ellipsis),

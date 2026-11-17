@@ -68,7 +68,7 @@ abstract class SlashCommandHost {
 
 /// Dispatches the chat slash commands that have a real mobile path.
 /// The session screen's own `_runSlash` switch owns the older command
-/// set (new/title/model/…) and delegates everything else here.
+/// set (new/title/model/...) and delegates everything else here.
 class SlashCommandDispatcher {
   final SlashCommandHost host;
   const SlashCommandDispatcher(this.host);
@@ -138,7 +138,7 @@ class SlashCommandDispatcher {
         await _bg(arg);
         break;
       default:
-        host.showToast('Unknown command /$cmd — try /help.');
+        host.showToast('Unknown command /$cmd, try /help.');
     }
   }
 
@@ -209,7 +209,7 @@ class SlashCommandDispatcher {
     if (text == null) return;
     try {
       // The dashboard namespaces memory keys as `{kind}:{key}`; `lesson`
-      // is the real convention — it matches the TUI's `lesson:{slug}`
+      // is the real convention, it matches the runtime's `lesson:{slug}`
       // keys for /learn lessons.
       await host.api.addMemory(text: text, kind: 'lesson');
       host.showToast('Lesson saved.');
@@ -306,10 +306,10 @@ class SlashCommandDispatcher {
     await host.openRun(arg);
   }
 
-  /// `/undo`: confirm (the TUI requires it), then rewind the last
+  /// `/undo`: confirm (the runtime requires it), then rewind the last
   /// finished turn. The rewound turn is hidden from the local
   /// transcript view and the dropped user message is restored as a
-  /// composer draft, mirroring the TUI.
+  /// composer draft, mirroring the runtime.
   Future<void> _undo() async {
     final ok = await host.confirm(
       'Undo last turn?',
@@ -323,7 +323,7 @@ class SlashCommandDispatcher {
         final res = await host.api.rewindRun(host.runId);
         host.hideLastTurn();
         host.setComposerText(res.draft);
-        host.showToast('Undone — your message is back in the composer.');
+        host.showToast('Undone, your message is back in the composer.');
       } on PantheonTurnInFlightException {
         host.showToast('Wait for the turn to finish.');
       } on PantheonApiException catch (e) {
@@ -344,8 +344,8 @@ class SlashCommandDispatcher {
       final res = await host.api.resetRun(host.runId);
       host.clearTranscriptView();
       host.showToast(res.canceled
-          ? 'Reset — the running turn was canceled. Session, title, and history are kept.'
-          : 'Reset — session, title, and history are kept.');
+          ? 'Reset, the running turn was canceled. Session, title, and history are kept.'
+          : 'Reset, session, title, and history are kept.');
     });
   }
 
@@ -383,7 +383,7 @@ class SlashCommandDispatcher {
         final res = await host.api.restoreCheckpoint(host.runId, name);
         host.hideTurnsAfter(res.rewoundToTurn);
         host.showToast(
-            "Restored '${res.name}' — rewound to turn ${res.rewoundToTurn}.");
+            "Restored '${res.name}', rewound to turn ${res.rewoundToTurn}.");
       } on PantheonTurnInFlightException {
         host.showToast('Wait for the turn to finish.');
       }

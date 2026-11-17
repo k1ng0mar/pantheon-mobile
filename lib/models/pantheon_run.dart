@@ -72,7 +72,7 @@ class TranscriptItem {
 
   /// UI-protocol items (`type: 'ui'`). The document id, the displayed
   /// revision, and the parsed document. Null on non-UI items. A
-  /// submission must use exactly this revision — never a newer one.
+  /// submission must use exactly this revision, never a newer one.
   final String? uiId;
   final int? uiRevision;
   final UiDocument? uiDocument;
@@ -107,18 +107,18 @@ class TranscriptItem {
         try {
           final doc = UiDocument.fromJson(docJson);
           // A document with no id and no usable root is malformed, not
-          // merely unsupported — explain instead of showing "unknown".
+          // merely unsupported, explain instead of showing "unknown".
           final rootEmpty = doc.id.isEmpty &&
               doc.root.component is UiUnsupported;
           uiDocument = doc.isSupported && !rootEmpty
               ? doc
               : UiDocument.unsupportedVersion(
-                  doc.id.isEmpty ? (uiId ?? '') : doc.id,
+                  doc.id.isEmpty ? uiId : doc.id,
                   doc.isSupported ? -1 : doc.version);
         } catch (_) {
           // A malformed document degrades to an explanatory note rather
           // than breaking the chat screen.
-          uiDocument = UiDocument.unsupportedVersion(uiId ?? '', -1);
+          uiDocument = UiDocument.unsupportedVersion(uiId, -1);
         }
       }
     }

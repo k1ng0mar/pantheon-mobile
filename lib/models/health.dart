@@ -6,7 +6,7 @@ import '../theme.dart';
 ///
 /// Every `fromJson` here parses defensively: missing or mistyped fields
 /// fall back to sensible defaults and never throw on partial data. A
-/// check that could not actually run is `skipped`/`unknown` — the app
+/// check that could not actually run is `skipped`/`unknown`, the app
 /// never reports a fake `healthy`.
 
 /// Subsystem status. The `overall` field of the contract uses

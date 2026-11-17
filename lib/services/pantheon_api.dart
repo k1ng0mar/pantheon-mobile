@@ -19,7 +19,7 @@ class PantheonTurnInFlightException extends PantheonApiException {
 class PantheonRetryParkedException extends PantheonApiException {
   PantheonRetryParkedException(String body) : super(409, body);
   @override
-  String toString() => 'Parked on approval — grant or deny it first.';
+  String toString() => 'Parked on approval, grant or deny it first.';
 }
 
 /// Thrown when a new turn is refused because the run's goal iteration
@@ -54,7 +54,7 @@ class PantheonStaleBackendException extends PantheonApiException {
   PantheonStaleBackendException(super.status, super.body);
   @override
   String toString() =>
-      'This needs a newer dashboard — update Pantheon and try again.';
+      'This needs a newer dashboard, update Pantheon and try again.';
 }
 
 class PantheonUnreachableException implements Exception {
@@ -308,7 +308,7 @@ class PantheonApi {
       // New run-control endpoints (rewind/reset/checkpoints/restore/
       // goal/btw/background-tasks): a 404 carrying the dashboard's
       // machine error code means the resource is missing (unknown run,
-      // unknown checkpoint — CHECKPOINT_NOT_FOUND); a codeless 404
+      // unknown checkpoint, CHECKPOINT_NOT_FOUND); a codeless 404
       // means the backend predates the endpoint.
       if (_serverCode(res.body) != null) {
         throw PantheonApiException(res.statusCode, _serverMessage(res.body));
@@ -373,8 +373,8 @@ class PantheonApi {
         path.contains('/api/background-tasks/');
   }
 
-  /// The dashboard wraps errors as {"ok": false, "error": {"code": "…",
-  /// "message": "…"}} — extract the machine code for typed 409 handling.
+  /// The dashboard wraps errors as {"ok": false, "error": {"code": "...",
+  /// "message": "..."}}, extract the machine code for typed 409 handling.
   static String? _serverCode(String body) {
     try {
       final v = jsonDecode(body);
@@ -388,8 +388,8 @@ class PantheonApi {
     return null;
   }
 
-  /// The dashboard wraps errors as {"ok": false, "error": {"code": "…",
-  /// "message": "…"}} — surface the real message instead of a raw body dump.
+  /// The dashboard wraps errors as {"ok": false, "error": {"code": "...",
+  /// "message": "..."}}, surface the real message instead of a raw body dump.
   static String _serverMessage(String body) {
     try {
       final v = jsonDecode(body);
@@ -401,7 +401,7 @@ class PantheonApi {
         if (v['message'] is String) return v['message'] as String;
       }
     } catch (_) {}
-    return body.length > 200 ? '${body.substring(0, 200)}…' : body;
+    return body.length > 200 ? '${body.substring(0, 200)}...' : body;
   }
 
   Future<Overview> overview() async =>
@@ -418,7 +418,7 @@ class PantheonApi {
   /// the dashboard predates the endpoint its 404 surfaces as
   /// [PantheonStaleBackendException] and a report is composed client-side
   /// from existing endpoints instead. Anything that cannot actually be
-  /// checked becomes `unknown`/`skipped` — never a fake `healthy`.
+  /// checked becomes `unknown`/`skipped`, never a fake `healthy`.
   Future<HealthReport> healthReport() async {
     try {
       return HealthReport.fromJson(await _get('/api/health'));
@@ -911,7 +911,7 @@ class PantheonApi {
   }
 
   /// Revoke one standing grant: `DELETE /api/approvals/grants/:id`.
-  /// Revocation is instant on the server — the next identical call
+  /// Revocation is instant on the server, the next identical call
   /// parks for approval again.
   Future<void> revokeGrant(int id) async {
     await _delete('/api/approvals/grants/$id');
@@ -1047,10 +1047,10 @@ class PantheonApi {
   /// the response.
   ///
   /// Response contract (`pantheon-dashboard/src/ui_actions.rs`):
-  /// - 200 `{outcome: 'executed', result}` — tool ran.
-  /// - 200 `{outcome: 'decided', approved}` — approval recorded.
+  /// - 200 `{outcome: 'executed', result}`, tool ran.
+  /// - 200 `{outcome: 'decided', approved}`, approval recorded.
   /// - 409 `{error: {code: UI_STALE|UI_REPLAY|UI_UNKNOWN|UI_BAD_ACTION}}`
-  /// - 422 `{error: {code: UI_TOOL_DENIED}}` — action valid, tool refused.
+  /// - 422 `{error: {code: UI_TOOL_DENIED}}`, action valid, tool refused.
   ///
   /// Timeouts are rethrown as [PantheonUnreachableException] without a
   /// verdict: the request may already have executed server-side, so
@@ -1090,10 +1090,10 @@ class PantheonApi {
       return UiSubmitResult.error('Unexpected response.', res.statusCode);
     }
     if (res.statusCode == 409) {
-      // UI_STALE: the document moved under the submission — refresh and
+      // UI_STALE: the document moved under the submission, refresh and
       // re-render. UI_REPLAY: this nonce already executed (idempotent);
       // refresh to see the result. UI_UNKNOWN/UI_BAD_ACTION: the client
-      // sent a bad reference — surface as an error, not a stale refresh.
+      // sent a bad reference, surface as an error, not a stale refresh.
       switch (code) {
         case 'UI_STALE':
         case 'UI_REPLAY':
@@ -1136,7 +1136,7 @@ class PantheonApi {
       return 'Context compressed (model window unknown).';
     }
     if (j['changed'] != true) {
-      return 'Context already fits — no compression needed.';
+      return 'Context already fits, no compression needed.';
     }
     if (after != null && before > 0 && after <= before) {
       final pct = (100 * (before - after) / before).round();
@@ -1200,7 +1200,7 @@ class PantheonApi {
   }
 
   // ------------------------------------------------------------------
-  // Rewind / checkpoints / goal / background tasks: the TUI's
+  // Rewind / checkpoints / goal / background tasks: the runtime's
   // turn-control constructs, exposed over the dashboard API.
   // ------------------------------------------------------------------
 
@@ -1364,7 +1364,7 @@ class PantheonApi {
       return MemoryEntry.fromJson(j);
     }
     return MemoryEntry(
-        key: text.length > 40 ? '${text.substring(0, 40)}…' : text,
+        key: text.length > 40 ? '${text.substring(0, 40)}...' : text,
         value: text);
   }
 
@@ -1609,7 +1609,7 @@ class PantheonApi {
         '/api/plugins/${Uri.encodeComponent(kind)}/${Uri.encodeComponent(name)}/disable');
   }
 
-  /// `POST /api/plugins/import` — `{url, ref?}` →
+  /// `POST /api/plugins/import`, `{url, ref?}` →
   /// `{name, kind, version, detected_capabilities, approval_required: true}`.
   /// Imported plugins land UNAPPROVED; the user must approve before loading.
   /// A 404 (endpoint not landed yet) surfaces as PantheonStaleBackendException
@@ -1634,11 +1634,11 @@ class PantheonApi {
   // Nightly repair loop
   // ------------------------------------------------------------------
 
-  /// `GET /api/nightly/status` — enable state, reason, next/last run.
+  /// `GET /api/nightly/status`, enable state, reason, next/last run.
   Future<NightlyStatus> nightlyStatus() async =>
       NightlyStatus.fromJson(await _get('/api/nightly/status'));
 
-  /// `POST /api/nightly/enabled` — `{enabled, confirm: true}`. Returns
+  /// `POST /api/nightly/enabled`, `{enabled, confirm: true}`. Returns
   /// the fresh status document.
   Future<NightlyStatus> setNightlyEnabled(bool enabled) async =>
       NightlyStatus.fromJson(await _post(
@@ -1658,17 +1658,17 @@ class PantheonApi {
         .toList();
   }
 
-  /// `POST /api/ideas/:id/accept` — the user wants this done.
+  /// `POST /api/ideas/:id/accept`, the user wants this done.
   Future<void> acceptIdea(String id) async {
     await _post('/api/ideas/${Uri.encodeComponent(id)}/accept');
   }
 
-  /// `POST /api/ideas/:id/dismiss` — the user isn't interested.
+  /// `POST /api/ideas/:id/dismiss`, the user isn't interested.
   Future<void> dismissIdea(String id) async {
     await _post('/api/ideas/${Uri.encodeComponent(id)}/dismiss');
   }
 
-  /// `POST /api/ideas/:id/feedback` — `{"signal":"more"|"less"}`.
+  /// `POST /api/ideas/:id/feedback`, `{"signal":"more"|"less"}`.
   Future<void> feedbackIdea(String id, String signal) async {
     await _post('/api/ideas/${Uri.encodeComponent(id)}/feedback',
         {'signal': signal});
@@ -1678,7 +1678,7 @@ class PantheonApi {
   // Uploads (chat attachments)
   // ------------------------------------------------------------------
 
-  /// `POST /api/uploads` — `{name, mime, data: base64}` → the stored
+  /// `POST /api/uploads`, `{name, mime, data: base64}` → the stored
   /// upload record. The returned id rides `sendRunMessage` as an
   /// attachment so the agent can read the file.
   ///
@@ -1715,7 +1715,7 @@ class PantheonApi {
     return UploadRecord.fromJson(_decode(res, '/api/uploads'));
   }
 
-  /// `GET /api/uploads/:id` — raw bytes of a stored upload, for
+  /// `GET /api/uploads/:id`, raw bytes of a stored upload, for
   /// attachment thumbnails and opening sent files.
   Future<List<int>> downloadUpload(String id) =>
       _getBytes('/api/uploads/${Uri.encodeComponent(id)}');
@@ -1724,10 +1724,10 @@ class PantheonApi {
   // Link previews
   // ------------------------------------------------------------------
 
-  /// `GET /api/link-preview?url=` — Open Graph / title / image metadata
+  /// `GET /api/link-preview?url=`, Open Graph / title / image metadata
   /// for a URL (SSRF-guarded server-side). Returns null when the page
   /// has nothing usable or the lookup fails; never throws, so chat
-  /// rendering stays robust.
+  /// rendering stays safe.
   Future<LinkPreview?> fetchLinkPreview(String url) async {
     try {
       final j = await _get('/api/link-preview', {'url': url});
@@ -1742,7 +1742,7 @@ class PantheonApi {
   // Voice notes
   // ------------------------------------------------------------------
 
-  /// `POST /agui/voice/transcribe` — base64 audio → transcript text.
+  /// `POST /agui/voice/transcribe`, base64 audio → transcript text.
   /// Throws [PantheonApiException] carrying the server's message on
   /// failure (unconfigured STT, backend error, audio too large).
   Future<String> transcribeAudio(List<int> bytes) async {
@@ -1969,7 +1969,7 @@ class PantheonApi {
   }
 
   /// Full `POST /api/teams/:id/use` response: `swarm_id` plus `run_id`
-  /// (the lead's coordination run — the single user-facing run).
+  /// (the lead's coordination run, the single user-facing run).
   Future<Map<String, dynamic>> useTeamFull(String id, {String? task}) async {
     final body = <String, dynamic>{};
     if (task != null && task.isNotEmpty) body['task'] = task;

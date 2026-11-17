@@ -1,10 +1,8 @@
-// Task sheet: one session task (turn) as a checklist of steps —
-// MAIN steps, then one SUBAGENT NN section per delegated child run —
+// Task sheet: one session task (turn) as a checklist of steps ,
+// MAIN steps, then one SUBAGENT NN section per delegated child run ,
 // with step detail pushed inside the sheet.
 //
-// Styled after the Muse-app task reference: dark sheet, status
-// pill, mono-caps section labels, step rows with a status icon, bold
-// title, dim summary, and a chevron. All content derives from the
+// All content derives from the
 // run-detail contract (see models/task_step.dart); child runs load
 // lazily through [PantheonApi.runDetail] when the sheet opens and
 // are cached for the sheet's lifetime.
@@ -295,7 +293,7 @@ class _TaskSheetState extends State<TaskSheet> {
                 child: CircularProgressIndicator(strokeWidth: 2),
               ),
               const SizedBox(width: 10),
-              Text("Loading the agent's work…", style: PT.meta),
+              Text("Loading the agent's work...", style: PT.meta),
             ]),
           );
         }
@@ -391,7 +389,7 @@ class _TaskSheetState extends State<TaskSheet> {
   }
 
   /// Status icon: green check circle (done), spinner (running), red
-  /// error icon — GlyphCircle colors, matching the Timeline card.
+  /// error icon, GlyphCircle colors, matching the Timeline card.
   Widget _statusIcon(TaskStepStatus status) {
     switch (status) {
       case TaskStepStatus.done:

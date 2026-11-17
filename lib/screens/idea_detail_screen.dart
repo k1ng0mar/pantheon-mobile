@@ -164,7 +164,7 @@ class _IdeaDetailScreenState extends State<IdeaDetailScreen> {
                     Padding(
                       padding: const EdgeInsets.symmetric(vertical: 3),
                       child: KvRow(
-                          e.key, e.value?.toString() ?? '—',
+                          e.key, e.value?.toString() ?? ',',
                           mono: true),
                     ),
                 ],
@@ -181,7 +181,7 @@ class _IdeaDetailScreenState extends State<IdeaDetailScreen> {
   Widget _cta(Idea idea) {
     if (idea.isPending) {
       return GradientButton(
-        label: _accepting ? 'Accepting…' : 'Let\'s do it',
+        label: _accepting ? 'Accepting...' : 'Let\'s do it',
         onTap: _accepting ? null : _accept,
       );
     }

@@ -37,7 +37,7 @@ class _SkillsScreenState extends State<SkillsScreen> {
     try {
       final enabled = await widget.api.toggleSkill(s.name);
       if (!mounted) return;
-      toast(context, enabled ? '“${s.name}” enabled.' : '“${s.name}” disabled.');
+      toast(context, enabled ? '"${s.name}" enabled.' : '"${s.name}" disabled.');
       _load();
     } catch (e) {
       if (mounted) toastError(context, e);
@@ -51,7 +51,7 @@ class _SkillsScreenState extends State<SkillsScreen> {
       context,
       title: 'Import skill',
       label: 'Git URL',
-      hint: 'https://…',
+      hint: 'https://...',
       keyboardType: TextInputType.url,
       confirmLabel: 'Import',
     );
@@ -77,7 +77,7 @@ class _SkillsScreenState extends State<SkillsScreen> {
     final ok = await confirmAction(
       context,
       title: 'Delete skill?',
-      body: '“${s.name}” will be removed from the pantheon scope permanently.',
+      body: '"${s.name}" will be removed from the pantheon scope permanently.',
       confirmLabel: 'Delete',
       destructive: true,
     );
@@ -99,7 +99,7 @@ class _SkillsScreenState extends State<SkillsScreen> {
         title: const Text('Skills'),
         actions: [
           IconButton(
-            icon:  Icon(Icons.refresh_rounded,
+            icon: Icon(Icons.refresh_rounded,
                 color: P.inkSecondary, weight: 1.6),
             onPressed: _load,
           ),

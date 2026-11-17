@@ -1,5 +1,5 @@
 name: pantheon_mobile
-description: Pantheon mobile companion — runs, approvals, usage and schedules from your Pantheon runtime.
+description: Pantheon mobile companion, runs, approvals, usage and schedules from your Pantheon runtime.
 publish_to: 'none'
 version: 0.1.0+1
 

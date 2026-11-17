@@ -159,7 +159,7 @@ class _TodosSheetState extends State<_TodosSheet> {
                     onSubmitted: (_) => _add(),
                     style: PT.body,
                     decoration: const InputDecoration(
-                      hintText: 'New todo…',
+                      hintText: 'New todo...',
                       contentPadding: EdgeInsets.symmetric(
                           horizontal: 16, vertical: 12),
                     ),
@@ -250,7 +250,7 @@ class _TodosSheetState extends State<_TodosSheet> {
             ),
           ),
           IconButton(
-            icon:  Icon(Icons.delete_outline_rounded,
+            icon: Icon(Icons.delete_outline_rounded,
                 size: 18, color: P.inkFaint),
             onPressed: () => _remove(i),
           ),

@@ -12,7 +12,7 @@ import 'states.dart';
 ///
 /// In-memory: upload id -> in-flight or completed byte fetch. Failures
 /// are cached as null so a dead still does not get retried on every
-/// rebuild. Bounded to avoid unbounded growth in long sessions — the
+/// rebuild. Bounded to avoid unbounded growth in long sessions, the
 /// same pattern as `LinkPreviewCard._cache`.
 class DesignStillCache {
   static final Map<String, Future<Uint8List?>> _cache = {};
@@ -67,7 +67,7 @@ class DesignStatusPill extends StatelessWidget {
   }
 }
 
-/// Gate report bottom sheet — same sheet pattern as [showTaskSheet]:
+/// Gate report bottom sheet, same sheet pattern as [showTaskSheet]:
 /// `showModalBottomSheet` + `DraggableScrollableSheet`, [P.surface],
 /// top radius 20.
 Future<void> showDesignGateSheet(

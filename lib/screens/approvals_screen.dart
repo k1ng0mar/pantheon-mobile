@@ -28,7 +28,7 @@ class _ApprovalsScreenState extends State<ApprovalsScreen> {
   final Set<String> _busy = {};
   final Set<String> _leaving = {};
 
-  /// Approvals can arrive from the dashboard, the TUI, or another
+  /// Approvals can arrive from the dashboard, the runtime, or another
   /// device while this screen sits open: re-fetch periodically so a
   /// decision can't be made against a stale list.
   Timer? _pollTimer;
@@ -69,7 +69,7 @@ class _ApprovalsScreenState extends State<ApprovalsScreen> {
   /// Refresh the list without the loading skeleton: fetch first, then
   /// swap in an already-completed future. Skipped while a decision is
   /// in flight (its completion refreshes anyway) and silent on failure
-  /// — the next tick retries and the manual refresh button stays.
+  /// the next tick retries and the manual refresh button stays.
   Future<void> _quietRefresh() async {
     if (!mounted || _busy.isNotEmpty) return;
     try {
@@ -367,7 +367,7 @@ class _ApprovalsScreenState extends State<ApprovalsScreen> {
             onPressed: _showGrants,
           ),
           IconButton(
-            icon:  Icon(Icons.refresh_rounded,
+            icon: Icon(Icons.refresh_rounded,
                 color: P.inkSecondary, weight: 1.6),
             onPressed: _load,
           ),
@@ -424,7 +424,7 @@ class _ApprovalsScreenState extends State<ApprovalsScreen> {
         offset: leaving ? const Offset(0.6, 0) : Offset.zero,
         child: Padding(
           padding: const EdgeInsets.only(bottom: 12),
-          // Nyx signature: error-colored border, uppercase kicker, pill actions.
+          // Card signature: error-colored border, uppercase kicker, pill actions.
           child: PCard(
             borderColor: P.err.withValues(alpha: 0.55),
             child: Column(

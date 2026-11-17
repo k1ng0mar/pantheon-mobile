@@ -94,7 +94,7 @@ Future<void> showNewChatSheet(BuildContext context, PantheonApi api,
                       const SizedBox(width: 12),
                       Expanded(
                         child: GradientButton(
-                          label: busy ? 'Starting…' : 'Start',
+                          label: busy ? 'Starting...' : 'Start',
                           onTap: busy
                               ? null
                               : () async {

@@ -1,4 +1,6 @@
 /// Barrel export for every Pantheon model class.
+library;
+
 export 'approval.dart';
 export 'browser_status.dart';
 export 'config_doc.dart';

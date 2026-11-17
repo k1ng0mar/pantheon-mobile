@@ -554,7 +554,7 @@ void main() {
                   attempt++;
                   if (attempt == 1) {
                     return UiSubmitResult.error(
-                        'Connection timed out — the action may have run. '
+                        'Connection timed out, the action may have run. '
                         'Watch the chat for the result.',
                         null);
                   }

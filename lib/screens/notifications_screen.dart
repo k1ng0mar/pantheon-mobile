@@ -13,7 +13,7 @@ import '../widgets/states.dart';
 /// Persisted locally and consulted by [NotificationService] before every
 /// local notification: master switch, per-event toggles, quiet hours
 /// (`isQuietNow()`), per-session mute (`isSessionMuted(id)`), and sound.
-/// There is no push (FCM/APNs) path — delivery is local notifications
+/// There is no push (FCM/APNs) path, delivery is local notifications
 /// only, so events are observed while the app polls (run poller,
 /// approvals poller).
 class NotificationsScreen extends StatelessWidget {
@@ -34,8 +34,8 @@ class NotificationsScreen extends StatelessWidget {
             child: Text(
               'Choose what the app may tell you about. '
               'Delivery is local notifications (no push): the app checks '
-              'these preferences — master switch, quiet hours, '
-              'per-session mute — before showing anything.',
+              'these preferences, master switch, quiet hours, '
+              'per-session mute, before showing anything.',
               style: PT.meta.copyWith(height: 1.4),
             ),
           ),
@@ -65,7 +65,7 @@ class NotificationsScreen extends StatelessWidget {
                   prefs.notifApprovalParked,
                   prefs.setNotifApprovalParked,
                   'Approval parked',
-                  'Informational only — never a phone approval loop',
+                  'Informational only, never a phone approval loop',
                   P.warn),
               _eventRow(
                   prefs.notifScheduleResults,
@@ -222,7 +222,7 @@ class _MutedSessionsScreen extends StatelessWidget {
         future: api.runs(limit: 200),
         builder: (context, snap) {
           if (snap.connectionState == ConnectionState.waiting) {
-            return const LoadingState(label: 'Loading sessions…');
+            return const LoadingState(label: 'Loading sessions...');
           }
           if (snap.hasError) {
             return ErrorState(

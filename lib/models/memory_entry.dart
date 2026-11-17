@@ -1,5 +1,5 @@
 /// One memory record from `GET /api/memory`.
-/// Shape: {"namespace": "…", "records": [{"key","value","layer",
+/// Shape: {"namespace": "...", "records": [{"key","value","layer",
 /// "namespace","provenance":{"source","origin","trust"}|null,
 /// "recorded_at_ms","score"}]}
 class MemoryEntry {

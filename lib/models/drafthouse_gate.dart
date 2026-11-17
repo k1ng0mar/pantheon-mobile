@@ -4,7 +4,7 @@ import 'dart:convert';
 /// ````drafthouse-gate` fenced block in an assistant message.
 ///
 /// Consumer contract for the Phase 5 UI surfaces (spec:
-/// `drafthouse-pantheon-plugin/docs/phase5-ui-spec.md` §1). The block is
+/// the gate block contract). The block is
 /// emitted by the `pantheon-design-verify` skill at the end of each design
 /// round; `vision` is null when L4 (vision) is off.
 class DrafthouseGateBlock {
@@ -16,7 +16,7 @@ class DrafthouseGateBlock {
   final DrafthouseGateReport gate;
 
   /// `"needs_human"` (round done, waiting on the human) or `"ship"`
-  /// (all gates pass and already approved — informational only).
+  /// (all gates pass and already approved, informational only).
   final String status;
 
   const DrafthouseGateBlock({
@@ -137,7 +137,7 @@ class DrafthouseGateReport {
   final int p1;
   final int p2;
 
-  /// Dimension name → 1–5 score.
+  /// Dimension name → 1-5 score.
   final Map<String, int> fiveDim;
   final String tokens;
 
@@ -193,19 +193,19 @@ class DrafthouseGateReport {
 }
 
 // ---------------------------------------------------------------------------
-// Action payloads — the exact strings the verify skill treats as the
+// Action payloads, the exact strings the verify skill treats as the
 // approval / handoff trigger and steering directives (spec §1/§3).
 // ---------------------------------------------------------------------------
 
-/// Approve — the skill treats this exact message as the handoff trigger.
-String drafthouseApproveMessage() => 'Approved — proceed to handoff.';
+/// Approve, the skill treats this exact message as the handoff trigger.
+String drafthouseApproveMessage() => 'Approved, proceed to handoff.';
 
-/// Request changes — steer/queue the running turn with the human's note
+/// Request changes, steer/queue the running turn with the human's note
 /// against a specific round + variant.
 String drafthouseRequestChangesMessage(int round, String variantId, String text) =>
     'Round $round, variant $variantId: $text';
 
-/// Pick variant — the human's pick overrides the judge's; the skill treats
+/// Pick variant, the human's pick overrides the judge's; the skill treats
 /// it as a steering directive, not a gate waiver.
 String drafthousePickVariantMessage(String variantId) =>
     'Use variant $variantId for the next round.';

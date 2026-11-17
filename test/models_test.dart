@@ -301,7 +301,7 @@ void scheduledJobTests() {
           'atlas': {'display_name': 'Atlas', 'policy': 'coder'}
         },
       },
-      'raw': '…',
+      'raw': '...',
     });
     expect(d.agents['atlas']!['policy'], 'coder');
   });

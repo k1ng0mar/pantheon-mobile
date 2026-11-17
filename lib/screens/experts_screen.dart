@@ -13,7 +13,7 @@ import '../widgets/new_chat_sheet.dart';
 import 'expert_detail_screen.dart';
 import 'session_detail_screen.dart';
 
-/// Experts hub (More → Experts): two tabs matching the reference —
+/// Experts hub (More → Experts): two tabs matching the reference ,
 /// **Teams** (gallery of pre-built agent teams → team detail → use team)
 /// and **Experts** (standalone experts → use expert). "Use" spawns a
 /// session and opens it with a removable chip above the composer.
@@ -208,7 +208,7 @@ class _TeamsTabState extends State<_TeamsTab>
                 ),
               ),
               PillButton(
-                label: busy ? 'Starting…' : 'Use team',
+                label: busy ? 'Starting...' : 'Use team',
                 onTap: busy ? null : () => _useTeam(team),
                 filled: false,
               ),
@@ -369,7 +369,7 @@ class _ExpertsTabState extends State<_ExpertsTab>
           ),
           const SizedBox(width: 10),
           PillButton(
-            label: busy ? 'Starting…' : 'Use expert',
+            label: busy ? 'Starting...' : 'Use expert',
             onTap: busy ? null : () => _useExpert(expert),
             filled: false,
           ),

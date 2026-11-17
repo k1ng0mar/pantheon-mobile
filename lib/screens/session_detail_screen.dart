@@ -44,7 +44,7 @@ import 'swarm_screen.dart';
 /// A session as a real chat: transcript bubbles, live polling while the
 /// run is active, and a composer that sends into the run via
 /// `POST /api/runs/:id/message`. Settled sessions keep their composer:
-/// completed/failed/canceled only end the latest turn — the runtime
+/// completed/failed/canceled only end the latest turn, the runtime
 /// reopens the run when a new message arrives.
 ///
 /// Full state handling: clarify cards (`ask_user`), inline approval
@@ -118,11 +118,11 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
 
   /// Local-only message votes (thumbs up/down), keyed by [_voteKey].
   /// Persisted in SharedPreferences; there is no backend endpoint for
-  /// these — they are a device-local signal only.
+  /// these, they are a device-local signal only.
   final Map<String, int> _votes = {};
 
   /// Optimistic bubbles not yet present in the server transcript.
-  /// Reconciled away by [_syncMessages] once the server admits them —
+  /// Reconciled away by [_syncMessages] once the server admits them ,
   /// so a replaced queue slot can never leave a phantom bubble.
   final List<TranscriptItem> _pending = [];
   String? _error;
@@ -134,7 +134,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
   final _scroll = ScrollController();
   Timer? _poll;
 
-  /// Live-turn clock: anchor ms for the "Working for …" row, ticking
+  /// Live-turn clock: anchor ms for the "Working for ..." row, ticking
   /// once a second while the turn runs. See [_syncLiveClock].
   int? _liveSinceMs;
   Timer? _liveTicker;
@@ -142,7 +142,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
   bool _atBottom = true;
 
   /// True while a manual `/compress` round-trip is in flight. Drives the
-  /// "Compressing context…" status row above the composer and guards
+  /// "Compressing context..." status row above the composer and guards
   /// against double-taps (compression is a slow LLM call).
   bool _compressing = false;
 
@@ -160,7 +160,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
   /// The poller auto-drains the server queue oldest-first as turns
   /// settle, regardless of which screen or device parked each message;
   /// this counter only tracks the local share (used to reconcile the
-  /// "Queued — sends when the turn settles." toast state). Steer resets
+  /// "Queued, sends when the turn settles." toast state). Steer resets
   /// this to 1 because it wipes the server queue and parks just the
   /// steered message.
   int _queuedByMe = 0;
@@ -174,7 +174,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
 
   /// The expert-team/expert indicator chip above the composer. Set from
   /// [SessionDetailScreen.attachedName]; dismissing it only hides the
-  /// chip — the session keeps running.
+  /// chip, the session keeps running.
   String? _attachedName;
 
   /// Attachments staged on the composer: picked locally, uploaded to
@@ -182,16 +182,16 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
   final List<_PendingAttachment> _attachments = [];
 
   /// Memoized thumbnail futures for sent image attachments, keyed by
-  /// upload id — `GET /api/uploads/:id` bytes cached per session.
+  /// upload id, `GET /api/uploads/:id` bytes cached per session.
   final Map<String, Future<Uint8List>> _thumbFutures = {};
 
   /// Voice-note recording state. The composer mic starts a recording
-  /// (the pill); the composer also has its own mic — the AppBar no
+  /// (the pill); the composer also has its own mic, the AppBar no
   /// longer carries one (it now holds new-chat and options actions).
   bool _recordingVoiceNote = false;
 
   /// Active agent/profile name for chat labels; 'Pantheon' until the
-  /// config resolves (best-effort — the label never blocks the chat).
+  /// config resolves (best-effort, the label never blocks the chat).
   String _agentName = 'Pantheon';
 
   /// True while a finished voice note is being transcribed.
@@ -206,7 +206,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
 
   /// Subtle terminal-status word for the AppBar subtitle (`· Failed` /
   /// `· Canceled` / `· Completed`). Null while the run is live or the
-  /// status is unknown — the live dot already covers the in-flight state.
+  /// status is unknown, the live dot already covers the in-flight state.
   /// Keeps settled-run status distinguishable in the conversation without
   /// restoring the old prominent status banner.
   static String? _terminalStatusWord(String? status) => switch (status) {
@@ -217,7 +217,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
       };
 
   /// The `[attachments]` block the server appends to a user message when
-  /// files were attached — stripped before rendering the bubble so the
+  /// files were attached, stripped before rendering the bubble so the
   /// raw file list never shows in chat. The parsed form renders as the
   /// attachment grid instead.
   static final _attachmentBlock = RegExp(r'\n*\[attachments\][\s\S]*$');
@@ -228,7 +228,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
       RegExp(r'^- (.*) \(([^,()]*), ([^,()]*)(?:, id: ([^()]*))?\): ');
 
   /// Parse the `[attachments]` block into (name, mime, id) records.
-  /// Never throws — unparseable lines are skipped.
+  /// Never throws, unparseable lines are skipped.
   static List<_SentAttachment> _parseSentAttachments(String content) {
     final out = <_SentAttachment>[];
     for (final raw in content.split('\n')) {
@@ -252,7 +252,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
   }
 
   /// The composer stays enabled for settled sessions: completed/failed/
-  /// canceled mark the end of a turn, not the death of the session — the
+  /// canceled mark the end of a turn, not the death of the session, the
   /// runtime reopens the run when a new message arrives.
   static bool _canChat(String status) =>
       _isLive(status) ||
@@ -275,7 +275,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
   }
 
   /// Chat command catalog: the backend registry (`surface=chat`) merged
-  /// with the mobile-only commands. A stale backend 404s the endpoint —
+  /// with the mobile-only commands. A stale backend 404s the endpoint ,
   /// fall back to the hardcoded curated list and show the friendly
   /// upgrade toast (same pattern as the approvals tiers).
   Future<void> _loadSlashCommands() async {
@@ -486,7 +486,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
           return;
         }
       }
-      // Alertable event: freshly parked on approval — edge-triggered
+      // Alertable event: freshly parked on approval, edge-triggered
       // so the poller fires it once per parking, not once per tick.
       final parked = run.status == 'awaiting_approval';
       if (parked && !_wasParked) {
@@ -567,7 +567,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
 
   /// Send the oldest queued message as a normal turn now that the run
   /// settled. Returns true when the turn started. The server pops the
-  /// head of its FIFO queue on the idle send, so the rest stay queued —
+  /// head of its FIFO queue on the idle send, so the rest stay queued ,
   /// never clear the whole queue here.
   Future<bool> _drainQueueText(String text) async {
     try {
@@ -593,7 +593,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
         .toList();
     if ((raw.isEmpty && ids.isEmpty) || _sending) return;
     if (_attachments.any((a) => a.uploading)) {
-      toast(context, 'Waiting for uploads to finish…');
+      toast(context, 'Waiting for uploads to finish...');
       return;
     }
     _haptic(HapticFeedback.mediumImpact);
@@ -647,8 +647,8 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
         toast(
             context,
             result.steered
-                ? 'Steering the running turn…'
-                : 'Queued — sends when the turn settles.');
+                ? 'Steering the running turn...'
+                : 'Queued, sends when the turn settles.');
       }
       // Pull the authoritative transcript right away, and make sure the
       // poller is running: a settled session just reopened, so replies
@@ -671,7 +671,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
     }
   }
 
-  /// In-flight task controls: exactly three actions — Stop current task
+  /// In-flight task controls: exactly three actions, Stop current task
   /// (red, destructive hard stop), Steer current task (redirects the
   /// running turn with the composer's draft), Queue for next turn
   /// (parks the draft behind the running turn). Queue/steer need a
@@ -758,7 +758,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
 
   /// Hard stop: force-terminates the in-flight turn process. Unlike
   /// [_stopTurn] (cooperative), this does not wait for a checkpoint.
-  /// The button state comes back from the server afterwards — never
+  /// The button state comes back from the server afterwards, never
   /// assumed.
   Future<void> _hardStopTurn() async {
     _haptic(HapticFeedback.heavyImpact);
@@ -801,8 +801,8 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
       toast(
           context,
           result.steered
-              ? 'Steering the running turn…'
-              : 'Queued — sends when the turn settles.');
+              ? 'Steering the running turn...'
+              : 'Queued, sends when the turn settles.');
       _ensurePolling();
       await _pollOnce();
     } on PantheonTurnInFlightException {
@@ -855,8 +855,8 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
 
   String _grantToast(String? mode) => switch (mode) {
         'session' => 'Granted for this session.',
-        'always' => 'Granted — won\'t ask for this again.',
-        _ => 'Granted — resuming.',
+        'always' => 'Granted, won\'t ask for this again.',
+        _ => 'Granted, resuming.',
       };
 
   /// Keep the Approvals tab badge honest after an inline decision: the
@@ -875,7 +875,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
     try {
       await widget.api.cancelRun(widget.runId);
       if (!mounted) return;
-      toast(context, 'Stopping…');
+      toast(context, 'Stopping...');
       await _pollOnce();
     } catch (e) {
       if (mounted) toastError(context, e);
@@ -888,10 +888,11 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
       final effective = await widget.api.setRunMode(widget.runId, mode);
       if (!mounted) return;
       await _load();
+      if (!mounted) return;
       toast(
           context,
           effective == 'plan'
-              ? 'Plan mode — $_agentName proposes, you approve.'
+              ? 'Plan mode, $_agentName proposes, you approve.'
               : 'Build mode.');
     } catch (e) {
       if (mounted) toastError(context, e);
@@ -922,7 +923,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
 
   /// Tap the queue header to send the oldest queued message now. The
   /// server pops the head of its FIFO queue on the idle send, so the
-  /// rest stay queued — never clear the whole queue here.
+  /// rest stay queued, never clear the whole queue here.
   Future<void> _drainQueue() async {
     final queue = _run?.queuedMessages ?? [];
     if (queue.isEmpty || _sending) return;
@@ -933,7 +934,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
       _ensurePolling();
       await _pollOnce();
     } on PantheonTurnInFlightException {
-      if (mounted) toast(context, 'A turn started — still queued.');
+      if (mounted) toast(context, 'A turn started, still queued.');
     } catch (e) {
       if (mounted) toastError(context, e);
     } finally {
@@ -986,7 +987,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
                       const SizedBox(width: 12),
                       Expanded(
                         child: GradientButton(
-                          label: busy ? 'Saving…' : 'Save',
+                          label: busy ? 'Saving...' : 'Save',
                           onTap: busy
                               ? null
                               : () async {
@@ -1229,7 +1230,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
         return null;
       }
 
-      // run_id is the lead's coordination run — the user-facing session.
+      // run_id is the lead's coordination run, the user-facing session.
       final sessionId = pick(['run_id', 'swarm_id', 'session_id', 'id']);
       if (sessionId == null) {
         if (mounted) {
@@ -1317,10 +1318,11 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
         }
       }
     }
-    if (cutAt == null) return;
+    final cut = cutAt;
+    if (cut == null) return;
     setState(() {
-      final removed = _messages.sublist(cutAt!);
-      _messages.removeRange(cutAt!, _messages.length);
+      final removed = _messages.sublist(cut);
+      _messages.removeRange(cut, _messages.length);
       _pending.removeWhere(removed.contains);
     });
   }
@@ -1359,13 +1361,14 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
     try {
       await widget.api.renameRun(widget.runId, title);
       await _load();
+      if (!mounted) return;
       toast(context, 'Renamed.');
     } catch (e) {
       if (mounted) toastError(context, e);
     }
   }
 
-  /// Switch the default model (same semantics as TUI `/model`: it edits
+  /// Switch the default model (same semantics as runtime `/model`: it edits
   /// the global `[model]` section).
   Future<void> _slashModel() async {
     String provider = '';
@@ -1400,7 +1403,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
                     Text('Default model', style: PT.sectionTitle),
                     const SizedBox(height: 4),
                     Text(
-                        'Switches the global [model] default, like /model in the TUI.',
+                        'Switches the global [model] default, like /model in the runtime.',
                         style: PT.meta),
                     const SizedBox(height: 16),
                     TextField(
@@ -1431,7 +1434,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
                         const SizedBox(width: 12),
                         Expanded(
                           child: GradientButton(
-                            label: busy ? 'Saving…' : 'Save',
+                            label: busy ? 'Saving...' : 'Save',
                             onTap: busy
                                 ? null
                                 : () async {
@@ -1482,7 +1485,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
     'max'
   };
 
-  /// TUI `/reasoning` persists to `[model]`; "off" clears the key.
+  /// runtime `/reasoning` persists to `[model]`; "off" clears the key.
   Future<void> _slashReasoning(String arg) async {
     final level = arg.toLowerCase();
     if (!_reasoningLevels.contains(level)) {
@@ -1509,7 +1512,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
       final summary = await widget.api.compressRun(widget.runId);
       if (!mounted) return;
       toast(context,
-          summary.length > 140 ? '${summary.substring(0, 140)}…' : summary);
+          summary.length > 140 ? '${summary.substring(0, 140)}...' : summary);
       await _load();
     } catch (e) {
       if (mounted) toastError(context, e);
@@ -1612,7 +1615,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
     );
   }
 
-  /// Muse-style agent profile entry: tap the agent avatar in chat to
+  /// agent profile entry: tap the agent avatar in chat to
   /// open the session-scoped activity view for this run.
   void _openAgentActivity() {
     final run = _run;
@@ -1640,7 +1643,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
         // Conversation-first header: the title (tap to rename) over a
         // compact `Mode · model` line (tap for model + Plan/Build
         // config). Execution metadata lives in Session details, reached
-        // from the actions menu — not in a permanent banner.
+        // from the actions menu, not in a permanent banner.
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
@@ -1817,7 +1820,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
     );
   }
 
-  /// The TUI clarify card: question, tappable option chips, answer field.
+  /// The runtime clarify card: question, tappable option chips, answer field.
   Widget _clarifyCard(PendingInput pi) {
     return Container(
       margin: const EdgeInsets.fromLTRB(12, 8, 12, 0),
@@ -1868,7 +1871,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
                   onSubmitted: (_) => _answerInput(pi.callId),
                   style: PT.body.copyWith(fontSize: 14),
                   decoration: InputDecoration(
-                    hintText: 'Your answer…',
+                    hintText: 'Your answer...',
                     contentPadding:
                         EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                   ),
@@ -1919,7 +1922,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
           ),
           const SizedBox(height: 10),
           if (_runApprovals.isEmpty)
-            Text('Waiting on an approval decision…', style: PT.small)
+            Text('Waiting on an approval decision...', style: PT.small)
           else
             for (final a in _runApprovals) ...[
               _approvalRow(a),
@@ -2078,7 +2081,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
     }
 
     // Interleaved streaming: the transcript renders in arrival order as
-    // text message, Thoughts block, text message, Thoughts block, …
+    // text message, Thoughts block, text message, Thoughts block, ...
     // Consecutive thought items (reasoning, assistant tool-call rows
     // and their tool results) accumulate in a buffer; the buffer flushes
     // as one quiet "Thoughts >" row whenever a text message, a user
@@ -2153,7 +2156,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
       if (t.isUi) {
         // Agent-native UI document: rendered by the UI renderer, never
         // as a text bubble. The revision pinned here is the displayed
-        // revision — submissions from this view use exactly it.
+        // revision, submissions from this view use exactly it.
         flushThoughts();
         rows.add(StaggerItem(index: i, child: _keyedBubble(i, _uiItem(t))));
         i++;
@@ -2313,7 +2316,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
   ///
   /// Stale-revision rejections trigger a transcript refresh so the user
   /// sees the current document. Timeouts keep the original submission
-  /// identity — the caller must reconcile via polling, not retry.
+  /// identity, the caller must reconcile via polling, not retry.
   Future<UiSubmitResult> _handleUiAction(UiActionSubmission sub) async {
     final runId = _run?.id;
     if (runId == null) {
@@ -2330,7 +2333,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
       // Uncertain outcome: the request may have executed. Do not retry
       // with a fresh nonce; the poller reconciles the transcript.
       return UiSubmitResult.error(
-          'Connection timed out — the action may have run. '
+          'Connection timed out, the action may have run. '
           'Watch the chat for the result.',
           null);
     }
@@ -2634,7 +2637,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
   /// Open the task sheet for the turn that produced [delegates],
   /// anchored to the first delegate's SUBAGENT section (matched by
   /// childRunId / delegation order). The turn is located from the
-  /// delegate step's transcript index via the shared task model —
+  /// delegate step's transcript index via the shared task model ,
   /// never a timestamp scan.
   void _openTaskSheetForDelegates(List<_ThoughtStep> delegates) {
     final run = _run;
@@ -2660,7 +2663,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
 
   /// Agent sheet for one turn's delegate steps: task title, status row,
   /// the full prompt the agent received, and its result. The delegate
-  /// call itself is not re-rendered as a step row here — the Thoughts
+  /// call itself is not re-rendered as a step row here, the Thoughts
   /// sheet owns that.
   void _openAgentSheet(List<_ThoughtStep> delegates) {
     showModalBottomSheet(
@@ -2746,7 +2749,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
   /// Floating composer: staged attachments/chips sit above the pill;
   /// the pill itself holds the field, attach, model/mode, mic and
   /// send/stop. Model + Plan/Build moved behind the pill's compact
-  /// label and the AppBar subtitle — no permanent control rows.
+  /// label and the AppBar subtitle, no permanent control rows.
   Widget _composerBar() {
     return SafeArea(
       top: false,
@@ -2812,7 +2815,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
 
   /// Removable indicator chip above the composer naming the attached
   /// expert team or expert (set by "Use team" / "Use expert"). Tapping
-  /// × dismisses the chip only — the session keeps running.
+  /// × dismisses the chip only, the session keeps running.
   Widget _attachedChip() {
     final name = _attachedName;
     if (name == null || name.isEmpty) return const SizedBox.shrink();
@@ -2862,7 +2865,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
   /// plus its fallback chain, and a reasoning-effort selector. Mode
   /// goes through `setRunMode`; model and effort write through
   /// `PUT /api/config`. Reached from the AppBar subtitle and the
-  /// composer pill — the old always-visible mode/model rows are gone.
+  /// composer pill, the old always-visible mode/model rows are gone.
   Future<void> _openConfigSheet() async {
     ConfigDoc doc;
     try {
@@ -2902,7 +2905,8 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
                 'model.model': opt['model'] ?? '',
               });
             } catch (e) {
-              if (mounted) toastError(context, e);
+              if (!context.mounted) return;
+              toastError(context, e);
               return;
             }
             provider = opt['provider'] ?? '';
@@ -2910,8 +2914,9 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
             setSheetState(() {});
             if (mounted) {
               final line = await _safeModelLine();
-              if (mounted) setState(() => _modelLine = line);
-              toast(context, 'Model updated');
+              if (!mounted) return;
+              setState(() => _modelLine = line);
+              if (context.mounted) toast(context, 'Model updated');
             }
           }
 
@@ -2919,7 +2924,8 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
             try {
               await widget.api.putConfig({'model.reasoning': level});
             } catch (e) {
-              if (mounted) toastError(context, e);
+              if (!context.mounted) return;
+              toastError(context, e);
               return;
             }
             setSheetState(() => reasoning = level);
@@ -3213,7 +3219,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
   }
 
   /// Project picker: existing projects from GET /api/projects plus a
-  /// "New project…" name prompt; both POST /api/runs/:id/project.
+  /// "New project..." name prompt; both POST /api/runs/:id/project.
   Future<void> _projectPicker() async {
     List<RunProject> projects;
     try {
@@ -3255,7 +3261,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
                 contentPadding: const EdgeInsets.symmetric(horizontal: 4),
                 leading: Icon(Icons.create_new_folder_outlined,
                     color: P.inkSecondary),
-                title: Text('New project…', style: PT.body),
+                title: Text('New project...', style: PT.body),
                 onTap: () => Navigator.pop(context, '__new__'),
               ),
             ],
@@ -3316,7 +3322,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
       context,
       title: 'Delete session?',
       body:
-          '“${_run?.displayTitle ?? 'This session'}” will be deleted. This cannot be undone.',
+          '"${_run?.displayTitle ?? 'This session'}" will be deleted. This cannot be undone.',
       confirmLabel: 'Delete',
       destructive: true,
     );
@@ -3381,7 +3387,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
 
   /// The pill stopped the recorder and handed over the file: transcribe
   /// it and drop the text into the composer for editing. Never
-  /// auto-sends — transcription errors are common.
+  /// auto-sends, transcription errors are common.
   Future<void> _finishVoiceNote(String path) async {
     final recorder = _voiceRecorder;
     _voiceRecorder = null;
@@ -3416,7 +3422,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
       _composer.selection = TextSelection.fromPosition(
           TextPosition(offset: _composer.text.length));
       _composerFocus.requestFocus();
-      toast(context, 'Transcribed — review before sending.');
+      toast(context, 'Transcribed, review before sending.');
     } on PantheonApiException {
       // Keep the raw server body out of the toast: it can carry config
       // hints and provider errors the user can't act on from here.
@@ -3447,7 +3453,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
             child: CircularProgressIndicator(strokeWidth: 2),
           ),
           const SizedBox(width: 12),
-          Text('Transcribing voice note…', style: PT.meta),
+          Text('Transcribing voice note...', style: PT.meta),
         ],
       ),
     );
@@ -3472,7 +3478,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
             child: CircularProgressIndicator(strokeWidth: 2),
           ),
           const SizedBox(width: 12),
-          Text('Compressing context…', style: PT.meta),
+          Text('Compressing context...', style: PT.meta),
         ],
       ),
     );
@@ -3632,13 +3638,14 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
   Future<void> _retryUpload(_PendingAttachment pending) async {
     final path = pending.localPath;
     if (path == null || path.isEmpty) {
-      toast(context, 'Original file is gone — pick it again.');
+      toast(context, 'Original file is gone, pick it again.');
       return;
     }
     List<int> bytes;
     try {
       bytes = await File(path).readAsBytes();
     } catch (e) {
+      if (!mounted) return;
       toastError(context, 'Could not re-read the file: $e');
       return;
     }
@@ -3845,7 +3852,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
     return _extTile(a);
   }
 
-  /// Document tile: extension label (ZIP, PDF, …) like the reference.
+  /// Document tile: extension label (ZIP, PDF, ...) like the reference.
   Widget _extTile(_PendingAttachment a) {
     final ext = _extLabel(a.name);
     return Container(
@@ -4159,7 +4166,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
               ActiveProfileAvatar(api: widget.api, size: 22),
               const SizedBox(width: 8),
               // Assistant messages carry the agent/profile name, not a
-              // generic "ASSISTANT" — resolved best-effort from config.
+              // generic "ASSISTANT", resolved best-effort from config.
               Text(isTool ? 'TOOL' : _agentName,
                   style: PT.monoEyebrow
                       .copyWith(color: isTool ? P.info : P.accent)),
@@ -4211,7 +4218,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
       }
     }
 
-    // Optional per-message timestamp (only when the item carries one —
+    // Optional per-message timestamp (only when the item carries one ,
     // older transcript entries may omit it).
     if (!prefs.showTimestamps.value || t.tsMs == null) return core;
     final label = prefs.timestampFormat.value == 'absolute'
@@ -4644,7 +4651,7 @@ class _SendGlyph extends StatelessWidget {
   }
 }
 
-/// Red Nyx sheet button for the hard "Stop the model" action. Mirrors
+/// Red sheet button for the hard "Stop the model" action. Mirrors
 /// the private `_DangerButton` in widgets/forms.dart (danger wash fill,
 /// 52dp tall, 20dp radius).
 class _DangerSheetButton extends StatelessWidget {
@@ -4815,7 +4822,7 @@ class _ImageViewerDialog extends StatelessWidget {
 }
 
 /// Tool-call status for the Thoughts sheet: spinner, check, or red X.
-/// There is no pending state — a call with no result on a settled run
+/// There is no pending state, a call with no result on a settled run
 /// is an error, not a clock.
 enum _StepStatus { running, done, error }
 
@@ -4921,7 +4928,7 @@ class _ThoughtStep {
   /// recorded the link. The agent sheet fetches this run's steps.
   final String? childRunId;
 
-  /// Transcript index of the assistant item that owns this step — the
+  /// Transcript index of the assistant item that owns this step, the
   /// subagent pill anchors here, never on a timestamp scan.
   final int transcriptIndex;
 
@@ -5029,11 +5036,11 @@ class _ThoughtStep {
 }
 
 /// Best-effort error detection: the backend has no machine-readable
-/// error marker on tool results, so match the common "Error…" prefix.
+/// error marker on tool results, so match the common "Error..." prefix.
 bool _looksLikeError(String content) => looksLikeToolError(content);
 
 String _trunc(String s, int n) =>
-    s.length <= n ? s : '${s.substring(0, n).trimRight()}…';
+    s.length <= n ? s : '${s.substring(0, n).trimRight()}...';
 
 String _prettyArgs(String argsJson) => prettyArgsJson(argsJson);
 
@@ -5051,7 +5058,7 @@ String _reasoningSummary(String text) {
 }
 
 /// Checklist row title: the step's self-describing label
-/// ("Running command", "Delegate → researcher: …"), or the reasoning
+/// ("Running command", "Delegate → researcher: ..."), or the reasoning
 /// summary for reasoning steps.
 String _stepTitle(_ThoughtStep s) {
   if (s.isReasoning) return _reasoningSummary(s.reasoningText ?? '');
@@ -5110,7 +5117,7 @@ class _ArgsCard extends StatelessWidget {
 }
 
 /// Near-full-screen "Thoughts" sheet: a vertical checklist of one
-/// turn's steps — reasoning summaries and tool calls — each with a
+/// turn's steps, reasoning summaries and tool calls, each with a
 /// status glyph and a chevron. Tapping a row expands its detail card.
 /// Quiet and monochrome: no chat-bubble styling, no ASSISTANT label.
 class _ThoughtsSheet extends StatefulWidget {
@@ -5296,7 +5303,7 @@ class _ThoughtsSheetState extends State<_ThoughtsSheet> {
   }
 
   /// Delegate expansion stays minimal: the agent sheet owns the prompt,
-  /// the result, and the nested steps — this row only identifies the
+  /// the result, and the nested steps, this row only identifies the
   /// delegation so the two never duplicate each other.
   Widget _delegateDetail(_ThoughtStep s) {
     final dur = _stepDuration(s);
@@ -5470,7 +5477,7 @@ class _ThoughtsSheetState extends State<_ThoughtsSheet> {
 /// title is the agent's task; the status row reads "Completed ·
 /// {elapsed}" (check) or "Running" (spinner); then the full prompt the
 /// agent received and its result (expandable when long). The delegate
-/// call is not re-rendered as a step row — the Thoughts sheet owns that.
+/// call is not re-rendered as a step row, the Thoughts sheet owns that.
 /// Child step rows render only when attributable; the backend exposes no
 /// subagent transcripts, so in practice there are none.
 class _AgentSheet extends StatefulWidget {

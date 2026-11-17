@@ -69,7 +69,7 @@ class _MemoryScreenState extends State<MemoryScreen> {
         title: const Text('Memory'),
         actions: [
           IconButton(
-            icon:  Icon(Icons.refresh_rounded,
+            icon: Icon(Icons.refresh_rounded,
                 color: P.inkSecondary, weight: 1.6),
             onPressed: _load,
           ),
@@ -93,13 +93,13 @@ class _MemoryScreenState extends State<MemoryScreen> {
               onSubmitted: (_) => _load(),
               style: PT.body,
               decoration: InputDecoration(
-                hintText: 'Search memory…',
-                prefixIcon:  Icon(Icons.search_rounded,
+                hintText: 'Search memory...',
+                prefixIcon: Icon(Icons.search_rounded,
                     color: P.inkFaint, weight: 1.6),
                 suffixIcon: _search.text.isEmpty
                     ? null
                     : IconButton(
-                        icon:  Icon(Icons.clear_rounded,
+                        icon: Icon(Icons.clear_rounded,
                             color: P.inkFaint),
                         onPressed: () {
                           _search.clear();

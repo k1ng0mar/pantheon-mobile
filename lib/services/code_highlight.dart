@@ -6,7 +6,7 @@ import 'package:syntax_highlight/syntax_highlight.dart';
 ///
 /// The package's bundled themes didn't include the three Umar picked, so
 /// the theme JSONs live in this app's assets (`assets/themes/`) and are
-/// loaded through the package's own theme loader — same engine, our
+/// loaded through the package's own theme loader, same engine, our
 /// themes.
 class CodeHighlight {
   CodeHighlight._();
@@ -53,7 +53,7 @@ class CodeHighlight {
     'atom-one-dark': 'Atom One Dark',
   };
 
-  /// Code block surface per theme — each theme carries its own background
+  /// Code block surface per theme, each theme carries its own background
   /// so the block looks right in either app brightness.
   static const themeBackgrounds = <String, Color>{
     'github': Color(0xFFFFFFFF),

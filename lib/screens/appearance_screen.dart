@@ -318,31 +318,27 @@ class AppearanceScreen extends StatelessWidget {
           const Overline('Density'),
           ValueListenableBuilder<bool>(
             valueListenable: prefs.compactDensity,
-            builder: (_, compact, __) => PRowCard(
-              rows: [
-                PRow(
-                  title: 'Comfortable',
-                  subtitle: 'Roomier rows and spacing',
-                  dotColor: P.ok,
-                  onTap: () => prefs.setCompactDensity(false),
-                  trailing: Radio<bool>(
-                    value: false,
-                    groupValue: compact,
-                    onChanged: (_) => prefs.setCompactDensity(false),
+            builder: (_, compact, __) => RadioGroup<bool>(
+              groupValue: compact,
+              onChanged: (value) => prefs.setCompactDensity(value ?? false),
+              child: PRowCard(
+                rows: [
+                  PRow(
+                    title: 'Comfortable',
+                    subtitle: 'Roomier rows and spacing',
+                    dotColor: P.ok,
+                    onTap: () => prefs.setCompactDensity(false),
+                    trailing: const Radio<bool>(value: false),
                   ),
-                ),
-                PRow(
-                  title: 'Compact',
-                  subtitle: 'Denser rows, more on screen',
-                  dotColor: P.info,
-                  onTap: () => prefs.setCompactDensity(true),
-                  trailing: Radio<bool>(
-                    value: true,
-                    groupValue: compact,
-                    onChanged: (_) => prefs.setCompactDensity(true),
+                  PRow(
+                    title: 'Compact',
+                    subtitle: 'Denser rows, more on screen',
+                    dotColor: P.info,
+                    onTap: () => prefs.setCompactDensity(true),
+                    trailing: const Radio<bool>(value: true),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
           const Overline('Motion & feedback'),
@@ -447,7 +443,7 @@ class _AgentProfileRowState extends State<_AgentProfileRow> {
               child: Text('Remove', style: PT.label.copyWith(color: P.warn)),
             ),
           TonalButton(
-            label: _picking ? 'Picking…' : 'Choose',
+            label: _picking ? 'Picking...' : 'Choose',
             onTap: _picking ? null : _pick,
           ),
         ],
@@ -476,8 +472,8 @@ class _HexColorFieldState extends State<_HexColorField> {
 
   static String _hexOf(Color? c) {
     if (c == null) return '';
-    final v = c.value.toRadixString(16).padLeft(8, '0').toUpperCase();
-    return '#${c.alpha == 0xFF ? v.substring(2) : v}';
+    final v = c.toARGB32().toRadixString(16).padLeft(8, '0').toUpperCase();
+    return '#${c.a >= 1 ? v.substring(2) : v}';
   }
 
   static Color? _parse(String s) {

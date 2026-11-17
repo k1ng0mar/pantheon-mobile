@@ -3,7 +3,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 /// App-level preferences: appearance + notifications.
 ///
-/// Persisted in SharedPreferences (nothing sensitive here — the auth token
+/// Persisted in SharedPreferences (nothing sensitive here, the auth token
 /// stays in [SettingsStore]'s secure storage). Appearance notifiers are
 /// merged into [appearance] so the app root rebuilds the moment a page
 /// changes a value; every setter persists before returning.
@@ -116,7 +116,7 @@ class AppPreferences {
 
     bodyFont.value = p.getString(_kBodyFont) ?? 'Inter';
     bubbleStyle.value = switch (p.getString(_kBubbleStyle)) {
-      // Legacy corner-style values were bubble variants — both become the
+      // Legacy corner-style values were bubble variants, both become the
       // Bubbles layout. Fresh installs land on Default.
       'rounded' || 'flat' || 'bubbles' => 'bubbles',
       _ => 'default',
@@ -305,7 +305,7 @@ class AppPreferences {
     if (value == null) {
       await p.remove(key);
     } else {
-      await p.setInt(key, value.value);
+      await p.setInt(key, value.toARGB32());
     }
   }
 

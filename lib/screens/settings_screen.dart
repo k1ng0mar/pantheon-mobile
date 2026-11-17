@@ -40,7 +40,7 @@ class SettingsScreen extends StatelessWidget {
                 title: 'Dashboard',
                 subtitle: settings.baseUrl,
                 dotColor: P.ok,
-                trailing:  Icon(Icons.chevron_right_rounded,
+                trailing: Icon(Icons.chevron_right_rounded,
                     color: P.inkFaint, weight: 1.6),
                 onTap: () => _editConnection(context),
               ),
@@ -48,7 +48,7 @@ class SettingsScreen extends StatelessWidget {
                 title: 'Token',
                 subtitle: '••••••••$tail',
                 dotColor: P.inkFaint,
-                trailing:  Icon(Icons.chevron_right_rounded,
+                trailing: Icon(Icons.chevron_right_rounded,
                     color: P.inkFaint, weight: 1.6),
                 onTap: () => _editConnection(context),
               ),
@@ -62,7 +62,7 @@ class SettingsScreen extends StatelessWidget {
                 InkWell(
                   onTap: () => _editConnection(context),
                   borderRadius: BorderRadius.circular(P.r16),
-                  child:  Padding(
+                  child: Padding(
                     padding: EdgeInsets.all(14),
                     child: Row(
                       children: [
@@ -105,7 +105,7 @@ class SettingsScreen extends StatelessWidget {
                 Text('Pantheon', style: PT.rowTitle),
                 SizedBox(height: 6),
                 Text(
-                  'Mobile companion for the Pantheon agent runtime — durable runs, approvals, usage and schedules. Talks to the dashboard API over your LAN; the token never leaves your device.',
+                  'Mobile companion for the Pantheon agent runtime, durable runs, approvals, usage and schedules. Talks to the dashboard API over your LAN; the token never leaves your device.',
                   style: PT.small,
                 ),
                 SizedBox(height: 8),

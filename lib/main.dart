@@ -279,7 +279,7 @@ class _MainShellState extends State<MainShell> {
   }
 
   /// Poll the approvals list: keep the pending count fresh and raise an
-  /// in-app banner for newly parked approvals. Silent on failure — the
+  /// in-app banner for newly parked approvals. Silent on failure, the
   /// next tick retries.
   Future<void> _watchApprovals() async {
     try {
@@ -351,7 +351,7 @@ class _MainShellState extends State<MainShell> {
   }
 }
 
-/// Nyx tab bar: 80dp, tonal bg, hairline top border,
+/// Tab bar: 80dp, tonal bg, hairline top border,
 /// active icon in a 64×32 accent-wash pill, thin-stroke icons.
 class _NyxTabBar extends StatelessWidget {
   final int index;
@@ -372,7 +372,7 @@ class _NyxTabBar extends StatelessWidget {
       _TabDef(Icons.more_horiz_rounded, Icons.more_horiz_rounded, 'More'),
     ];
     return Container(
-      decoration:  BoxDecoration(
+      decoration: BoxDecoration(
         color: P.tabBar,
         border: Border(top: BorderSide(color: P.border, width: 1)),
       ),
@@ -440,7 +440,7 @@ class _TabDef {
   const _TabDef(this.icon, this.activeIcon, this.label);
 }
 
-/// The "More" tab: Nyx-style hub for the full control plane —
+/// The More tab: hub for the full control plane ,
 /// tasks, profiles, models, memory, skills, plugins, MCP, configs,
 /// keys, logs, gateway, and app settings.
 class MoreTab extends StatelessWidget {
@@ -681,7 +681,7 @@ class MoreTab extends StatelessWidget {
             subtitle: 'Run and schedule alerts',
             onTap: () => _push(context, NotificationsScreen(api: api)),
           ),
-          const SizedBox(height: 12),          _hubCard(
+          const SizedBox(height: 12), _hubCard(
             context,
             icon: Icons.settings_outlined,
             title: 'Settings',

@@ -12,7 +12,7 @@ import 'code_block.dart';
 ///
 /// Dispatches on the component type; unknown types degrade to
 /// [UiUnsupportedView]. Interactive components (forms, approvals) report
-/// submissions through [onAction] — the widget never executes actions
+/// submissions through [onAction], the widget never executes actions
 /// itself and performs no authorization; the runtime is the authority.
 ///
 /// The [revision] must be the revision actually displayed; submissions
@@ -139,7 +139,7 @@ Widget _title(String? title) {
   );
 }
 
-/// markdown — reuses the chat markdown renderer.
+/// markdown, reuses the chat markdown renderer.
 class UiMarkdownView extends StatelessWidget {
   final UiMarkdown markdown;
   const UiMarkdownView({super.key, required this.markdown});
@@ -156,7 +156,7 @@ class UiMarkdownView extends StatelessWidget {
   }
 }
 
-/// list — simple bulleted items with optional status.
+/// list, simple bulleted items with optional status.
 class UiListView extends StatelessWidget {
   final UiList list;
   const UiListView({super.key, required this.list});
@@ -234,7 +234,7 @@ class _UiFormViewState extends State<UiFormView> {
 
   /// The nonce of the in-flight or last-failed submission. Retained
   /// across retries so a timeout retry reuses the same idempotency key
-  /// — a fresh nonce after an uncertain timeout could double-execute.
+  /// a fresh nonce after an uncertain timeout could double-execute.
   /// Cleared on success or revision change.
   String? _activeNonce;
 
@@ -370,7 +370,7 @@ class _UiFormViewState extends State<UiFormView> {
         case UiSubmitOutcome.stale:
           _activeNonce = null; // superseded; the refresh brings a new doc
           _state = _ActionState.error;
-          _status = 'This form was updated — refreshing.';
+          _status = 'This form was updated, refreshing.';
         case UiSubmitOutcome.error:
           // Keep _activeNonce: the outcome is uncertain, so a retry must
           // reuse the same key for the server's replay protection.
@@ -545,7 +545,7 @@ class _UiFormViewState extends State<UiFormView> {
 }
 
 /// Approval card with approve/deny. Decisions go through the UI
-/// protocol action path — never the legacy approvals queue.
+/// protocol action path, never the legacy approvals queue.
 class UiApprovalView extends StatefulWidget {
   final String nodeId;
   final UiApproval approval;
@@ -613,11 +613,11 @@ class _UiApprovalViewState extends State<UiApprovalView> {
           _activeNonce = null;
           _state = _ActionState.success;
           _status =
-              (result.approved ?? false) ? 'Approved — resuming' : 'Denied';
+              (result.approved ?? false) ? 'Approved, resuming' : 'Denied';
         case UiSubmitOutcome.stale:
           _activeNonce = null;
           _state = _ActionState.error;
-          _status = 'Already decided — refreshing.';
+          _status = 'Already decided, refreshing.';
         case UiSubmitOutcome.denied:
         case UiSubmitOutcome.error:
           // Keep _activeNonce for safe retry (see _UiFormViewState).
@@ -717,7 +717,7 @@ class _UiApprovalViewState extends State<UiApprovalView> {
   }
 }
 
-/// table — horizontal scroll on narrow screens.
+/// table, horizontal scroll on narrow screens.
 class UiTableView extends StatelessWidget {
   final UiTable table;
   const UiTableView({super.key, required this.table});
@@ -752,7 +752,7 @@ class UiTableView extends StatelessWidget {
   }
 }
 
-/// code — reuses the chat code block (with copy button).
+/// code, reuses the chat code block (with copy button).
 class UiCodeView extends StatelessWidget {
   final UiCode code;
   const UiCodeView({super.key, required this.code});
@@ -769,7 +769,7 @@ class UiCodeView extends StatelessWidget {
   }
 }
 
-/// metrics — compact stat cards.
+/// metrics, compact stat cards.
 class UiMetricsView extends StatelessWidget {
   final UiMetrics metrics;
   const UiMetricsView({super.key, required this.metrics});
@@ -812,7 +812,7 @@ class UiMetricsView extends StatelessWidget {
   }
 }
 
-/// task_list — checkbox-style rows.
+/// task_list, checkbox-style rows.
 class UiTaskListView extends StatelessWidget {
   final UiTaskList taskList;
   const UiTaskListView({super.key, required this.taskList});
@@ -865,7 +865,7 @@ class UiTaskListView extends StatelessWidget {
   }
 }
 
-/// progress — linear indicator with label.
+/// progress, linear indicator with label.
 class UiProgressView extends StatelessWidget {
   final UiProgress progress;
   const UiProgressView({super.key, required this.progress});
@@ -893,7 +893,7 @@ class UiProgressView extends StatelessWidget {
   }
 }
 
-/// details — expandable section.
+/// details, expandable section.
 class UiDetailsView extends StatelessWidget {
   final UiDetails details;
   final String uiId;
@@ -934,7 +934,7 @@ class UiDetailsView extends StatelessWidget {
   }
 }
 
-/// diff — file hunks with add/del coloring.
+/// diff, file hunks with add/del coloring.
 class UiDiffView extends StatelessWidget {
   final UiDiff diff;
   const UiDiffView({super.key, required this.diff});
@@ -1002,7 +1002,7 @@ class UiDiffView extends StatelessWidget {
   }
 }
 
-/// layout — stack/columns/tabs. Columns fall back to stacked on narrow
+/// layout, stack/columns/tabs. Columns fall back to stacked on narrow
 /// screens (the protocol explicitly allows this).
 class UiLayoutView extends StatelessWidget {
   final UiLayout layout;
@@ -1068,7 +1068,7 @@ class UiLayoutView extends StatelessWidget {
   }
 }
 
-/// refs — link list.
+/// refs, link list.
 class UiRefsView extends StatelessWidget {
   final UiRefs refs;
   const UiRefsView({super.key, required this.refs});
@@ -1155,7 +1155,7 @@ class _UiTabsState extends State<_UiTabs> {
   }
 }
 
-/// chart placeholder — values as a readable list until a charting
+/// chart placeholder, values as a readable list until a charting
 /// dependency is justified.
 class UiChartFallbackView extends StatelessWidget {
   final UiChart chart;
@@ -1177,7 +1177,7 @@ class UiChartFallbackView extends StatelessWidget {
                 children: [
                   Expanded(child: Text(chart.labels[i], style: PT.small)),
                   Text(
-                    i < series.values.length ? _fmtNum(series.values[i]) : '—',
+                    i < series.values.length ? _fmtNum(series.values[i]) : ',',
                     style: PT.monoSm,
                   ),
                 ],
@@ -1208,7 +1208,7 @@ class UiUnsupportedView extends StatelessWidget {
         borderRadius: BorderRadius.circular(P.r12),
       ),
       child: Text(
-        'Unsupported content ($type) — update the app to view it.',
+        'Unsupported content ($type), update the app to view it.',
         style:
             PT.small.copyWith(color: P.inkFaint, fontStyle: FontStyle.italic),
       ),
@@ -1217,9 +1217,9 @@ class UiUnsupportedView extends StatelessWidget {
 }
 
 String _truncate(String s, int max) =>
-    s.length <= max ? s : '${s.substring(0, max)}…';
+    s.length <= max ? s : '${s.substring(0, max)}...';
 
-/// Per-tap unique nonce (UUID v4). Uniqueness — not secrecy — is the
+/// Per-tap unique nonce (UUID v4). Uniqueness, not secrecy, is the
 /// requirement: the server treats the nonce as an opaque idempotency
 /// key for replay protection.
 String _newNonce() => const Uuid().v4();

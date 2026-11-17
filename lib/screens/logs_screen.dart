@@ -121,7 +121,7 @@ class _LogsScreenState extends State<LogsScreen> {
       return;
     }
     final draft =
-        'This error showed up in the logs — can you take a look?\n\n```\n$line\n```';
+        'This error showed up in the logs, can you take a look?\n\n```\n$line\n```';
     Navigator.of(context).push(buildDetailRoute(
       SessionDetailScreen(
           api: widget.api, runId: home.id, initialDraft: draft),
@@ -143,7 +143,7 @@ class _LogsScreenState extends State<LogsScreen> {
         title: const Text('Logs'),
         actions: [
           IconButton(
-            icon:  Icon(Icons.refresh_rounded,
+            icon: Icon(Icons.refresh_rounded,
                 color: P.inkSecondary, weight: 1.6),
             onPressed: _load,
           ),
@@ -196,13 +196,13 @@ class _LogsScreenState extends State<LogsScreen> {
               onChanged: (_) => setState(() {}),
               style: PT.mono.copyWith(color: P.ink),
               decoration: InputDecoration(
-                hintText: 'grep…',
-                prefixIcon:  Icon(Icons.search_rounded,
+                hintText: 'grep...',
+                prefixIcon: Icon(Icons.search_rounded,
                     color: P.inkFaint, weight: 1.6),
                 suffixIcon: _grep.text.isEmpty
                     ? null
                     : IconButton(
-                        icon:  Icon(Icons.clear_rounded,
+                        icon: Icon(Icons.clear_rounded,
                             color: P.inkFaint),
                         onPressed: () {
                           _grep.clear();

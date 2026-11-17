@@ -60,7 +60,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     final ok = await confirmAction(
       context,
       title: 'Run this job now?',
-      body: '“${_short(j.task)}” will fire immediately.',
+      body: '"${_short(j.task)}" will fire immediately.',
       confirmLabel: 'Run now',
     );
     if (!ok || !mounted) return;
@@ -76,7 +76,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     final ok = await confirmAction(
       context,
       title: 'Delete this job?',
-      body: '“${_short(j.task)}” will be removed permanently.',
+      body: '"${_short(j.task)}" will be removed permanently.',
       confirmLabel: 'Delete',
       destructive: true,
     );
@@ -96,7 +96,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     final ok = await confirmAction(
       context,
       title: 'Delete template?',
-      body: '“${t.name}” will be removed permanently.',
+      body: '"${t.name}" will be removed permanently.',
       confirmLabel: 'Delete',
       destructive: true,
     );
@@ -113,7 +113,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
   }
 
   static String _short(String s) =>
-      s.length > 60 ? '${s.substring(0, 60)}…' : s;
+      s.length > 60 ? '${s.substring(0, 60)}...' : s;
 
   @override
   Widget build(BuildContext context) {
@@ -122,7 +122,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
         title: const Text('Tasks'),
         actions: [
           IconButton(
-            icon:  Icon(Icons.refresh_rounded,
+            icon: Icon(Icons.refresh_rounded,
                 color: P.inkSecondary, weight: 1.6),
             onPressed: () {
               _loadJobs();
@@ -323,7 +323,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
   Future<void> _createJobSheet() => _jobSheet();
 
   /// Edit an existing job, reusing the creation form. Only every/cron/
-  /// once schedules are editable here — other kinds keep their trigger
+  /// once schedules are editable here, other kinds keep their trigger
   /// via the pause toggle alone.
   void _editJob(ScheduledJob j) {
     const editable = {'every', 'cron', 'oneshot'};
@@ -335,7 +335,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
   }
 
   /// Open the job creation form prefilled from a template (client-side
-  /// prefill only — the backend has no template-instantiate endpoint).
+  /// prefill only, the backend has no template-instantiate endpoint).
   void _useTemplate(ScheduleTemplate t) {
     setState(() => _tab = 0);
     _jobSheet(template: t);

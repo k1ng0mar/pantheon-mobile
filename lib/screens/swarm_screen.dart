@@ -402,7 +402,7 @@ class _SwarmScreenState extends State<SwarmScreen> {
         ),
         const SizedBox(height: 16),
         GradientButton(
-          label: _launching ? 'Launching…' : 'Launch swarm',
+          label: _launching ? 'Launching...' : 'Launch swarm',
           onTap: _launching ? null : _launch,
         ),
       ],
@@ -511,7 +511,7 @@ class _SwarmScreenState extends State<SwarmScreen> {
       return EmptyState(
         icon: Icons.alt_route_outlined,
         title: 'Swarm not found',
-        body: 'This swarm is gone — the dashboard may have restarted '
+        body: 'This swarm is gone, the dashboard may have restarted '
             'since it launched.',
         ctaLabel: 'New task',
         onCta: _newTask,
@@ -610,7 +610,7 @@ class _SwarmScreenState extends State<SwarmScreen> {
               // button must not promise one. The next round is judged
               // again, and its notes drive the round after.
               PillButton(
-                label: _retrying ? 'Retrying…' : 'Retry',
+                label: _retrying ? 'Retrying...' : 'Retry',
                 color: P.warn,
                 onTap: _retrying ? null : _retry,
               ),

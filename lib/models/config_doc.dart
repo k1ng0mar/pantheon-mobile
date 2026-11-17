@@ -1,5 +1,5 @@
 /// Config document from `GET /api/config`:
-/// {"path": "…", "values": {…}, "raw": "…toml…"}.
+/// {"path": "...", "values": {...}, "raw": "...toml..."}.
 class ConfigDoc {
   final String path;
   final Map<String, dynamic> values;
@@ -32,7 +32,7 @@ class ConfigDoc {
 }
 
 /// One flattened schema field from `GET /api/config/schema`:
-/// {"path": "model.provider", "type": "string", "value": …, "enum"?}.
+/// {"path": "model.provider", "type": "string", "value": ..., "enum"?}.
 class ConfigField {
   final String path;
   final String type;
@@ -56,7 +56,7 @@ class ConfigField {
 }
 
 /// A model slot: the default `[model]` table or an auxiliary table
-/// (`[judge]`, `[embeddings]`, …) that pins provider/model.
+/// (`[judge]`, `[embeddings]`, ...) that pins provider/model.
 class ModelSlot {
   final String section; // e.g. "model", "judge"
   final String title; // display label

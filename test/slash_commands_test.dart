@@ -1,6 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:pantheon_mobile/models/approval.dart';
 import 'package:pantheon_mobile/models/models.dart';
 import 'package:pantheon_mobile/services/pantheon_api.dart';
 import 'package:pantheon_mobile/services/slash_commands.dart';
@@ -172,6 +171,7 @@ class _FakeHost implements SlashCommandHost {
   _FakeHost(this._api);
 
   List<ChatCommand> commands = ChatCommand.fallbackChatCommands;
+  @override
   String runId = 'r1';
 
   final List<String> toasts = [];
@@ -473,7 +473,7 @@ void main() {
       await SlashCommandDispatcher(host)
           .dispatch('learn', 'always verify before claiming done');
       // The dashboard namespaces keys as {kind}:{key}; `lesson`
-      // matches the TUI's lesson:{slug} convention.
+      // matches the runtime's lesson:{slug} convention.
       expect(api.memoryText, 'always verify before claiming done');
       expect(api.memoryKind, 'lesson');
       expect(host.toasts, ['Lesson saved.']);
@@ -552,7 +552,7 @@ void main() {
     test('unknown /bogus keeps the friendly toast', () async {
       final host = _FakeHost(_FakeApi());
       await SlashCommandDispatcher(host).dispatch('bogus', '');
-      expect(host.toasts, ['Unknown command /bogus — try /help.']);
+      expect(host.toasts, ['Unknown command /bogus, try /help.']);
     });
   });
 
@@ -568,7 +568,7 @@ void main() {
       expect(host.confirmDestructive, isTrue);
       expect(host.hideLastTurnCalls, 1);
       expect(host.composerText, 'my message');
-      expect(host.toasts, ['Undone — your message is back in the composer.']);
+      expect(host.toasts, ['Undone, your message is back in the composer.']);
       expect(host.errors, isEmpty);
     });
 
@@ -609,7 +609,7 @@ void main() {
       await SlashCommandDispatcher(host).dispatch('undo', '');
       expect(host.errors, isEmpty);
       expect(host.toasts,
-          ['This needs a newer dashboard — update Pantheon and try again.']);
+          ['This needs a newer dashboard, update Pantheon and try again.']);
     });
   });
 
@@ -629,7 +629,7 @@ void main() {
       final host = _FakeHost(_FakeApi());
       await SlashCommandDispatcher(host).dispatch('reset', '');
       expect(host.clearTranscriptCalls, 1);
-      expect(host.toasts, ['Reset — session, title, and history are kept.']);
+      expect(host.toasts, ['Reset, session, title, and history are kept.']);
     });
   });
 
@@ -689,7 +689,7 @@ void main() {
       await SlashCommandDispatcher(host).dispatch('restore', 'v1');
       expect(api.restoredName, 'v1');
       expect(host.hideTurnsAfterCalls, [3]);
-      expect(host.toasts, ["Restored 'v1' — rewound to turn 3."]);
+      expect(host.toasts, ["Restored 'v1', rewound to turn 3."]);
     });
 
     test('bare /restore prompts for the name', () async {

@@ -1,5 +1,5 @@
 /// One key from `GET /api/env`:
-/// {"key","redacted","used_by":[…],"shadowed_by_process_env":bool}.
+/// {"key","redacted","used_by":[...],"shadowed_by_process_env":bool}.
 /// Values are redacted server-side; the app never sees or shows secrets.
 class EnvKey {
   final String key;

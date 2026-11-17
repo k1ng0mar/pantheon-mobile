@@ -42,14 +42,14 @@ void main() {
     await tester.pumpWidget(_composerHarness(_longName));
     await tester.pumpAndSettle();
 
-    final hintFinder = find.text('Message $_longName…');
+    final hintFinder = find.text('Message $_longName...');
     expect(hintFinder, findsOneWidget);
 
     final hint = tester.widget<Text>(hintFinder);
     expect(hint.maxLines, 1);
     expect(hint.style?.overflow, TextOverflow.ellipsis);
 
-    // The ellipsis treatment must not restyle the Nyx hint look.
+    // The ellipsis treatment must not restyle the hint look.
     final themeHint =
         pantheonTheme(Brightness.dark).inputDecorationTheme.hintStyle!;
     expect(hint.style?.fontFamily, themeHint.fontFamily);

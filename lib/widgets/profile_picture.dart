@@ -6,8 +6,8 @@ import '../theme.dart';
 
 /// Circular agent avatar.
 ///
-/// `avatar` is `preset:avatar-N` (1–6) for the bundled set, an absolute
-/// file path for a custom upload, or null — which falls back to the
+/// `avatar` is `preset:avatar-N` (1-6) for the bundled set, an absolute
+/// file path for a custom upload, or null, which falls back to the
 /// gradient-initial circle. An unresolvable value (unknown preset, missing
 /// file) also falls back instead of crashing.
 class ProfilePicture extends StatelessWidget {

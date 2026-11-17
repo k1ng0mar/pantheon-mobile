@@ -68,8 +68,8 @@ void main() {
     test('long command truncates at ~48 chars', () {
       final t = deriveStepTitle(call('shell', '{"command":"${'x' * 80}"}'));
       expect(t.startsWith('Ran '), isTrue);
-      expect(t.endsWith('…'), isTrue);
-      expect(t.length, lessThanOrEqualTo(4 + 48 + 1));
+      expect(t.endsWith('...'), isTrue);
+      expect(t.length, lessThanOrEqualTo(4 + 48 + 3));
     });
   });
 
@@ -96,13 +96,13 @@ void main() {
         result: TranscriptItem(
             type: 'message',
             role: 'tool',
-            content: 'compiling…\nExit code: 2',
+            content: 'compiling...\nExit code: 2',
             toolCallId: 'c1'),
         status: TaskStepStatus.error,
         durationMs: null,
       );
       expect(s, startsWith('Exit code 2'));
-      expect(s, contains('compiling…'));
+      expect(s, contains('compiling...'));
     });
 
     test('no output → salient argument text, never empty fabrication', () {
@@ -350,8 +350,8 @@ void main() {
 
     test('long task title truncates at ~60 chars', () {
       final title = taskTitleFromText('word ' * 30);
-      expect(title.endsWith('…'), isTrue);
-      expect(title.length, lessThanOrEqualTo(61));
+      expect(title.endsWith('...'), isTrue);
+      expect(title.length, lessThanOrEqualTo(63));
     });
 
     test('empty transcript → no tasks', () {

@@ -10,7 +10,7 @@ import '../widgets/new_chat_sheet.dart';
 import '../widgets/states.dart';
 import 'session_detail_screen.dart';
 
-/// Sessions: one row per conversation, Muse-style — title, last activity,
+/// Sessions: one row per conversation,, title, last activity,
 /// time, grouped by day. A session's runs (turns, tool calls, timeline)
 /// live inside the detail view.
 class SessionsScreen extends StatefulWidget {
@@ -93,7 +93,7 @@ class _SessionsScreenState extends State<SessionsScreen> {
         title: const Text('Sessions'),
         actions: [
           IconButton(
-            icon:  Icon(Icons.refresh_rounded,
+            icon: Icon(Icons.refresh_rounded,
                 color: P.inkSecondary, weight: 1.6),
             onPressed: _load,
           ),
@@ -118,13 +118,13 @@ class _SessionsScreenState extends State<SessionsScreen> {
               onChanged: (_) => setState(() {}),
               style: PT.body,
               decoration: InputDecoration(
-                hintText: 'Search sessions…',
-                prefixIcon:  Icon(Icons.search_rounded,
+                hintText: 'Search sessions...',
+                prefixIcon: Icon(Icons.search_rounded,
                     color: P.inkFaint, weight: 1.6),
                 suffixIcon: _search.text.isEmpty
                     ? null
                     : IconButton(
-                        icon:  Icon(Icons.clear_rounded,
+                        icon: Icon(Icons.clear_rounded,
                             color: P.inkFaint),
                         onPressed: () {
                           _search.clear();
@@ -168,7 +168,7 @@ class _SessionsScreenState extends State<SessionsScreen> {
                   return const EmptyState(
                     icon: Icons.forum_outlined,
                     title: 'No sessions yet',
-                    body: 'Start a conversation in the TUI and it will show up here.',
+                    body: 'Start a conversation in the runtime and it will show up here.',
                   );
                 }
                 return RefreshIndicator(
@@ -280,7 +280,7 @@ class _SessionsScreenState extends State<SessionsScreen> {
                     color: P.accentSoft,
                     border: Border.all(color: P.borderStrong),
                   ),
-                  child:  Icon(Icons.hub_outlined,
+                  child: Icon(Icons.hub_outlined,
                       color: P.accent, size: 26, weight: 1.6),
                 ),
                 if (live)
@@ -400,6 +400,7 @@ class _SessionsScreenState extends State<SessionsScreen> {
         if (title == null || title.isEmpty || !mounted) return;
         try {
           await widget.api.renameRun(s.id, title);
+          if (!mounted) return;
           toast(context, 'Renamed.');
           _load();
         } catch (e) {
@@ -434,13 +435,14 @@ class _SessionsScreenState extends State<SessionsScreen> {
         final ok = await confirmAction(
           context,
           title: 'Delete session?',
-          body: '“${s.displayTitle}” will be deleted. This cannot be undone.',
+          body: '"${s.displayTitle}" will be deleted. This cannot be undone.',
           confirmLabel: 'Delete',
           destructive: true,
         );
         if (ok && mounted) {
           try {
             await widget.api.deleteRun(s.id);
+            if (!mounted) return;
             toast(context, 'Deleted.');
             _load();
           } catch (e) {

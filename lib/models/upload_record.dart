@@ -1,7 +1,7 @@
 /// A stored chat attachment from `POST /api/uploads`:
 ///
 /// ```json
-/// {"id": "upl_…", "name": "photo.jpg", "mime": "image/jpeg",
+/// {"id": "upl_...", "name": "photo.jpg", "mime": "image/jpeg",
 ///  "size_bytes": 48210}
 /// ```
 ///

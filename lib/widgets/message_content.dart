@@ -12,7 +12,7 @@ import 'link_preview_card.dart';
 
 /// Chat message text with fenced code blocks parsed out.
 ///
-/// ```` ```dart … ``` ```` segments render as [CodeBlock] (syntax
+/// ```` ```dart ... ``` ```` segments render as [CodeBlock] (syntax
 /// highlighted, theme from Appearance, labeled "CODE"/language, with its
 /// own copy button); everything else renders as markdown ([ChatMarkdown]:
 /// headings, bold/italic, inline code, lists, real tables) with a custom
@@ -23,7 +23,7 @@ import 'link_preview_card.dart';
 ///
 /// When [cards] is true (assistant messages), long text segments render
 /// as labeled "Writing" cards with their own copy button, mirroring the
-/// labeled Code blocks — long-form content stays copyable at a tap.
+/// labeled Code blocks, long-form content stays copyable at a tap.
 class MessageContent extends StatelessWidget {
   final String text;
   final TextStyle textStyle;
@@ -205,7 +205,7 @@ class MessageContent extends StatelessWidget {
 /// Header carries the type label and a copy button (copies the raw
 /// markdown source); the body renders full markdown. Used for assistant
 /// messages' long text segments so document-style output is copyable
-/// at a tap, like ChatGPT/Claude.
+/// at a tap, like a chat client.
 class _WritingCard extends StatelessWidget {
   final String source;
   final TextStyle textStyle;

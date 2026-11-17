@@ -55,7 +55,7 @@ const List<VoiceBackend> _ttsBackends = [
 ];
 
 /// Voice settings: the `[voice]` live-mode knobs plus the `[stt]` / `[tts]`
-/// provider selection. There is no dedicated voice REST surface — this
+/// provider selection. There is no dedicated voice REST surface, this
 /// page reads and writes the shared config document (`PUT /api/config`).
 class VoiceSettingsScreen extends StatefulWidget {
   final PantheonApi api;
@@ -209,7 +209,7 @@ class _VoiceSettingsScreenState extends State<VoiceSettingsScreen> {
         Text(label, style: PT.meta),
         const SizedBox(height: 6),
         DropdownButtonFormField<String>(
-          value: value,
+          initialValue: value,
           items: items,
           onChanged: onChanged,
           style: PT.body.copyWith(fontSize: 14),
@@ -230,8 +230,8 @@ class _VoiceSettingsScreenState extends State<VoiceSettingsScreen> {
       padding: const EdgeInsets.only(top: 8),
       child: Text(
         keyEnv == null
-            ? 'No API key needed — runs locally or via your own command.'
-            : 'API key: $keyEnv — set it under More → Keys.',
+            ? 'No API key needed, runs locally or via your own command.'
+            : 'API key: $keyEnv, set it under More → Keys.',
         style: PT.meta.copyWith(color: P.inkFaint),
       ),
     );
@@ -396,7 +396,7 @@ class _VoiceSettingsScreenState extends State<VoiceSettingsScreen> {
                     SizedBox(
                       width: double.infinity,
                       child: GradientButton(
-                        label: _saving ? 'Saving…' : 'Save voice settings',
+                        label: _saving ? 'Saving...' : 'Save voice settings',
                         onTap: _saving ? null : _save,
                       ),
                     ),

@@ -9,7 +9,7 @@ class Approval {
 
   /// Grant tiers the backend offers for this approval, as the raw
   /// `available_tiers` strings (`once`/`session`/`always`). Empty when
-  /// the field is absent (older backend) — callers must then render the
+  /// the field is absent (older backend), callers must then render the
   /// plain Grant/Deny fallback.
   final List<String> availableTiers;
 

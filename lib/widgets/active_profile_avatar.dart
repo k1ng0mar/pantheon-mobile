@@ -12,8 +12,8 @@ import 'profile_picture.dart';
 /// resolving, when no profiles exist, or when the active profile has no
 /// picture set.
 ///
-/// Re-resolves on [PantheonApi.configChanged] — the same "reload after
-/// PUT" mechanism the Profiles screen uses — so switching profiles there
+/// Re-resolves on [PantheonApi.configChanged], the same "reload after
+/// PUT" mechanism the Profiles screen uses, so switching profiles there
 /// updates an open chat header without a restart.
 class ActiveProfileAvatar extends StatefulWidget {
   final PantheonApi api;

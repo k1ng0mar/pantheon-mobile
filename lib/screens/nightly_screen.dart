@@ -38,7 +38,7 @@ class _NightlyScreenState extends State<NightlyScreen> {
       context,
       title: enable ? 'Enable nightly repair?' : 'Disable nightly repair?',
       body: enable
-          ? 'Pantheon will run its nightly pass — repairing broken evals, '
+          ? 'Pantheon will run its nightly pass, repairing broken evals, '
               'MCP servers, scheduled tasks, and tools (bounded repair, '
               'then disable-with-escalation).'
           : 'The nightly pass stops running. Nothing else changes.',
@@ -170,7 +170,7 @@ class _NightlyScreenState extends State<NightlyScreen> {
                       Text(
                         'The nightly pass detects and repairs broken evals, '
                         'MCP servers, scheduled tasks, and tools. Repairs are '
-                        'bounded — anything it can\'t fix is disabled and '
+                        'bounded, anything it can\'t fix is disabled and '
                         'escalated, never silently dropped.',
                         style: PT.meta.copyWith(color: P.inkFaint),
                       ),

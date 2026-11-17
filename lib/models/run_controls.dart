@@ -1,10 +1,11 @@
-/// Run-control constructs the dashboard exposes for the TUI's
+/// Run-control constructs the dashboard exposes for the runtime's
 /// rewind/checkpoint/goal/background-task commands, now also reachable
 /// from the mobile chat slash commands.
+library;
 
 /// `POST /api/runs/:id/rewind` → `{"ok": true, "rewound_turn_id",
 /// "draft"}`. `draft` is the dropped user message, restored into the
-/// composer client-side like the TUI does.
+/// composer client-side like the runtime does.
 class RewindResult {
   final String rewoundTurnId;
   final String draft;
