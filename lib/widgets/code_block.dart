@@ -33,6 +33,12 @@ class _CodeBlockState extends State<CodeBlock> {
   /// so wide code shows a scroll cue instead of silently clipping.
   final ScrollController _codeScroll = ScrollController();
 
+  /// Long code is previewed at this many lines; a counted footer expands
+  /// it. A 500-line block must not become a 500-line-tall card.
+  static const int _previewMaxLines = 16;
+  static const double _previewMaxHeight = 324;
+  bool _expanded = false;
+
   @override
   void initState() {
     super.initState();
@@ -51,6 +57,71 @@ class _CodeBlockState extends State<CodeBlock> {
   void _highlight() {
     _highlighted = CodeHighlight.instance
         .highlight(_code, _languageTag, _themeId);
+  }
+
+  /// The highlighted code in a horizontal scroller. Long code is bounded
+  /// to a preview height until expanded; horizontal scroll and its
+  /// scrollbar cue are kept in both states so wide lines never silently
+  /// clip.
+  Widget _codeArea() {
+    final view = FutureBuilder<TextSpan>(
+      future: _highlighted,
+      builder: (_, snap) {
+        final span = snap.data ?? TextSpan(text: widget.code);
+        return Scrollbar(
+          controller: _codeScroll,
+          thumbVisibility: true,
+          child: SingleChildScrollView(
+            controller: _codeScroll,
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.all(12),
+            child: SelectableText.rich(
+              span,
+              style: const TextStyle(
+                fontFamily: 'JetBrainsMono',
+                fontSize: 12.5,
+                height: 1.5,
+              ),
+            ),
+          ),
+        );
+      },
+    );
+    final lines = widget.code.split('\n').length;
+    if (lines <= _previewMaxLines || _expanded) return view;
+    return ClipRect(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxHeight: _previewMaxHeight),
+        child: view,
+      ),
+    );
+  }
+
+  /// Counted expand/collapse affordance: the remainder is always named,
+  /// never silently cut.
+  Widget _expandFooter(int lines, Color dim) {
+    return InkWell(
+      onTap: () => setState(() => _expanded = !_expanded),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        child: Row(
+          children: [
+            Icon(
+              _expanded
+                  ? Icons.unfold_less_rounded
+                  : Icons.unfold_more_rounded,
+              size: 15,
+              color: dim,
+            ),
+            const SizedBox(width: 6),
+            Text(
+              _expanded ? 'Collapse' : 'Show all $lines lines',
+              style: PT.monoEyebrow.copyWith(color: dim),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   @override
@@ -76,6 +147,8 @@ class _CodeBlockState extends State<CodeBlock> {
         final fg =
             CodeHighlight.themeForegrounds[themeId] ?? const Color(0xFFF8F8F2);
         final dim = fg.withValues(alpha: 0.62);
+        final lines = widget.code.split('\n').length;
+        final long = lines > _previewMaxLines;
         return Container(
           margin: const EdgeInsets.only(top: 6),
           decoration: BoxDecoration(
@@ -115,29 +188,8 @@ class _CodeBlockState extends State<CodeBlock> {
                 ),
               ),
               Divider(height: 1, color: fg.withValues(alpha: 0.12)),
-              FutureBuilder<TextSpan>(
-                future: _highlighted,
-                builder: (_, snap) {
-                  final span = snap.data ?? TextSpan(text: widget.code);
-                  return Scrollbar(
-                    controller: _codeScroll,
-                    thumbVisibility: true,
-                    child: SingleChildScrollView(
-                      controller: _codeScroll,
-                      scrollDirection: Axis.horizontal,
-                      padding: const EdgeInsets.all(12),
-                      child: SelectableText.rich(
-                        span,
-                        style: const TextStyle(
-                          fontFamily: 'JetBrainsMono',
-                          fontSize: 12.5,
-                          height: 1.5,
-                        ),
-                      ),
-                    ),
-                  );
-                },
-              ),
+              _codeArea(),
+              if (long) _expandFooter(lines, dim),
             ],
           ),
         );
