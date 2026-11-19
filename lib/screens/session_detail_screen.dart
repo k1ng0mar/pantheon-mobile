@@ -26,6 +26,7 @@ import '../widgets/chat_composer.dart';
 import '../widgets/chips.dart';
 import '../widgets/export_sheet.dart';
 import '../widgets/forms.dart';
+import '../widgets/live_clock.dart';
 import '../widgets/message_content.dart';
 import '../widgets/new_chat_sheet.dart';
 import '../widgets/states.dart';
@@ -134,10 +135,9 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
   final _scroll = ScrollController();
   Timer? _poll;
 
-  /// Live-turn clock: anchor ms for the "Working for ..." row, ticking
-  /// once a second while the turn runs. See [_syncLiveClock].
+  /// Live-turn clock: anchor ms for the "Working for ..." row. The row
+  /// ([LiveClockRow]) owns the once-a-second tick; see [_syncLiveClock].
   int? _liveSinceMs;
-  Timer? _liveTicker;
   bool _sending = false;
   bool _atBottom = true;
 
@@ -301,7 +301,6 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
   @override
   void dispose() {
     _poll?.cancel();
-    _liveTicker?.cancel();
     // Best-effort: abandon any in-flight voice-note recording. The pill
     // is gone with the widget tree, so cancel here instead of the
     // normal discard path (no setState in dispose).
@@ -2711,38 +2710,24 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
   /// Elapsed-time clock for the live-turn row: anchored the first time
   /// a live status is observed, cleared when the turn settles.
   void _syncLiveClock(String status) {
+    // Anchor on first live observation, clear when the turn settles. The
+    // per-second tick lives in [LiveClockRow], not here: rebuilding the
+    // whole transcript once a second just to move one clock is wasted work.
     if (_isLive(status)) {
       _liveSinceMs ??= DateTime.now().millisecondsSinceEpoch;
-      _liveTicker ??= Timer.periodic(const Duration(seconds: 1), (_) {
-        if (mounted && _isLive(_run?.status ?? '')) setState(() {});
-      });
     } else {
       _liveSinceMs = null;
-      _liveTicker?.cancel();
-      _liveTicker = null;
     }
   }
 
-  /// "Working for 1m 9s": quiet live-turn status row at the end of chat,
-  /// ticking each second while the turn runs.
+  /// "Working for 1m 9s": quiet live-turn status row at the end of chat.
+  /// The row ticks itself ([LiveClockRow]); the screen only adds or removes
+  /// it when liveness changes, so a running turn never rebuilds the
+  /// transcript once a second.
   Widget _workingRow() {
-    final s = ((DateTime.now().millisecondsSinceEpoch - _liveSinceMs!) / 1000)
-        .floor();
-    final label =
-        s >= 60 ? 'Working for ${s ~/ 60}m ${s % 60}s' : 'Working for ${s}s';
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12, top: 2),
-      child: Row(
-        children: [
-          const SizedBox(
-            width: 14,
-            height: 14,
-            child: CircularProgressIndicator(strokeWidth: 2),
-          ),
-          const SizedBox(width: 10),
-          Text(label, style: PT.small.copyWith(color: P.inkSecondary)),
-        ],
-      ),
+    return LiveClockRow(
+      key: const ValueKey('live-clock-row'),
+      sinceMs: _liveSinceMs!,
     );
   }
 
