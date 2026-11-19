@@ -6,9 +6,10 @@ import '../theme.dart';
 import '../widgets/chips.dart';
 import '../widgets/forms.dart';
 import '../widgets/pantheon_card.dart';
+import '../widgets/skill_import_sheet.dart';
 import '../widgets/states.dart';
 
-/// Skills: list, toggle, import from URL, delete (pantheon-scope).
+/// Skills: list, toggle, import (marketplace / repo / URL), delete.
 class SkillsScreen extends StatefulWidget {
   final PantheonApi api;
 
@@ -47,24 +48,21 @@ class _SkillsScreenState extends State<SkillsScreen> {
   }
 
   Future<void> _import() async {
-    final url = await promptText(
-      context,
-      title: 'Import skill',
-      label: 'Git URL',
-      hint: 'https://...',
-      keyboardType: TextInputType.url,
-      confirmLabel: 'Import',
-    );
-    if (url == null || !mounted) return;
+    final req = await showSkillImportSheet(context);
+    if (req == null || !mounted) return;
     final ok = await confirmAction(
       context,
       title: 'Import this skill?',
-      body: 'Pantheon will clone $url and install any SKILL.md it finds.',
+      body: req.confirmBody,
       confirmLabel: 'Import',
     );
     if (!ok || !mounted) return;
     try {
-      await widget.api.importSkill(url);
+      if (req.isRepo) {
+        await widget.api.importSkillRepo(req.value, subpath: req.subpath);
+      } else {
+        await widget.api.importSkill(req.url);
+      }
       if (!mounted) return;
       toast(context, 'Skill imported.');
       _load();

@@ -1533,6 +1533,14 @@ class PantheonApi {
     await _post('/api/skills/import', {'url': url, 'confirm': true});
   }
 
+  /// Import every SKILL.md under a GitHub repo (optional subpath).
+  Future<void> importSkillRepo(String repo, {String? subpath}) async {
+    final body = <String, dynamic>{'repo': repo, 'confirm': true};
+    final s = subpath?.trim();
+    if (s != null && s.isNotEmpty) body['subpath'] = s;
+    await _post('/api/skills/import', body);
+  }
+
   Future<void> deleteSkill(String name) async {
     await _delete('/api/skills/${Uri.encodeComponent(name)}');
   }
