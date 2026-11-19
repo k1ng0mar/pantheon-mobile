@@ -4191,13 +4191,17 @@ class _SessionDetailScreenState extends State<SessionDetailScreen>
               ),
               border: isUser ? null : Border.all(color: P.border),
             ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if (!isUser) header,
-                ...body,
-              ],
-            ),
+            child: isUser
+                ? IntrinsicWidth(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [...body],
+                    ),
+                  )
+                : Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [header, ...body],
+                  ),
           ),
         );
       }
