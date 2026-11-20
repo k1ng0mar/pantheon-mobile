@@ -47,6 +47,11 @@ void main() {
         'hermes:skills/x/y',
       );
       expect(
+        const SkillImportRequest(source: 'claude', value: 'document-skills/pdf')
+            .url,
+        'claude:document-skills/pdf',
+      );
+      expect(
         const SkillImportRequest(source: 'url', value: 'https://a/SKILL.md').url,
         'https://a/SKILL.md',
       );
@@ -56,6 +61,17 @@ void main() {
       expect(r.isRepo, isTrue);
       expect(const SkillImportRequest(source: 'clawhub', value: 'x').isRepo,
           isFalse);
+    });
+    test('a local file is an upload, not a url or repo', () {
+      const r = SkillImportRequest(
+        source: 'file',
+        value: 'my-skill.zip',
+        fileBytes: [1, 2, 3],
+      );
+      expect(r.isFile, isTrue);
+      expect(r.isRepo, isFalse);
+      expect(r.fileBytes, [1, 2, 3]);
+      expect(r.confirmBody, contains('my-skill.zip'));
     });
   });
 

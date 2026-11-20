@@ -58,7 +58,16 @@ class _SkillsScreenState extends State<SkillsScreen> {
     );
     if (!ok || !mounted) return;
     try {
-      if (req.isRepo) {
+      if (req.isFile) {
+        final rec = await widget.api.uploadAttachment(
+          name: req.value,
+          mime: req.value.toLowerCase().endsWith('.zip')
+              ? 'application/zip'
+              : 'text/markdown',
+          bytes: req.fileBytes!,
+        );
+        await widget.api.importSkillUpload(rec.id);
+      } else if (req.isRepo) {
         await widget.api.importSkillRepo(req.value, subpath: req.subpath);
       } else {
         await widget.api.importSkill(req.url);

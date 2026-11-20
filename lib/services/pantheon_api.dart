@@ -1541,6 +1541,23 @@ class PantheonApi {
     await _post('/api/skills/import', body);
   }
 
+  /// Import a skill from an uploaded local `.md`/`.zip` file. [uploadId]
+  /// comes from [uploadAttachment].
+  Future<void> importSkillUpload(String uploadId) async {
+    await _post('/api/skills/import', {'upload': uploadId, 'confirm': true});
+  }
+
+  /// `/learn`: distill a lesson into a reusable skill
+  /// (`POST /api/skills/learn`), not a memory note. Returns the skill name.
+  Future<String> learnSkill(String text, {String? name}) async {
+    final body = <String, dynamic>{'text': text};
+    final n = name?.trim();
+    if (n != null && n.isNotEmpty) body['name'] = n;
+    final res = await _post('/api/skills/learn', body);
+    final skillName = res['name'];
+    return skillName == null ? 'skill' : skillName.toString();
+  }
+
   Future<void> deleteSkill(String name) async {
     await _delete('/api/skills/${Uri.encodeComponent(name)}');
   }

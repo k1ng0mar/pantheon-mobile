@@ -99,14 +99,19 @@ class _PluginsScreenState extends State<PluginsScreen> {
                   const SheetHandle(),
                   const SizedBox(height: 8),
                   Text('Import plugin', style: PT.sectionTitle),
+                  const SizedBox(height: 4),
+                  Text(
+                    'GitHub repos (incl. Claude Code plugins) or clawhub:<slug>.',
+                    style: PT.small,
+                  ),
                   const SizedBox(height: 16),
                   TextField(
                     controller: urlCtrl,
                     style: PT.mono.copyWith(color: P.ink, fontSize: 13),
                     keyboardType: TextInputType.url,
                     decoration: InputDecoration(
-                      labelText: 'Plugin URL',
-                      hintText: 'https://github.com/...',
+                      labelText: 'Plugin source',
+                      hintText: 'https://github.com/… or clawhub:<slug>',
                       errorText: urlError,
                     ),
                     onChanged: (_) {

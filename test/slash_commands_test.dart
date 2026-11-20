@@ -36,6 +36,16 @@ class _FakeApi extends PantheonApi {
     return MemoryEntry(key: 'k', value: text);
   }
 
+  String? learnText;
+  String? learnName;
+
+  @override
+  Future<String> learnSkill(String text, {String? name}) async {
+    learnText = text;
+    learnName = name;
+    return 'always-verify-before-claiming-done';
+  }
+
   @override
   Future<Map<String, dynamic>> createSwarm({
     required String task,
@@ -467,16 +477,16 @@ void main() {
       expect(host.toasts, ['Remembered.']);
     });
 
-    test('/learn stores a lesson via the lesson kind', () async {
+    test('/learn creates a reusable skill, not a memory note', () async {
       final api = _FakeApi();
       final host = _FakeHost(api);
       await SlashCommandDispatcher(host)
           .dispatch('learn', 'always verify before claiming done');
-      // The dashboard namespaces keys as {kind}:{key}; `lesson`
-      // matches the runtime's lesson:{slug} convention.
-      expect(api.memoryText, 'always verify before claiming done');
-      expect(api.memoryKind, 'lesson');
-      expect(host.toasts, ['Lesson saved.']);
+      // Hermes-style /learn: the lesson becomes a skill the agent can
+      // load later, not a row in a memory table.
+      expect(api.learnText, 'always verify before claiming done');
+      expect(api.memoryText, isNull);
+      expect(host.toasts, ['Skill created: always-verify-before-claiming-done']);
     });
   });
 

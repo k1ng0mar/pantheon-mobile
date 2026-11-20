@@ -208,11 +208,10 @@ class SlashCommandDispatcher {
     final text = await _argOrPrompt(arg, 'Learn');
     if (text == null) return;
     try {
-      // The dashboard namespaces memory keys as `{kind}:{key}`; `lesson`
-      // is the real convention, it matches the runtime's `lesson:{slug}`
-      // keys for /learn lessons.
-      await host.api.addMemory(text: text, kind: 'lesson');
-      host.showToast('Lesson saved.');
+      // Hermes-style /learn: the lesson becomes a reusable skill the
+      // agent can load later, not a row in a memory table.
+      final name = await host.api.learnSkill(text);
+      host.showToast('Skill created: $name');
     } catch (e) {
       host.showError(e);
     }
